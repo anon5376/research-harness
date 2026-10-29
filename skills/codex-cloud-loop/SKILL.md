@@ -89,7 +89,7 @@ Leave your work uncommitted: at the end, run git add -A <out dir> and nothing el
 ## 6. Launch
 
 1. **Commit gate.** Send job 1 alone and wait for its reply: `git log -1` shows the wave SHA and the stack line printed. On any mismatch, stop sending, fix Step 0, and resend job 1 alone.
-2. Send the rest, about one a minute, one task per model.
+2. Send the rest, about one a minute, one task per model. For a long-lived task, open the composer's Goal command ("Set a goal to keep pursuing") in an empty composer and paste the whole prompt as the goal text; the task shows "Sent as goal". Feed its later jobs as follow-up turns in the same task (step 7).
 3. Paste once, with a paste event; a long paste becomes a "pasted text" chip, and a second paste sends the text twice. Send only when the SHA-256 of the composer text matches the prompt file.
 4. Log each task in `TASKS.tsv` (columns in [references/briefs.md](references/briefs.md)).
 

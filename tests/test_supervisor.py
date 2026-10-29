@@ -198,6 +198,24 @@ class SupervisorTest(unittest.TestCase):
         self.assertIn(f"git checkout --detach {SHA}", prompt)
         self.assertTrue(self.led.route("codex-cloud")["healthy"], "an env lookup miss is not a route outage")
 
+    def test_web_job_asks_for_a_bundle_once_its_changes_view_may_have_expired(self):
+        self.cfg["cloud"]["route"] = "web"
+        self.led.add_job(cloud_spec("c1", "timeout_min = 600"), pinned_sha=SHA)
+        s = self.sup(FakeCloud(self.clock))
+        s.tick()
+        self.led.set_state("c1", "launching", "attached")
+        self.led.set_state("c1", "running", "attached", external_id="01900000-0000-7000-8000-000000000002",
+                           started=self.clock())
+        asks = lambda: [i for i in self.led.inbox() if i["kind"] == "harvest" and "--bundle" in i["action"]]  # noqa
+        self.clock.t += 119 * 60
+        s.tick()
+        self.assertEqual(asks(), [], "within 2 h the Changes view is still the harvest route")
+        self.clock.t += 2 * 60
+        s.tick()
+        s.tick()
+        self.assertEqual(len(asks()), 1)
+        self.assertEqual(self.led.job("c1")["state"], "running")
+
     def test_cloud_job_waits_without_env_and_queues_one_operator_step(self):
         self.cfg["cloud"]["env_id"] = ""
         cloud = FakeCloud(self.clock)

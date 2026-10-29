@@ -233,9 +233,20 @@ class Supervisor:
             if j["route"] == LOCAL:
                 self._isolated(j, self._poll_local, s)
             elif j["route"] == "codex-cloud-web" and j["state"] != "collecting":
-                self._isolated(j, self._alive)  # the CLI cannot see web tasks: wait for rh cloud harvest
+                self._isolated(j, self._web_wait)  # the CLI cannot see web tasks: wait for rh cloud harvest
             elif self._route_open(CLOUD):
                 self._isolated(j, self._poll_cloud, s)
+
+    def _web_wait(self, j):
+        """The Changes view of a web task expires a few hours after its start; after changes_ttl_min the harvest
+        goes through the bundle-export follow-up instead."""
+        self._alive(j)
+        jid, started = j["id"], j.get("started") or j["created"]
+        if self.clock() - started > float(self.cfg["cloud"]["changes_ttl_min"]) * 60:
+            self._inbox("harvest", f"the Changes view of {jid} may have expired: send rh cloud prompt {jid} "
+                                   f"--bundle-export as a follow-up in its task, save the reply, then "
+                                   f"rh cloud harvest {jid} --bundle <saved reply or dir>", jid,
+                        f"started {self.cfg['cloud']['changes_ttl_min']}+ min ago")
 
     def _poll_cloud(self, j, s):
         jid = j["id"]

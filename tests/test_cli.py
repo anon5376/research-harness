@@ -192,6 +192,34 @@ class CliTest(unittest.TestCase):
         self.rh("supervise", "--once")
         self.assertEqual(self.state("c1"), "done")
 
+    def test_bundle_harvest_refuses_a_bad_part_and_collects_a_good_one(self):
+        from tests.test_bundle import export_in_clone
+        result = {"job": "c1", "state": "done", "head": self.sha, "summary": "ok",
+                  "checks": [], "outputs": [], "refusals": []}
+        self.fake_codex("")
+        self.rh("config", "set", "cloud.route", "web")
+        self.rh("job", "add", self.job_file("c1", 'id = "c1"\nkind = "codex-cloud"\nbrief = "Write notes."\n'))
+        self.rh("supervise", "--once")
+        self.rh("cloud", "attach", "c1", "01900000-0000-7000-8000-000000000003")
+        follow_up = self.rh("cloud", "prompt", "c1", "--bundle-export").stdout
+        self.assertIn(f"git reset --soft {self.sha}", follow_up)
+        self.assertIn("git add -A -- runs/c1/", follow_up)
+        text, _ = export_in_clone(self.repo, "c1", {"runs/c1/RESULT.json": json.dumps(result)}, self.tmp.name)
+        parts = Path(self.tmp.name) / "parts"
+        parts.mkdir()
+        i = text.index("\n", text.index("RH-PART")) + 1
+        (parts / "reply.txt").write_text(text[:i] + ("B" if text[i] != "B" else "C") + text[i + 1:])
+        bad = self.rh("cloud", "harvest", "c1", "--bundle", str(parts), check=False)
+        self.assertNotEqual(bad.returncode, 0)
+        self.assertIn("sha256 mismatch", bad.stderr)
+        self.assertEqual(self.state("c1"), "running", "a refused bundle changes nothing")
+        (parts / "reply.txt").write_text(text)
+        self.rh("cloud", "harvest", "c1", "--bundle", str(parts))
+        self.rh("supervise", "--once")
+        self.assertEqual(self.state("c1"), "done")
+        show = json.loads(self.rh("job", "show", "c1").stdout)
+        self.assertEqual(show["receipt"]["changed_paths"], ["runs/c1/RESULT.json"])
+
     def state(self, jid):
         return json.loads(self.rh("job", "show", jid).stdout)["job"]["state"]
 

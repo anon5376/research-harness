@@ -11,7 +11,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from rh import __version__, collect, config, contract, envspec, gitx, lease, protocol
+from rh import __version__, bundle, collect, config, contract, envspec, gitx, lease, protocol
 from rh.ledger import LIVE, TERMINAL, Ledger, LedgerError
 
 # legacy CLI task ids (task_e_...) and the UUIDs the new environment system shows in its task URLs
@@ -68,9 +68,14 @@ def main(argv=None):
     cs = p.add_subparsers(dest="cloud_cmd", required=True)
     c = cs.add_parser("prompt", help="print the exact prompt to submit for a handoff job")
     c.add_argument("id")
-    c = cs.add_parser("harvest", help="hand the supervisor a patch saved from the web view")
+    c.add_argument("--bundle-export", action="store_true",
+                   help="print the follow-up that makes a finished task print its staged work as a bundle")
+    c = cs.add_parser("harvest", help="hand the supervisor a patch saved from the web view, or a printed bundle")
     c.add_argument("id")
-    c.add_argument("patch", type=Path)
+    src = c.add_mutually_exclusive_group(required=True)
+    src.add_argument("patch", type=Path, nargs="?")
+    src.add_argument("--bundle", type=Path, metavar="PARTS",
+                     help="a saved bundle reply, or a directory of them (read in name order)")
     c = cs.add_parser("attach", help="record the task id of a job launched in the web composer")
     c.add_argument("id")
     c.add_argument("task_id")
@@ -293,6 +298,10 @@ def cmd_cloud(args, cfg):
     if not j:
         print(f"rh: no job {args.id}", file=sys.stderr)
         return 1
+    if args.cloud_cmd == "prompt" and args.bundle_export:
+        print(bundle.export_prompt(args.id, j["pinned_sha"], [j["spec"]["write_root"], *j["spec"]["write_paths"]]),
+              end="")
+        return 0
     if args.cloud_cmd == "prompt":
         p = Path(cfg["home"]) / "prompts" / f"{args.id}.txt"
         text = p.read_text() if p.is_file() else protocol.task_prompt(
@@ -305,14 +314,25 @@ def cmd_cloud(args, cfg):
     if args.cloud_cmd == "harvest":
         if j["state"] not in ("running", "stalled", "collecting"):
             raise ValueError(f"{args.id} is {j['state']}; only a launched cloud job can be harvested")
-        text = args.patch.read_text()
-        if text.strip() and "diff --git" not in text:
-            raise ValueError(f"{args.patch} is not a git diff")
+        large = []
+        if args.bundle:
+            header, tgz = bundle.parse(bundle.read(args.bundle), args.id)
+            large = header.get("large") or []
+            text = bundle.to_patch(header, bundle.members(tgz), cfg["repo"]["path"], j["pinned_sha"],
+                                   Path(cfg["home"]) / "work" / f"{args.id}-bundle")
+            for f in large:
+                print(f"not in the bundle (over {bundle.MAX_FILE} bytes): {f.get('path')} {f.get('bytes')} bytes "
+                      f"sha256 {f.get('sha256')}; regenerate it locally", file=sys.stderr)
+        else:
+            text = args.patch.read_text()
+            if text.strip() and "diff --git" not in text:
+                raise ValueError(f"{args.patch} is not a git diff")
         dest = collect.saved_patch(cfg["home"], args.id)
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_text(text)
         led.set_state(args.id, "collecting", "harvested patch; the supervisor collects it next tick")
-        led.event("harvested", args.id, sha256=hashlib.sha256(text.encode()).hexdigest(), lines=text.count("\n"))
+        led.event("harvested", args.id, sha256=hashlib.sha256(text.encode()).hexdigest(), lines=text.count("\n"),
+                  source="bundle" if args.bundle else "patch", large=large)
         for i in led.inbox():
             if i["kind"] == "harvest" and i["job"] == args.id:
                 led.inbox_resolve(i["id"], "patch saved")
@@ -327,7 +347,10 @@ def cmd_cloud(args, cfg):
     for i in led.inbox():
         if i["kind"] == "web-launch" and i["job"] == args.id:
             led.inbox_resolve(i["id"], f"attached {args.task_id}")
-    print(f"attached {args.task_id} to {args.id}; the supervisor polls it from now on")
+    ttl = float(cfg["cloud"]["changes_ttl_min"])
+    print(f"attached {args.task_id} to {args.id}; harvest it from the Changes view before "
+          f"{time.strftime('%H:%M', time.localtime(time.time() + ttl * 60))}, after that with "
+          f"rh cloud prompt {args.id} --bundle-export")
     return 0
 
 

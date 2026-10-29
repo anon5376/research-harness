@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .env
 .env.*
+.unlazy/
+.unlazy-hook-state.json
+.claude/settings.local.json
+# runtime state never lives in the repo; this catches accidents
+.rh-home/

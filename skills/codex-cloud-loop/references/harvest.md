@@ -8,6 +8,10 @@
 - The diff carries no `--binary` data: PNGs, zips and other binaries are lost. Regenerate them locally from the shipped code.
 - A package that copies an existing one exports only the files that differ.
 
+## Bundle export (when Changes has expired)
+
+The follow-up's script reads the index (`git diff --cached --raw`, then `git cat-file blob` for each staged blob), so unstaged edits stay out. It prints one `RH-BUNDLE {json}` header (job, HEAD, size and sha256 of the tar.gz, part count, the `large` files over 64 KiB, `special` entries such as symlinks and submodules, and `deleted` paths), then each `RH-PART {"n", "of", "sha256"}` followed by its base64 in 76-character lines, then `RH-END`. A part's sha256 is taken over its base64 text without line breaks, and the whole's over the tar.gz bytes. Tar entries are sorted, with mtime 0 and owner 0, and gzip carries mtime 0, so the same staged work prints the same text. Binaries up to 64 KiB survive, unlike in the Changes capture. If a reply is cut off, ask for the next `RH-PART`, and save every reply in one directory: `rh cloud harvest --bundle` reads its files in name order and ignores prose and code fences outside the parts. It refuses a missing or mismatched part, a header for another job or commit, special entries, and any member that is not a regular file at a plain relative path outside `.git`.
+
 ## Legacy environments (CLI)
 
 - `codex cloud exec --env <env> --branch <branch> --attempts <n> "<prompt>"` runs best-of-n (1 to 4) on one task. Model, effort and permission cannot be set; which model the attempts ran on was not recorded.

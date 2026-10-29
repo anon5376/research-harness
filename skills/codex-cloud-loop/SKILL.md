@@ -111,6 +111,8 @@ In the new system the CLI and "Copy git apply command" both fail. The route that
 3. `git apply --check` against `<sha>`, then apply in a detached worktree and run the tests there at low priority: `nice -n 15 <python> -I -B -m pytest -q -p no:cacheprovider <out dir>`.
 4. Re-run the gates. A cloud ledger reads ALL MET under `--status` because its evidence travels with the file, and `--approve` alone skips gates already met. Read every CHECK and the scripts it calls, then run `node <unlazy dir>/scripts/gate-check.mjs --approve --reverify <out dir>/GATES.md`.
 
+The Changes view expires. In October 2026 it was gone a few hours after a task started (the page's `backend-api/tbo/by-thread/<task>` answered 404), some tasks never showed it, and `codex cloud diff <uuid>` answers 404 "Invalid task ID". Harvest from Changes within 2 hours of the task's start; after that, send the bundle-export follow-up instead. The task prints a deterministic tar.gz of its staged files of 64 KiB or less as base64 parts of 90 kB, with a sha256 for each part and for the whole, and lists bigger files by path, size and sha256 for you to regenerate locally from the code. In research-harness, `rh cloud prompt <job> --bundle-export` prints that follow-up, and `rh cloud harvest <job> --bundle <reply file or dir>` refuses any part whose sha does not match, rebuilds the staged diff at the pinned sha and collects it like a patch. Format: [references/harvest.md](references/harvest.md).
+
 ## 9. Accept
 
 - Each test must be able to fail: break the code with a one-line mutant, or revert the fix, and watch the test go red.

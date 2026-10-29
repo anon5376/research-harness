@@ -1,0 +1,28 @@
+# What each worker kind can do: true, false or "unknown". Preflight holds a job that needs a false capability,
+# and an unknown one unless the job is a probe. A probe's readings go to $RH_HOME/caps.toml, which overrides this.
+
+[codex-cloud]
+updated = "2026-10-29"
+source = "design defaults; replaced by the environment probe"
+commit = false  # work comes back as a task diff, which the harness applies and lands locally
+push = false  # forbidden by the task protocol
+git = true
+python = "unknown"
+net = "unknown"  # depends on the environment's agent internet setting
+loopback = "unknown"
+sysctl = false
+gpu = false
+browser = false
+
+[local-shell]
+updated = "2026-10-29"
+source = "runs on the host under the supervisor"
+commit = true
+push = false  # pushes belong to the lead, never to a job
+git = true
+python = true
+net = true
+loopback = true
+sysctl = true
+gpu = "unknown"
+browser = false

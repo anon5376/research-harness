@@ -1,0 +1,24 @@
+# M5: the first cloud task in a new environment revision. It measures what the environment can do, so later jobs
+# are checked against facts instead of guesses. After it lands done: rh caps import probe-env-01
+id = "probe-env-01"
+kind = "codex-cloud"
+probe = true
+needs = ["python", "git", "net", "loopback"]
+timeout_min = 30
+brief = """Environment probe. Run each command below from the repository root, record each one in RESULT.json
+checks with its exit code, and write runs/probe-env-01/caps.json. Write nothing else.
+
+1. python: python3 --version
+2. git: git --version
+3. net: git ls-remote origin HEAD
+4. loopback: python3 -c "import socket; s = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(); socket.create_connection(s.getsockname()).close(); print('loopback ok')"
+5. gpu: nvidia-smi -L
+
+caps.json is one JSON object: "python", "git", "net", "loopback" and "gpu" are true when that command exited 0,
+else false; "python_version" is the first line python3 --version printed; "head" is git rev-parse HEAD."""
+accept = "python3 -I -c \"import json; d = json.load(open('runs/probe-env-01/caps.json')); assert all(isinstance(d[k], bool) for k in ('python', 'git', 'net', 'loopback', 'gpu')); print('caps ok')\""
+
+[model]
+requested = "gpt-6.1-sol"
+speed = "fast"
+effort = "extra-high"

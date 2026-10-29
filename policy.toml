@@ -1,0 +1,13 @@
+# Model policy every launcher reads. Change it only with a new date and the reason.
+dated = "2026-10-29"
+reason = "operator: cloud tasks run on fast; Sol or Terra at extra-high for routine work, Astra (up to ultra) for hard tasks"
+
+[codex-cloud]
+models = ["gpt-6.1-sol", "gpt-6.1-terra", "gpt-6-astra"]
+speeds = ["fast"]
+efforts = ["extra-high", "ultra"]
+
+[local-shell]
+models = []
+speeds = []
+efforts = []

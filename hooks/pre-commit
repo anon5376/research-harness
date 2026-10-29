@@ -1,0 +1,15 @@
+#!/bin/sh
+# Block a commit that would put private strings into this public repo: staged file contents and
+# names, then the author and committer identity (their emails are published with the commit).
+top=$(git rev-parse --show-toplevel) || exit 1
+scan="$top/rh/privacy.py"
+if ! python3 -I "$scan" --staged; then
+	echo "pre-commit: private strings in staged files; fix or unstage them" >&2
+	exit 1
+fi
+if ! out=$({ git var GIT_AUTHOR_IDENT; git var GIT_COMMITTER_IDENT; } |
+	python3 -I "$scan" --file /dev/stdin --path identity 2>&1); then
+	printf '%s\n' "$out" >&2
+	echo "pre-commit: author or committer identity is private; use a public name and a noreply email" >&2
+	exit 1
+fi

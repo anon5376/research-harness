@@ -1,0 +1,7 @@
+#!/bin/sh
+# Block a commit message that carries private strings into this public repo.
+top=$(git rev-parse --show-toplevel) || exit 1
+if ! python3 -I "$top/rh/privacy.py" --file "$1" --path COMMIT_EDITMSG; then
+	echo "commit-msg: private strings in the commit message; reword it" >&2
+	exit 1
+fi

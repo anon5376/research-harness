@@ -1,0 +1,86 @@
+#!/usr/bin/env python3
+"""Fake `codex` CLI for tests. Replies come from the JSON file named by FAKE_CODEX_STATE:
+
+    {"version": str, "exec": resp | [resp, ...], "status": {task_id: resp | [resp, ...]},
+     "diff": {task_id: resp | [resp, ...]}, "list": resp | [resp, ...]}
+
+resp is {"exit": int, "stdout": str, "stderr": str}, plus an optional "sleep" in seconds before replying. A list
+replies with its first item and drops it, keeping the last one for every later call; the state file is rewritten
+after each drop. Each call appends one JSON line {"argv": [...], "cwd": str} to FAKE_CODEX_LOG when that is set.
+Runs on any python3 >= 3.6, since PATH may pick an older interpreter than the tests use.
+"""
+import fcntl
+import json
+import os
+import sys
+import time
+
+DEFAULT_VERSION = "codex-cli 0.0.0-fake"
+
+
+def reply(stdout="", stderr="", code=0):
+    sys.stdout.buffer.write(stdout.encode("utf-8"))
+    sys.stderr.buffer.write(stderr.encode("utf-8"))
+    sys.stdout.flush()
+    sys.stderr.flush()
+    return code
+
+
+def take(state_path, slot, key):
+    """Read the reply for state[slot] (or state[slot][key]); pop a list's head under an exclusive lock."""
+    if not state_path:
+        return None, {}
+    with open(state_path, "r+", encoding="utf-8") as f:
+        fcntl.flock(f, fcntl.LOCK_EX)
+        state = json.loads(f.read() or "{}")
+        holder, name = (state, slot) if key is None else (state.get(slot) or {}, key)
+        resp = holder.get(name) if isinstance(holder, dict) else None
+        if isinstance(resp, list):
+            if not resp:
+                return None, state
+            if len(resp) > 1:
+                holder[name] = resp[1:]
+                f.seek(0)
+                f.truncate()
+                f.write(json.dumps(state, indent=1))
+                f.flush()
+            resp = resp[0]
+        return resp, state
+
+
+def main(argv):
+    log = os.environ.get("FAKE_CODEX_LOG")
+    if log:
+        with open(log, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"argv": argv, "cwd": os.getcwd()}) + "\n")
+    state_path = os.environ.get("FAKE_CODEX_STATE")
+    args = argv[1:]
+    if args[:1] in (["--version"], ["-V"]):
+        try:
+            _, state = take(state_path, "version", None)
+        except (OSError, ValueError) as e:
+            return reply(stderr="fake codex: cannot use FAKE_CODEX_STATE: %s\n" % e, code=2)
+        return reply(str(state.get("version", DEFAULT_VERSION)) + "\n")
+    if args[:1] != ["cloud"] or len(args) < 2 or args[1] not in ("exec", "status", "diff", "list"):
+        return reply(stderr="fake codex: unsupported command: %s\n" % " ".join(args), code=2)
+    cmd = args[1]
+    key = None
+    if cmd in ("status", "diff"):
+        ids = [a for a in args[2:] if not a.startswith("-")]
+        if not ids:
+            return reply(stderr="fake codex: %s needs a task id\n" % cmd, code=2)
+        key = ids[-1]
+    try:
+        resp, _ = take(state_path, cmd, key)
+    except (OSError, ValueError) as e:
+        return reply(stderr="fake codex: cannot use FAKE_CODEX_STATE: %s\n" % e, code=2)
+    if not isinstance(resp, dict):
+        what = cmd if key is None else "%s %s" % (cmd, key)
+        return reply(stderr="Error: fake codex has no reply for %s\n" % what, code=1)
+    if resp.get("sleep"):
+        time.sleep(float(resp["sleep"]))
+    return reply(str(resp.get("stdout", "")), str(resp.get("stderr", "")), int(resp.get("exit", 0)))
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

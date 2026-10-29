@@ -1,0 +1,17 @@
+# Codex cloud task for briefs/M6a-dashboard.md. Add it only after the probe is imported, and only once the commit
+# you add it from is on origin/main (the harness pins it). m6d-wake goes in after m6c-pacing is merged and pushed.
+id = "m6a-dashboard"
+kind = "codex-cloud"
+needs = ["python", "git"]
+write_paths = ["rh/dashboard.py", "tests/test_dashboard.py"]
+timeout_min = 120
+brief = """Implement briefs/M6a-dashboard.md exactly. Its interface section is binding: do not rename, re-sign or move
+anything it names, and write only the files it lists plus runs/m6a-dashboard/. Follow briefs/README.md for the inherited
+rules (stack line first, gates in runs/m6a-dashboard/GATES.md, the whole suite must pass). Write runs/m6a-dashboard/SUMMARY.md with
+the stack line, the exact test command and its real result."""
+accept = "python3 -I tests/run.py"
+
+[model]
+requested = "gpt-6.1-sol"
+speed = "fast"
+effort = "extra-high"

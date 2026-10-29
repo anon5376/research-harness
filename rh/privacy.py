@@ -76,6 +76,8 @@ _TOKENS = (
 )
 _PEM = re.compile(r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY")
 _TASK = re.compile(r"task_e_[0-9a-f]{16,}")
+# the UUID task ids of the new environment system, as its task URLs show them (/codex/tasks/<id>, /local/<id>)
+_TASK_URL = re.compile(r"(?i)chatgpt\.com/(?:codex/tasks|local)/(?P<v>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 # an id labelled as an account, org, user or workspace id (the codex CLI's error.log prints account_id=<uuid>)
 _ACCOUNT = re.compile(r"(?i)\b(?:chatgpt-)?(?:account|org(?:anization)?|user|workspace)[_-]?id\b[\"']?(?:\s+[a-z]+)?\s*[:=]?\s*[\"']?"
                       r"(?P<v>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{16,})")
@@ -123,6 +125,9 @@ def _hits(line):
         yield "token", "PRIVATE KEY block"
     for m in _TASK.finditer(line):
         yield "codex-task-id", f"task_e_***({len(m[0])} chars)"
+    for m in _TASK_URL.finditer(line):
+        if len(set(m["v"])) > 4:
+            yield "codex-task-id", f"chatgpt.com/.../***({len(m['v'])} chars)"
     for m in _ACCOUNT.finditer(line):
         v = m["v"]
         uuid = len(v) == 36 and v.count("-") == 4

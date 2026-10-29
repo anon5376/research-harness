@@ -141,6 +141,19 @@ class ScanTextTest(unittest.TestCase):
         self.assertEqual(scan("launched task" + "_e_" + "0123456789abcdef"), [(1, "codex-task-id")])
         self.assertEqual(scan("task" + "_e_" + "0123456789abcde"), [])
 
+    def test_new_system_task_id_in_a_task_url(self):
+        uid = "01a2b3c4" + "-d5e6-7f80-9a1b-" + "2c3d4e5f6a7b"
+        for text in ("https://chatgpt.com/codex/tasks/" + uid, "see chatgpt.com/local/" + uid.upper() + "."):
+            with self.subTest(text=text):
+                found = privacy.scan_text(text, "t.txt")
+                self.assertEqual([(f.line, f.rule) for f in found], [(1, "codex-task-id")])
+                self.assertNotIn(uid, found[0].excerpt.lower())
+        # a bare UUID is ordinary data, and placeholders pass
+        for text in ("run " + uid, "chatgpt.com/local/" + "0" * 8 + "-0000-0000-0000-" + "0" * 12,
+                     "https://chatgpt.com/codex/tasks/<task_id>"):
+            with self.subTest(text=text):
+                self.assertEqual(scan(text), [])
+
     def test_line_numbers_with_crlf(self):
         found = privacy.scan_text("a\r\nb\x0cc\u2028d\r\nmail " + BAD_MAIL + "\r\n", "t.txt")
         self.assertEqual([(f.line, f.rule) for f in found], [(3, "email")])

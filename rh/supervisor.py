@@ -232,6 +232,8 @@ class Supervisor:
         for j in self.led.jobs(states={"running", "stalled", "collecting"}):
             if j["route"] == LOCAL:
                 self._isolated(j, self._poll_local, s)
+            elif j["route"] == "codex-cloud-web" and j["state"] != "collecting":
+                self._isolated(j, self._alive)  # the CLI cannot see web tasks: wait for rh cloud harvest
             elif self._route_open(CLOUD):
                 self._isolated(j, self._poll_cloud, s)
 

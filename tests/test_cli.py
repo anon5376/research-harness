@@ -169,6 +169,29 @@ class CliTest(unittest.TestCase):
         self.assertEqual(show["receipt"]["diff_source"], "saved patch")
         self.assertNotIn("[harvest]", self.rh("inbox").stdout)
 
+    def test_web_job_takes_a_new_system_id_and_waits_for_a_harvest_without_asking_the_cli(self):
+        result = {"job": "c1", "state": "done", "head": self.sha, "summary": "ok",
+                  "checks": [], "outputs": [], "refusals": []}
+        patch = self.task_diff({"runs/c1/RESULT.json": json.dumps(result)})
+        self.fake_codex(patch)
+        self.rh("config", "set", "cloud.route", "web")
+        self.rh("job", "add", self.job_file("c1", 'id = "c1"\nkind = "codex-cloud"\nbrief = "Write notes."\n'))
+        self.rh("supervise", "--once")
+        self.assertEqual(self.state("c1"), "handoff")
+        self.assertNotEqual(self.rh("cloud", "attach", "c1", "not-a-task", check=False).returncode, 0)
+        self.rh("cloud", "attach", "c1", "01900000-0000-7000-8000-000000000001")
+        for _ in range(2):
+            self.rh("supervise", "--once")
+        self.assertEqual(self.state("c1"), "running")
+        log = Path(self.env["FAKE_CODEX_LOG"])
+        self.assertNotIn('"status"', log.read_text() if log.exists() else "", "the CLI cannot see web tasks")
+        self.assertEqual(json.loads(self.rh("status", "--json").stdout)["routes"], [])
+        saved = Path(self.tmp.name) / "c1.patch"
+        saved.write_text(patch)
+        self.rh("cloud", "harvest", "c1", str(saved))
+        self.rh("supervise", "--once")
+        self.assertEqual(self.state("c1"), "done")
+
     def state(self, jid):
         return json.loads(self.rh("job", "show", jid).stdout)["job"]["state"]
 

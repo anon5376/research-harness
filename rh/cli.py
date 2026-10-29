@@ -14,7 +14,8 @@ from pathlib import Path
 from rh import __version__, collect, config, contract, envspec, gitx, lease, protocol
 from rh.ledger import LIVE, TERMINAL, Ledger, LedgerError
 
-TASK_RE = re.compile(r"^task_[a-z]_[0-9a-f]{8,}$")
+# legacy CLI task ids (task_e_...) and the UUIDs the new environment system shows in its task URLs
+TASK_RE = re.compile(r"^(task_[a-z]_[0-9a-f]{8,}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$")
 
 
 def main(argv=None):

@@ -9,11 +9,15 @@ replies with its first item and drops it, keeping the last one for every later c
 after each drop. Each call appends one JSON line {"argv": [...], "cwd": str} to FAKE_CODEX_LOG when that is set.
 Runs on any python3 >= 3.6, since PATH may pick an older interpreter than the tests use.
 """
-import fcntl
 import json
 import os
 import sys
 import time
+
+if os.name == "nt":
+    import msvcrt
+else:
+    import fcntl
 
 DEFAULT_VERSION = "codex-cli 0.0.0-fake"
 
@@ -31,7 +35,10 @@ def take(state_path, slot, key):
     if not state_path:
         return None, {}
     with open(state_path, "r+", encoding="utf-8") as f:
-        fcntl.flock(f, fcntl.LOCK_EX)
+        if os.name == "nt":
+            msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+        else:
+            fcntl.flock(f, fcntl.LOCK_EX)
         state = json.loads(f.read() or "{}")
         holder, name = (state, slot) if key is None else (state.get(slot) or {}, key)
         resp = holder.get(name) if isinstance(holder, dict) else None

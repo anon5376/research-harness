@@ -5,7 +5,6 @@ lease lasts exactly as long as the step and is freed by the kernel even after ki
 sidecar names the holder; it is written only under the lock and never trusted for "held". Never delete the
 lock file while it may be held: a new inode would admit a second holder.
 """
-import fcntl
 import json
 import os
 import subprocess
@@ -13,6 +12,8 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+
+from rh import oslock
 
 TEMPFAIL = 75
 ENV_HELD = "RH_LEASE_HELD"
@@ -126,17 +127,16 @@ def status(lock_path):
     """Return {held, holder, age_s}; held comes from a LOCK_NB probe on a separate open, never the sidecar."""
     lock_path = Path(lock_path)
     try:
-        fd = os.open(lock_path, os.O_RDONLY)
+        lock_path.stat()
     except FileNotFoundError:
         return {"held": False, "holder": None, "age_s": None}
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
+        fd = oslock.try_lock(lock_path)
+    except oslock.Locked:
         held = True
     else:
         held = False
-    finally:
-        os.close(fd)
+        oslock.unlock(fd)
     if not held:
         return {"held": False, "holder": None, "age_s": None}
     holder = _read_sidecar(lock_path)
@@ -181,17 +181,10 @@ def _admitted_lock(lock_path, reader, max_load):
 def _try_lock(lock_path):
     """Return a new fd holding LOCK_EX on lock_path, or None if another open file holds it."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    # Read-only like flock(1): flock needs no write access, so a lock file we cannot write still works.
-    fd = os.open(lock_path, os.O_RDONLY | os.O_CREAT, 0o666)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(fd)
+        return oslock.try_lock(lock_path)
+    except oslock.Locked:
         return None
-    except BaseException:
-        os.close(fd)
-        raise
-    return fd
 
 
 def _spawn(cmd, fds, env):

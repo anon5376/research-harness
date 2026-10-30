@@ -16,6 +16,8 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 def start(run_dir, cwd, command, heavy=False, lease_cfg=None, python=sys.executable):
     """Start the runner detached (own session) and return its pid."""
+    if os.name == "nt":
+        raise NotImplementedError("local-shell jobs run on macOS and Linux only")
     run_dir, cwd = Path(run_dir), Path(cwd)
     run_dir.mkdir(parents=True, exist_ok=True)
     cwd.mkdir(parents=True, exist_ok=True)
@@ -50,7 +52,7 @@ def tail(run_dir, lines=5):
 
 
 def _alive(pid):
-    if not pid:
+    if os.name == "nt" or not pid:
         return False
     try:
         done, _ = os.waitpid(pid, os.WNOHANG)  # reap our own child if it exited

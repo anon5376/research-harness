@@ -21,6 +21,7 @@ def export_in_clone(repo, job_id, files, base, deleted=(), links=()):
     Returns (printed bundle text, the clone's own staged diff)."""
     clone = Path(base) / f"task-{job_id}"
     subprocess.run(["git", "clone", "-q", str(repo), str(clone)], check=True)
+    git(clone, "config", "core.autocrlf", "false")
     for rel, data in files.items():
         p = clone / rel
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -49,6 +50,7 @@ class BundleTest(unittest.TestCase):
         self.repo = self.base / "repo"
         self.repo.mkdir()
         git(self.repo, "init", "-q", "-b", "main")
+        git(self.repo, "config", "core.autocrlf", "false")
         git(self.repo, "config", "user.email", "t@example.com")
         git(self.repo, "config", "user.name", "t")
         git(self.repo, "config", "core.hooksPath", "/dev/null")
@@ -116,6 +118,7 @@ class BundleTest(unittest.TestCase):
         self.assertEqual([(f["path"], f["bytes"]) for f in header["large"]], [("runs/j1/big.bin", 70_000)])
         self.assertEqual(sorted(bundle.members(tgz)), ["runs/j1/RESULT.json"])
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: staged symlinks")
     def test_a_staged_symlink_is_refused(self):
         text, _ = export_in_clone(self.repo, "j1", {"runs/j1/RESULT.json": "{}"}, self.base,
                                   links=[("runs/j1/escape", "../../README.md")])
@@ -135,6 +138,7 @@ class BundleTest(unittest.TestCase):
         with self.assertRaisesRegex(BundleError, "stale input"):
             bundle.to_patch(dict(header, head="d" * 40), bundle.members(tgz), self.repo, self.sha, self.base / "w")
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: export prompt uses shell paths and sed")
     def test_follow_up_prints_pieces_under_the_output_cap_that_rejoin(self):
         files = {"runs/j1/RESULT.json": "{}", "runs/j1/a.bin": os.urandom(60_000), "runs/j1/b.bin": os.urandom(60_000)}
         _, expected = export_in_clone(self.repo, "j1", files, self.base)

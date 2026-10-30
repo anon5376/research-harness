@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 RH = [sys.executable, "-I", str(ROOT / "bin/rh")]
-FAKE = ROOT / "tests/fakes/codex"
+FAKE = ROOT / "tests/fakes" / ("codex.cmd" if os.name == "nt" else "codex")
 TASK = "task_e_" + "7" * 32
 
 
@@ -25,9 +25,10 @@ class CliTest(unittest.TestCase):
         base = Path(self.tmp.name)
         self.home, self.repo, origin = base / "home", base / "repo", base / "origin.git"
         self.env = {**os.environ, "RH_HOME": str(self.home), "FAKE_CODEX_STATE": str(base / "codex.json"),
-                    "FAKE_CODEX_LOG": str(base / "codex.log")}
+                    "FAKE_CODEX_LOG": str(base / "codex.log"), "RH_TEST_PYTHON": sys.executable}
         self.repo.mkdir()
         git(self.repo, "init", "-q", "-b", "main")
+        git(self.repo, "config", "core.autocrlf", "false")
         git(self.repo, "config", "user.email", "t@example.com")
         git(self.repo, "config", "user.name", "t")
         git(self.repo, "config", "core.hooksPath", "/dev/null")
@@ -35,6 +36,7 @@ class CliTest(unittest.TestCase):
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "base")
         subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+        git(origin, "config", "core.autocrlf", "false")
         git(self.repo, "remote", "add", "origin", str(origin))
         git(self.repo, "push", "-q", "origin", "main")
         self.sha = git(self.repo, "rev-parse", "HEAD").strip()
@@ -80,6 +82,7 @@ class CliTest(unittest.TestCase):
             "diff": {TASK: ok(diff)},
             "list": ok(json.dumps({"tasks": [], "cursor": None}))}))
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: detached local-shell jobs")
     def test_local_and_cloud_jobs_reach_typed_ends_with_receipts_and_one_inbox_view(self):
         result = {"job": "c1", "state": "done", "head": self.sha, "summary": "notes written",
                   "checks": [{"cmd": "true", "exit": 0}], "outputs": ["runs/c1/notes.md"], "refusals": []}

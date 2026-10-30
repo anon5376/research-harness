@@ -2,12 +2,12 @@
 
 research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and a job that ends gets exactly one typed state with a receipt. A job counts as done when it finishes and, if it names an acceptance check, that check passes on your machine.
 
-Status: [in progress] v0.7.3. Python 3.11+, standard library only. 313 tests pass: `python3 -I tests/run.py`. Windows support is partial: local-shell jobs refuse Windows, and lease admission fails closed there. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
+Status: [in progress] v0.8.0. Python 3.11+, standard library only. 323 tests pass: `python3 -I tests/run.py`. Windows support is partial: local-shell jobs refuse Windows, and lease admission fails closed there. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
 
 ## What it does
 
 - **Contracts.** A job is a TOML file: a brief, the capabilities it needs, the model and speed, and one acceptance command. Before launch the supervisor checks `needs` against `caps.toml` and the model against `policy.toml`.
-- **One supervisor.** `rh supervise` is the only launcher, one per `$RH_HOME`. It owns launch, stop and pause. A stop belongs to whoever set it, and only that owner lifts it.
+- **One supervisor.** `rh supervise` is the only launcher, one per `$RH_HOME`. It owns launch, stop and pause. A stop belongs to whoever set it, and only that owner lifts it. Cloud launches stay at least 60 s apart and at most 20 an hour (`min_gap_s` and `max_per_hour` under `[cloud]`), counted from the ledger. A ledger change or `touch $RH_HOME/wake` ends the supervisor's wait early.
 - **One ledger.** Every job, event and receipt is in one SQLite file. `rh status` shows all of it in one view.
 - **Typed endings.** Each job ends as `done`, `failed`, `blocked`, `capacity`, `truncated`, `aborted`, `no_result` or `cancelled`, with a receipt. A job that runs past its timeout is marked `stalled`, without a receipt, until it is harvested or stopped.
 - **Local acceptance.** A cloud job's output comes back as a patch or a checksummed bundle. Its acceptance command runs on your machine, and `rh land` commits an accepted result on the local branch `cloud/<job>`.

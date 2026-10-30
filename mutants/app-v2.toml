@@ -1,0 +1,178 @@
+[[mutant]]
+name = "script selects the v1 class .g-needs"
+file = "rh/dashboard.py"
+find = "e.key === 'i' && $('.s-g-needs a.item')) go($('.s-g-needs a.item').href"
+replace = "e.key === 'i' && $('.g-needs a.item')) go($('.g-needs a.item').href"
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "pause keeps the lock"
+file = "rh/serve.py"
+find = "                self._release()  # a check asked for while paused lets the lock go again"
+replace = "                pass"
+tests = ["tests.test_serve.ServeTest.test_the_app_checks_by_itself_under_the_supervisor_lock_and_pause_lets_it_go"]
+
+[[mutant]]
+name = "the loop never starts"
+file = "rh/serve.py"
+find = "            self.checks.start()"
+replace = "            pass"
+tests = ["tests.test_serve.ServeTest.test_the_app_checks_by_itself_under_the_supervisor_lock_and_pause_lets_it_go"]
+
+[[mutant]]
+name = "a job added in the terminal waits for the idle interval"
+file = "rh/serve.py"
+find = "        return bool(led and led.jobs(states={\"draft\"}))"
+replace = "        return False"
+tests = ["tests.test_serve.ServeTest.test_a_job_added_in_the_terminal_runs_to_done_with_no_request"]
+
+[[mutant]]
+name = "Check now takes a second lock instead of the loop"
+file = "rh/serve.py"
+find = "            elif path == \"/tick\" and loop:"
+replace = "            elif False:"
+tests = ["tests.test_serve.ServeTest.test_check_now_runs_through_the_apps_own_loop"]
+
+[[mutant]]
+name = "file route not confined to the job folder"
+file = "rh/serve.py"
+find = "            if not path.is_relative_to(root) or not path.is_file():"
+replace = "            if not path.is_file():"
+tests = ["tests.test_serve.ServeTest.test_a_finished_jobs_files_are_served_read_only_from_its_own_folder"]
+
+[[mutant]]
+name = "file list follows links"
+file = "rh/serve.py"
+find = "if p.is_file() and not p.is_symlink()"
+replace = "if p.is_file()"
+tests = ["tests.test_serve.ServeTest.test_a_finished_jobs_files_are_served_read_only_from_its_own_folder"]
+
+[[mutant]]
+name = "run again loses what it follows"
+file = "rh/serve.py"
+find = "    spec = {\"id\": new, **spec, \"revision\": revision, \"prior\": old,"
+replace = "    spec = {\"id\": new, **spec, \"revision\": revision, \"prior\": new,"
+tests = ["tests.test_serve.ServeTest.test_run_again_adds_the_next_revision_and_opens_it"]
+
+[[mutant]]
+name = "run again of an unfinished job"
+file = "rh/serve.py"
+find = "    if job[\"state\"] not in TERMINAL:"
+replace = "    if False:"
+tests = ["tests.test_serve.ServeTest.test_run_again_adds_the_next_revision_and_opens_it"]
+
+[[mutant]]
+name = "environment ID unchecked"
+file = "rh/serve.py"
+find = "        if not _ENV_ID.fullmatch(env):"
+replace = "        if not env:"
+tests = ["tests.test_serve.ServeTest.test_setup_saves_the_environment_and_closes_its_step"]
+
+[[mutant]]
+name = "setup step left open"
+file = "rh/serve.py"
+find = "                    for item in _open_setup_items(cfg):"
+replace = "                    for item in []:"
+tests = ["tests.test_serve.ServeTest.test_setup_saves_the_environment_and_closes_its_step"]
+
+[[mutant]]
+name = "checksum line pasted into the prompt"
+file = "rh/serve.py"
+find = "code, prompt, _ = _call(cfg, [\"cloud\", \"prompt\", \"--\", jid], split=True)"
+replace = "code, prompt = _call(cfg, [\"cloud\", \"prompt\", \"--\", jid])"
+tests = ["tests.test_serve.ServeTest.test_a_hand_launch_page_carries_the_prompt_to_paste"]
+
+[[mutant]]
+name = "a pasted link sent as the task id"
+file = "rh/serve.py"
+find = "        found = _TASK.search(task) if task.startswith((\"http://\", \"https://\")) else None"
+replace = "        found = None"
+tests = ["tests.test_serve.ServeTest.test_a_pasted_task_link_attaches_and_short_answers_get_a_default"]
+
+[[mutant]]
+name = "a failure stays in Needs you for ever"
+file = "rh/dashboard.py"
+find = "                        and (not _number(ended) or ctx[\"now\"] - ended < _FAILURE_WINDOW))"
+replace = "                        )"
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "a rerun does not clear the failure"
+file = "rh/dashboard.py"
+find = "and self.id not in ctx[\"followed\"]"
+replace = ""
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "Codex cloud is the default before it is set up"
+file = "rh/dashboard.py"
+find = "    kind = draft.get(\"kind\") or (\"codex-cloud\" if ready else \"local-shell\")"
+replace = "    kind = draft.get(\"kind\") or \"codex-cloud\""
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "the Codex link can reach back into the app"
+file = "rh/dashboard.py"
+find = "target=\"_blank\" rel=\"noopener noreferrer\">{label}"
+replace = "target=\"_blank\">{label}"
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "the status line claims checks while paused"
+file = "rh/dashboard.py"
+find = "        word, dot, more = \"Checks paused\", \"warn\""
+replace = "        word, dot, more = \"Checking automatically\", \"warn\""
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "the file link is not quoted"
+file = "rh/dashboard.py"
+find = "\"/file?p=\" + quote(path) +"
+replace = "\"/file?p=\" + path +"
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "the snapshot gets the ask forms"
+file = "rh/dashboard.py"
+find = "    if not ctx[\"live\"] and not _setup_item(item, ctx[\"ready\"]):"
+replace = "    if False:"
+tests = ["tests.test_dashboard"]
+[[mutant]]
+name = "receipt shows the space-joined command"
+file = "rh/dashboard.py"
+find = "        checks = [dict(c, cmd=shlex.join(argv)) if c.get(\"cmd\") == \" \".join(argv) else c for c in checks]"
+replace = "        pass"
+tests = ["tests.test_dashboard"]
+
+[[mutant]]
+name = "Details shows the space-joined command"
+file = "rh/dashboard.py"
+find = "_text(shlex.join(map(str, spec[\"command\"])))"
+replace = "_text(\" \".join(map(str, spec[\"command\"])))"
+tests = ["tests.test_dashboard"]
+[[mutant]]
+name = "the list's setup row leads back home"
+file = "rh/dashboard.py"
+find = "        target = next((j for j in jobs if j.setup), None) if setup else None\n        link"
+replace = "        target = None\n        link"
+tests = ["tests.test_dashboard.DashboardTest.test_cloud_setup_is_one_tap_from_the_job_list"]
+
+[[mutant]]
+name = "the home setup row is not marked as listed"
+file = "rh/dashboard.py"
+find = ", listed=target and target.id)))"
+replace = ")))"
+tests = ["tests.test_dashboard.DashboardTest.test_cloud_setup_is_one_tap_from_the_job_list"]
+[[mutant]]
+name = "a failure in Needs you keeps the amber of a question"
+file = "rh/dashboard.py"
+find = "        dot = \"bad\" if self.failure else self.tone if self.group != \"needs\" else \"warn\""
+replace = "        dot = self.tone if self.group != \"needs\" else \"warn\""
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_needs_you_until_it_is_run_again_or_a_day_passes"]
+
+[[mutant]]
+name = "the title cuts an ordinary first sentence at 64 characters again"
+file = "rh/dashboard.py"
+find = "    if len(line) > 100:\n        line = line[:98]"
+replace = "    if len(line) > 64:\n        line = line[:62]"
+tests = ["tests.test_dashboard.DashboardTest.test_job_page_is_a_transcript_that_ends_in_its_receipt"]

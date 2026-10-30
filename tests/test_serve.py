@@ -4,21 +4,50 @@ import html
 from html.parser import HTMLParser
 import importlib
 import io
+import json
 import os
 from pathlib import Path
 import socket
 import subprocess
 import tempfile
+import sys
 import threading
+import time
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from rh import config, dashboard
+from rh import config, contract, dashboard, oslock
 from rh.ledger import Ledger
+from rh.supervisor import AlreadyRunning, single_instance
 from tests.test_bundle import export_in_clone
+
+SETUP = "create and publish the cloud environment (rh env spec), then rh config set cloud.env_id <ID>"
+
+
+def until(ready, timeout=10):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if ready():
+            return True
+        time.sleep(.02)
+    return ready()
+
+
+class FakeSupervisor:
+    """Counts what the app's check loop asks of a supervisor."""
+    led = None
+
+    def __init__(self):
+        self.ticks = self.recovered = 0
+
+    def recover(self):
+        self.recovered += 1
+
+    def tick(self):
+        self.ticks += 1
 
 
 class NoRedirect(HTTPRedirectHandler):
@@ -68,7 +97,9 @@ class ServeTest(unittest.TestCase):
         config.set_value("notify.command", "[]", self.home)
         self.cfg = config.load(self.home)
         self.token = "serve-test-key"
-        self.server, self.url = self.serve.make_server(self.cfg, token=self.token)
+        # The shared server runs no check loop, so a test sees only the states it set; the loop's own tests
+        # start a second server with one.
+        self.server, self.url = self.serve.make_server(self.cfg, token=self.token, checks=False)
         self.addCleanup(self.server.server_close)
         self.thread = threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": .01})
         self.thread.start()
@@ -102,7 +133,20 @@ class ServeTest(unittest.TestCase):
                 led.set_state("web-job", "launching", route="codex-cloud")
                 led.set_state("web-job", state)
 
-    def request(self, path="/", fields=None, *, token=True, headers=None, raw=None, method=None):
+    def served(self, **kwargs):
+        """A second app on this home with its own check loop, serving until the test ends."""
+        server, _ = self.serve.make_server(self.cfg, token=self.token, **kwargs)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": .01})
+        thread.start()
+
+        def stop():
+            server.shutdown()
+            thread.join(timeout=5)
+            server.server_close()
+        self.addCleanup(stop)
+        return server, f"http://127.0.0.1:{server.server_port}", stop
+
+    def request(self, path="/", fields=None, *, token=True, headers=None, raw=None, method=None, origin=None):
         headers = dict(headers or {})
         if fields is not None or raw is not None:
             if raw is None:
@@ -114,7 +158,7 @@ class ServeTest(unittest.TestCase):
             method = method or "POST"
         elif token:
             path += ("&" if "?" in path else "?") + urlencode({"t": self.token})
-        req = Request(self.origin + path, data=raw, headers=headers, method=method)
+        req = Request((origin or self.origin) + path, data=raw, headers=headers, method=method)
         try:
             response = self.opener.open(req, timeout=5)
         except HTTPError as error:
@@ -128,8 +172,9 @@ class ServeTest(unittest.TestCase):
             self.assertEqual(self.request(path + "?t=wrong", token=False)[0], 403)
         code, _, page = self.request()
         self.assertEqual(code, 200)
-        for heading in ("Needs you", "Running", "Queued", "Done", "Today"):
+        for heading in ("Needs you", "Running", "Queued", "Done"):
             self.assertIn(f">{heading}</h2>", page)
+        self.assertIn(">What should run?</h1>", page)
         self.assertIn('/actions?t=serve-test-key', page)
         self.assertIn('/new?t=serve-test-key', page)
         self.assertIn('<noscript><meta http-equiv="refresh" content="30"></noscript>', page)
@@ -355,12 +400,12 @@ class ServeTest(unittest.TestCase):
         code, _, page = self.request("/job/scan-local")
         self.assertEqual(code, 200)
         self.assertIn('data-open="job:scan-local"', page)
-        self.assertIn("Scan the &lt;listings&gt;.", page)
+        self.assertIn("<h1 tabindex=\"-1\">Scan the &lt;listings&gt;</h1>", page)
         self.assertIn("python3 scan.py", page)
         self.assertIn("last &lt;line&gt; \ufffd", page)  # the tail, escaped, with undecodable bytes replaced
         self.assertIn("line 399", page)
         self.assertNotIn("line 199\n", page)  # only the last 200 lines
-        self.assertIn("Added, to run on This machine", page)
+        self.assertIn("Added to run on this machine", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)
         self.assertIn("No job named ghost", page)
@@ -385,6 +430,7 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(len(list((self.home / "uploads").glob("lit-scan-03-*.toml"))), 1)
         page = self.request("/job/lit-scan-03")[2]
         self.assertIn("added lit-scan-03 (codex-cloud)", page)
+        self.assertIn('data-say="Added lit-scan-03."', page)
         self.assertNotIn("added lit-scan-03 (codex-cloud)", self.request("/job/lit-scan-03")[2])
         # A local job's command is split like a shell line and reaches the contract as argv.
         local = {"id": "say-hi", "kind": "local-shell", "brief": "Say hi.", "command": "python3 -c \"print('hi there')\"",
@@ -466,3 +512,186 @@ class ServeTest(unittest.TestCase):
                 browser.assert_not_called()
             with socket.socket() as probe:
                 probe.bind(("127.0.0.1", urlsplit(printed).port))
+
+    def finished_local(self, jid, state="done", detail="command and gate exited 0"):
+        spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Count the words.",
+                                   "command": ["wc", "-w", "notes.md"]})
+        with self.ledger() as led:
+            led.add_job(spec)
+            for step in ("ready", "launching", "running"):
+                led.set_state(jid, step)
+            led.finish(jid, state, {"route": "local-shell", "checks": [], "model_requested": None,
+                                    "model_served": None, "ended": time.time(), "detail": detail})
+        return spec
+
+    def test_the_app_checks_by_itself_under_the_supervisor_lock_and_pause_lets_it_go(self):
+        # A loop that waits for a page, ticks beside rh supervise, keeps the lock while paused or after the app
+        # quits, or a status line that hides who checks, must fail.
+        (self.home / "supervisor.json").write_text(json.dumps({"pid": 4242, "ts": time.time()}))  # as rh supervise writes it
+        fake = FakeSupervisor()
+        with patch.object(self.serve, "_RETRY", .05):
+            _, origin, stop = self.served(supervisor=lambda: fake)
+            self.assertTrue(until(lambda: fake.ticks >= 1))  # no page was asked for
+            self.assertEqual(fake.recovered, 1)
+            with self.assertRaises(AlreadyRunning):
+                single_instance(self.home)
+            self.assertIn("Checking automatically", self.request(origin=origin)[2])
+            self.assertEqual(self.request("/checks", {"on": "0"}, origin=origin)[0], 303)
+            self.assertIn("Checks paused", self.request(origin=origin)[2])
+            self.assertTrue(until(lambda: self.lock_is_free()))  # Pause leaves the lock to rh supervise
+            fd = single_instance(self.home)
+            try:
+                self.assertEqual(self.request("/checks", {"on": "1"}, origin=origin)[0], 303)
+                ticks = fake.ticks
+                time.sleep(.3)
+                self.assertEqual(fake.ticks, ticks)  # rh supervise holds it: the app does not tick
+                page = self.request(origin=origin)[2]
+                self.assertIn("Checked by rh supervise (process 4242)", page)
+                self.assertNotIn('action="/checks"', page)
+                # Check now says who is checking instead of ticking beside it.
+                self.assertEqual(self.request("/tick", {}, origin=origin)[0], 303)
+                page = self.request(origin=origin)[2]
+                self.assertIn('data-code="1"', page)
+                self.assertIn("rh supervise (process 4242) is checking this harness.", page)
+                self.assertEqual(fake.ticks, ticks)
+            finally:
+                oslock.unlock(fd)
+            self.assertTrue(until(lambda: fake.ticks > ticks))  # and takes over once rh supervise stops
+            stop()
+        self.assertTrue(self.lock_is_free())  # quitting the app lets the lock go
+
+    def lock_is_free(self):
+        try:
+            fd = single_instance(self.home)
+        except AlreadyRunning:
+            return False
+        oslock.unlock(fd)
+        return True
+
+    def test_check_now_runs_through_the_apps_own_loop(self):
+        # Check now taking a second lock (and failing against the app's own), or not waiting for its pass, must fail.
+        fake = FakeSupervisor()
+        _, origin, _ = self.served(supervisor=lambda: fake)
+        self.assertTrue(until(lambda: fake.ticks >= 1))
+        before = fake.ticks
+        self.assertEqual(self.request("/tick", {}, origin=origin)[0], 303)
+        self.assertEqual(fake.ticks, before + 1)
+        self.assertIn('data-say="Checked."', self.request(origin=origin)[2])
+        # Paused, Check once still checks, then leaves the lock free again.
+        self.request("/checks", {"on": "0"}, origin=origin)
+        self.assertEqual(self.request("/tick", {}, origin=origin)[0], 303)
+        self.assertEqual(fake.ticks, before + 2)
+        self.assertTrue(self.lock_is_free())
+        # A server without the loop has no switch to offer.
+        self.assertEqual(self.request("/checks", {"on": "0"})[0], 404)
+
+    def test_a_job_added_in_the_terminal_runs_to_done_with_no_request(self):
+        # The founder's first complaint: a job that does not move until someone presses Check now must fail.
+        job = self.base / "say.toml"
+        job.write_text(self.serve._toml({"id": "say-hi", "kind": "local-shell", "brief": "Write hi to hi.txt.",
+                                         "command": [sys.executable, "-c", "open('hi.txt', 'w').write('hi')"],
+                                         "accept": "test -s hi.txt"}))
+        with patch.object(self.serve, "_BUSY", .1), patch.object(self.serve, "_FAST", .1):
+            server, _, _ = self.served()
+            # Added after the loop's first idle check, so without the wake-up it waits out the 60 s interval.
+            self.assertTrue(until(lambda: server.checks.last is not None, 10), server.checks.state())
+            code, output = self.serve._call(self.cfg, ["job", "add", "--", str(job)])
+            self.assertEqual(code, 0, output)
+            with self.ledger() as led:
+                self.assertTrue(until(lambda: led.job("say-hi")["state"] == "done", 30),
+                                (led.job("say-hi")["state"], led.job("say-hi")["detail"], server.checks.state(),
+                                 server.checks.thread.is_alive()))
+        self.assertEqual((self.home / "runs" / "say-hi" / "hi.txt").read_text(), "hi")
+        page = self.request("/job/say-hi")[2]
+        self.assertIn("Files in runs/say-hi/", page)
+        self.assertIn('/job/say-hi/file?p=hi.txt', page)
+
+    def test_run_again_adds_the_next_revision_and_opens_it(self):
+        # A rerun that overwrites the old job, drops what changed, or lets an unfinished job run twice must fail.
+        old = self.finished_local("count-words", "failed", "command exited 2")
+        code, headers, _ = self.request("/again", {"job": "count-words", "changed": "also count blank lines",
+                                                   "next": "/job/count-words"})
+        self.assertEqual((code, headers["Location"]), (303, "/job/count-words-r2?t=" + self.token))
+        with self.ledger() as led:
+            new = led.job("count-words-r2")["spec"]
+            self.assertEqual(led.job("count-words")["state"], "failed")
+        self.assertEqual((new["revision"], new["prior"], new["changed"]), (2, "count-words", "also count blank lines"))
+        self.assertEqual(new["brief"], "Count the words.\n\nFollow-up: also count blank lines")
+        self.assertEqual((new["write_root"], new["command"]), ("runs/count-words-r2/", old["command"]))
+        self.assertIn('data-say="Added count-words-r2, the next run of count-words."',
+                      self.request("/job/count-words-r2")[2])
+        self.request("/again", {"job": "count-words", "changed": ""})
+        with self.ledger() as led:
+            third = led.job("count-words-r3")["spec"]
+        self.assertEqual((third["changed"], third["brief"]), ("run again with no changes", "Count the words."))
+        self.local_job("busy-one", "running")
+        code, headers, _ = self.request("/again", {"job": "busy-one", "changed": "", "next": "/job/busy-one"})
+        self.assertEqual(headers["Location"], "/job/busy-one?t=" + self.token)
+        self.assertIn("only a finished job can run again", self.request("/job/busy-one")[2])
+        with self.ledger() as led:
+            self.assertIsNone(led.job("busy-one-r2"))
+
+    def test_setup_saves_the_environment_and_closes_its_step(self):
+        # An environment ID that reaches the config unchecked, or a setup step left open after it is done, must fail.
+        with self.ledger() as led:
+            led.inbox_add("operator-step", SETUP, detail="cloud jobs wait for it")
+        self.request("/setup", {"env_id": "env 1; rm -rf ~"})
+        self.assertIn('data-say="Codex cloud was not set up."', self.request()[2])
+        for bad in ("", "x" * 129, "../env"):
+            self.request("/setup", {"env_id": bad})
+        self.assertEqual(config.load(self.home)["cloud"]["env_id"], "")
+        self.assertEqual(self.request("/setup", {"env_id": " env_6a1-b.c:2 "})[0], 303)
+        self.assertEqual(config.load(self.home)["cloud"]["env_id"], "env_6a1-b.c:2")
+        self.assertEqual(self.cfg["cloud"]["env_id"], "env_6a1-b.c:2")  # the running loop sees it without a restart
+        with self.ledger() as led:
+            self.assertEqual(led.inbox(), [])
+            self.assertEqual(led.inbox(False)[0]["resolution"], "environment ID set in the app")
+
+    def test_a_finished_jobs_files_are_served_read_only_from_its_own_folder(self):
+        # A file route that reads outside the job's folder, follows a link out of it, or serves bytes as text
+        # must fail.
+        self.finished_local("made-notes")
+        root = self.home / "runs" / "made-notes"
+        (root / "sub").mkdir(parents=True)
+        (root / "notes.md").write_text("hello <b>\n")
+        (root / "sub" / "data.txt").write_text("1,2\n")
+        (root / "blob.bin").write_bytes(b"\xff\xfe\x00")
+        (self.base / "secret.txt").write_text("secret")
+        (root / "leak.txt").symlink_to(self.base / "secret.txt")
+        page = self.request("/job/made-notes")[2]
+        for shown in ("notes.md", "sub/data.txt", "blob.bin", "hello &lt;b&gt;"):
+            self.assertIn(shown, page)
+        self.assertNotIn("leak.txt", page)
+        code, headers, body = self.request("/job/made-notes/file?p=notes.md")
+        self.assertEqual((code, headers["Content-Type"], body), (200, "text/plain; charset=utf-8", "hello <b>\n"))
+        self.assertTrue(headers["Content-Security-Policy"].startswith("default-src 'none'"))
+        self.assertEqual(self.request("/job/made-notes/file?p=sub/data.txt")[2], "1,2\n")
+        for path in ("../../../secret.txt", "leak.txt", "missing.txt", "sub", ""):
+            with self.subTest(path=path):
+                self.assertEqual(self.request("/job/made-notes/file?" + urlencode({"p": path}))[0], 404)
+        self.assertEqual(self.request("/job/made-notes/file?p=blob.bin")[0], 415)
+        self.assertEqual(self.request("/job/made-notes/file?p=notes.md&p=sub/data.txt")[0], 404)
+        self.assertEqual(self.request("/job/made-notes/file?p=notes.md", token=False)[0], 403)
+        self.assertEqual(self.request("/job/ghost/file?p=notes.md")[0], 404)
+
+    def test_a_pasted_task_link_attaches_and_short_answers_get_a_default(self):
+        # A pasted link refused as a task id, or a reversible step that demands an essay, must fail.
+        self.job()
+        task = "task_e_" + "9" * 32
+        self.request("/attach", {"job": "web-job", "task_id": f" https://chatgpt.com/codex/tasks/{task}?tab=diff "})
+        with self.ledger() as led:
+            self.assertEqual(led.job("web-job")["external_id"], task)
+            item, _ = led.inbox_add("operator-step", "sign the form")
+        self.request("/inbox/resolve", {"id": str(item), "note": "  "})
+        self.request("/stop", {"job": "web-job", "pause": "on", "reason": ""})
+        with self.ledger() as led:
+            self.assertEqual(led.inbox(False)[-1]["resolution"], "done in the app")
+            self.assertEqual([s["reason"] for s in led.active_stops()], ["paused from the app"])
+
+    def test_a_hand_launch_page_carries_the_prompt_to_paste(self):
+        # A launch page without the prompt, or with the CLI's checksum line pasted into it, must fail.
+        self.job()
+        page = self.request("/job/web-job")[2]
+        self.assertIn("research-harness job web-job", page)
+        self.assertNotIn("paste once; compare before sending", page)
+        self.assertIn('href="https://chatgpt.com/codex" target="_blank" rel="noopener noreferrer"', page)

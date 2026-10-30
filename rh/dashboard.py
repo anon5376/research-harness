@@ -1,67 +1,67 @@
-"""The app. With a token it is the live page `rh serve` sends: a sidebar of jobs grouped by what they need, and a
-pane for the open job (what it was asked, its questions, result, output and timeline, with its actions), for the
-overview, or for the New job composer when the server can add jobs. One same-origin script, SCRIPT (served at
-/app.js), keeps it live, moves between jobs without reloading and turns submits into in-place updates; without it
-every link and form still works. Without a token it is the static snapshot `rh status --html` writes: the overview
-and the job lists, with no script and no controls."""
+"""The app. With a token it is the live page `rh serve` sends: a sidebar listing the jobs by what they need, beside a
+composer that starts a job, or the open job read as a transcript: what it was asked, what happened, its live output,
+what it needs from you, and the receipt it ends on, with its files. One same-origin script, SCRIPT (served at /app.js),
+keeps it live, moves between jobs without reloading and turns submits into in-place updates; without it every link
+and form still works. Without a token it is the static snapshot `rh status --html` writes: the overview and the job
+lists, with no script and no controls."""
 import re
+import shlex
 import zlib
-from html import escape, unescape
+from html import escape
+from urllib.parse import quote
 
 
-# The sidebar sits on a tinted frame; the open pane is one sheet beside it. Colours are tokens; tests/test_dashboard.py
-# computes each text pair's contrast. Motion uses transform and opacity only.
+# One plane: the sidebar on a tinted ground beside a white page. Colours are tokens; tests/test_dashboard.py computes
+# each text pair's contrast. Blue marks what is live; amber what needs you. Motion uses transform and opacity only.
 _STYLE = """
 :root {
   color-scheme: light dark;
-  --frame: #eaeef0;
-  --hover: #dfe4e7;
-  --sheet: #ffffff;
-  --raised: #f4f6f7;
-  --border: #e0e5e8;
-  --rule: #edf0f2;
-  --control: #c3cad0;
-  --ink: #131416;
-  --muted: #5a5f65;
-  --accent: #1b6c80;
-  --on-accent: #ffffff;
-  --neutral-bg: #eceef0;
-  --neutral-ink: #363a3e;
-  --active-bg: #e0f0f3;
-  --active-ink: #145566;
-  --good-bg: #dcf4e4;
-  --good-ink: #155a33;
-  --warn-bg: #fcf1d4;
-  --warn-ink: #774500;
-  --bad-bg: #fde8e6;
-  --bad-ink: #8e1e1e;
-  --shade: rgba(16, 24, 32, .16);
+  --ground: #f8f8f8;
+  --hover: #eeeeee;
+  --surface: #ffffff;
+  --raised: #f4f4f4;
+  --border: #e6e6e6;
+  --rule: #f0f0f0;
+  --control: #d4d4d4;
+  --ink: #0a0a0a;
+  --muted: #6b6b6b;
+  --primary: #141414;
+  --on-primary: #ffffff;
+  --live: #1d5fbf;
+  --good: #2b7a2f;
+  --warn: #8a5300;
+  --bad: #c4242a;
+  --on-bad: #ffffff;
+  --live-bg: #edf3fc;
+  --good-bg: #edf6ee;
+  --warn-bg: #fbf4e6;
+  --bad-bg: #fdeeee;
+  --shade: rgba(0, 0, 0, .12);
   --ease: cubic-bezier(.2, .8, .2, 1);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --frame: #0e1011;
-    --hover: #1b1e20;
-    --sheet: #17191b;
-    --raised: #1f2224;
-    --border: #2a2e31;
-    --rule: #222628;
-    --control: #464c51;
-    --ink: #eceeef;
-    --muted: #a2a8ad;
-    --accent: #5cb3c7;
-    --on-accent: #0b1a1e;
-    --neutral-bg: #272a2d;
-    --neutral-ink: #c9cdd1;
-    --active-bg: #113039;
-    --active-ink: #8fd1e1;
-    --good-bg: #13301f;
-    --good-ink: #8ed6a9;
-    --warn-bg: #382a0b;
-    --warn-ink: #efc66a;
-    --bad-bg: #3c1b1b;
-    --bad-ink: #f3a4a4;
-    --shade: rgba(0, 0, 0, .55);
+    --ground: #0e0e0e;
+    --hover: #1f1f1f;
+    --surface: #161616;
+    --raised: #1f1f1f;
+    --border: #2b2b2b;
+    --rule: #232323;
+    --control: #404040;
+    --ink: #ededed;
+    --muted: #a3a3a3;
+    --primary: #f0f0f0;
+    --on-primary: #121212;
+    --live: #86b4ff;
+    --good: #7cc782;
+    --warn: #e9b35a;
+    --bad: #ff8f87;
+    --on-bad: #1c0605;
+    --live-bg: #16233a;
+    --good-bg: #152516;
+    --warn-bg: #2f2410;
+    --bad-bg: #351818;
+    --shade: rgba(0, 0, 0, .6);
   }
 }
 * { box-sizing: border-box; }
@@ -69,13 +69,12 @@ _STYLE = """
 html { height: 100%; }
 body {
   margin: 0;
-  min-height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: var(--frame);
+  height: 100%;
+  background: var(--surface);
   color: var(--ink);
   font: 14px/20px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   overflow-wrap: anywhere;
+  -webkit-text-size-adjust: 100%;
 }
 p, ul, ol, h1, h2, h3, pre, dl, dd, figure, fieldset { margin: 0; }
 ul, ol { list-style: none; padding: 0; }
@@ -83,296 +82,331 @@ fieldset { padding: 0; border: 0; min-width: 0; }
 a { color: inherit; }
 code, kbd, pre, .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 code { font-size: 12px; }
-.bar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 52px; padding: 8px 16px; }
-.mark { position: relative; flex: none; width: 22px; height: 22px; border-radius: 6px; background: var(--accent); }
-.mark::before, .mark::after { content: ""; position: absolute; left: 5px; height: 2px; border-radius: 1px; background: var(--on-accent); }
-.mark::before { top: 7px; width: 12px; }
-.mark::after { top: 13px; width: 7px; }
-h1 { margin-right: 4px; font-size: 15px; line-height: 20px; font-weight: 600; }
-.health { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
-.chip { display: inline-flex; align-items: center; gap: 7px; max-width: 100%; min-height: 28px; padding: 4px 11px;
-  border-radius: 999px; background: var(--neutral-bg); color: var(--neutral-ink); font-size: 13px; line-height: 20px; font-weight: 500; }
-.chip > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.chip > i.t-good { background: var(--good-ink); }
-.chip > i.beat { background: var(--accent); }
-.chip.warn > i.beat { background: currentColor; animation: none; }
-summary.chip { cursor: pointer; list-style: none; user-select: none; }
-summary.chip::-webkit-details-marker { display: none; }
-summary.chip:hover { box-shadow: inset 0 0 0 1px var(--control); }
-.chip .when { color: inherit; font-size: inherit; }
-.tools { display: flex; align-items: center; gap: 12px; margin-left: auto; }
-.tools > * { flex: none; white-space: nowrap; }
-.live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
-.live i { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
-.live[data-state="off"] i, .live[data-state="ended"] i { background: var(--bad-ink); }
-.app { flex: 1; display: grid; grid-template-columns: 18.5rem minmax(0, 1fr); min-height: 0; padding: 0 8px 8px 0; }
-.side { display: flex; flex-direction: column; gap: 20px; min-width: 0; padding: 4px 10px 20px 12px; }
-.pane { position: relative; min-width: 0; background: var(--sheet); border: 1px solid var(--border); border-radius: 14px; }
+:focus-visible { outline: 2px solid var(--live); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.soft { color: var(--muted); }
+
+/* The shell: the brand and the new-job link, the job list, and the check status stacked in the sidebar; the page beside it. */
+.app { display: grid; grid-template-columns: 256px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas: "top pane" "side pane" "foot pane"; height: 100vh; height: 100dvh; }
+.side-top, .side, .checks { background: var(--ground); border-right: 1px solid var(--border); }
+.side-top { grid-area: top; display: grid; gap: 12px; padding: 14px 12px 6px; }
+.side { grid-area: side; overflow-y: auto; padding: 0 8px 16px; }
+.checks { grid-area: foot; display: grid; gap: 8px; padding: 12px 16px 14px; border-top: 1px solid var(--border); }
+.pane { grid-area: pane; overflow-y: auto; }
 .pane:focus { outline: none; }
-.page { display: grid; align-content: start; gap: 28px; max-width: 50rem; margin: 0 auto; padding: 28px 32px 56px; }
-.side-top { display: grid; gap: 2px; }
-.btn.new { justify-content: space-between; width: 100%; height: 36px; margin-bottom: 8px; padding: 0 12px; font-size: 14px; }
-.btn.new kbd { border-color: transparent; background: rgba(255, 255, 255, .18); color: inherit; }
-.side .head { display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; padding: 0 8px; }
-.side h2 { font-size: 12px; line-height: 18px; font-weight: 600; color: var(--muted); }
-.side .count { font-size: 12px; }
-.side .rows { display: grid; gap: 1px; border: 0; border-radius: 0; }
-.side .row { display: block; padding: 0; border: 0; border-radius: 8px; }
-.side .empty { padding: 2px 8px; border: 0; color: var(--muted); font-size: 13px; }
-.item { display: grid; grid-template-columns: 8px minmax(0, 1fr); align-items: center; column-gap: 10px; padding: 7px 8px;
-  border-radius: 8px; text-decoration: none; color: inherit; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 4px; font-weight: 600; }
+.mark { position: relative; flex: none; width: 20px; height: 20px; border-radius: 5px; background: var(--primary); }
+.mark::before, .mark::after { content: ""; position: absolute; left: 4px; height: 2px; border-radius: 1px;
+  background: var(--on-primary); }
+.mark::before { top: 6px; width: 12px; }
+.mark::after { top: 12px; width: 7px; }
+.btn.new { justify-content: flex-start; width: 100%; }
+.btn.new .plus { font-size: 18px; line-height: 1; font-weight: 400; }
+
+/* The job list. */
+.group { margin-top: 22px; }
+.group .head { display: flex; align-items: baseline; gap: 8px; padding: 0 8px 4px; }
+.group h2 { font-size: 12px; line-height: 16px; font-weight: 600; color: var(--muted); }
+.count { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.s-g-needs .count { color: var(--warn); font-weight: 600; }
+.side-empty { padding: 16px 8px; color: var(--muted); }
+.item { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; column-gap: 10px; align-items: baseline;
+  padding: 6px 8px; border-radius: 6px; text-decoration: none; }
 a.item:hover { background: var(--hover); }
-a.item:focus { outline: none; }
-a.item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-a.item[aria-current="page"] { background: var(--sheet); box-shadow: 0 0 0 1px var(--border); }
-.item > i { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
-.item .name, .item .sub { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.item .name { color: var(--ink); font-weight: 500; }
-.item .sub { grid-column: 2; color: var(--muted); font-size: 13px; line-height: 18px; }
-.g-needs .item .sub { color: var(--warn-ink); }
-.item .tally { margin-left: 6px; font-size: 12px; font-weight: 600; color: var(--warn-ink); }
-.home-item { grid-template-columns: minmax(0, 1fr) auto; }
-.side-foot { margin-top: auto; padding: 0 8px; }
-.side-foot a { color: var(--muted); font-size: 13px; }
-.side-foot a:hover { color: var(--ink); }
-section { min-width: 0; }
-.page > section > .head, .s-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin-bottom: 12px; }
-.page h2 { font-size: 15px; line-height: 20px; font-weight: 600; }
-.page .s-needs h2, .page .job-name, .s-compose h2 { font-size: 22px; line-height: 28px; letter-spacing: -0.015em; }
-.count { color: var(--muted); font-size: 13px; font-variant-numeric: tabular-nums; }
-.s-needs .count.warn { align-self: center; min-width: 22px; padding: 0 7px; border-radius: 999px; text-align: center; font-weight: 600; line-height: 22px; }
-.rows { border: 1px solid var(--border); border-radius: 12px; }
-.row { position: relative; isolation: isolate; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start;
-  column-gap: 16px; padding: 12px 16px; border-top: 1px solid var(--rule); }
-.row:first-child { border-top: 0; border-radius: 12px 12px 0 0; }
-.row:last-child { border-radius: 0 0 12px 12px; }
-.row:only-child { border-radius: 12px; }
-.row::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: var(--flash, var(--active-bg)); opacity: 0; pointer-events: none; }
-.row:focus-within, .row:has(details[open]) { z-index: 3; }
-.cards { display: grid; gap: 10px; border: 0; border-radius: 0; }
-.cards > .row { display: block; padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--sheet); }
-.moving { z-index: 5; background: var(--sheet); border-radius: 12px; box-shadow: 0 10px 28px var(--shade); }
-.row:focus { outline: none; }
-.cell { min-width: 0; }
-.row > .acts { justify-content: flex-end; }
-.need { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 10px 20px; }
-.need + .need { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--rule); }
-.need > .acts { justify-content: flex-end; }
-.ask { font-size: 16px; line-height: 22px; font-weight: 600; }
-.say .detail { margin-top: 3px; white-space: pre-wrap; }
-.say .when { display: block; margin-top: 4px; }
-.say .cli { margin-top: 6px; color: var(--muted); }
-.about { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 14px; padding-top: 12px;
-  border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
-.about > .acts { margin-left: auto; }
-.about > .what::before, .about > .task::before { content: "·"; margin-right: 8px; }
-.name { color: var(--ink); font-weight: 600; }
-.state { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; white-space: nowrap; }
-.state i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
-.t-active { color: var(--active-ink); } .t-good { color: var(--good-ink); } .t-warn { color: var(--warn-ink); }
-.t-bad { color: var(--bad-ink); } .t-neutral { color: var(--muted); }
-.what { white-space: pre-wrap; }
-.hold { margin-top: 8px; color: var(--warn-ink); }
-.hold b { font-weight: 600; }
-.soft, .when, .meta { color: var(--muted); font-size: 13px; }
-.when, .count { font-variant-numeric: tabular-nums; }
-.row[data-tone="good"] { --flash: var(--good-bg); } .row[data-tone="warn"] { --flash: var(--warn-bg); }
-.row[data-tone="bad"] { --flash: var(--bad-bg); } .row[data-tone="neutral"] { --flash: var(--neutral-bg); }
-.active { background: var(--active-bg); color: var(--active-ink); }
-.good { background: var(--good-bg); color: var(--good-ink); }
-.warn { background: var(--warn-bg); color: var(--warn-ink); }
-.bad { background: var(--bad-bg); color: var(--bad-ink); }
-.state.t-active i, .item > i.t-active, .beat { animation: pulse 1.8s ease-in-out infinite; }
-.empty { display: grid; gap: 4px; padding: 14px 16px; border: 1px dashed var(--control); border-radius: 12px; }
-.empty .soft { font-size: 14px; }
-.s-needs .empty { padding: 18px 20px; border: 1px solid var(--border); background: var(--raised); }
-.steps { display: grid; gap: 12px; margin-top: 10px; counter-reset: step; }
-.steps li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 2px 10px; counter-increment: step; }
-.steps li::before { content: counter(step); grid-row: span 2; width: 24px; height: 24px; border-radius: 50%; background: var(--sheet);
-  border: 1px solid var(--control); text-align: center; font: 600 12px/22px system-ui, sans-serif; }
-.steps b { font-weight: 600; }
-.tallies { display: flex; flex-wrap: wrap; gap: 8px 28px; color: var(--muted); }
-.tallies b { color: var(--ink); font-size: 20px; line-height: 28px; font-weight: 500; font-variant-numeric: tabular-nums; margin-right: 6px; }
-.back { justify-self: start; color: var(--muted); font-size: 13px; text-decoration: none; }
-.job-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 8px 20px; }
-.facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; color: var(--muted); font-size: 13px; }
-.facts > * + *::before { content: "·"; margin-right: 8px; color: var(--muted); }
-.ask-card { display: grid; gap: 12px; padding: 16px 18px; border-radius: 12px; background: var(--warn-bg); color: var(--ink); }
-.ask-card .label { color: var(--warn-ink); font-size: 12px; font-weight: 600; }
-.ask-card .soft, .ask-card .when { color: var(--muted); }
-.ask-card .need { grid-template-columns: minmax(0, 1fr); }
-.ask-card .need > .acts { display: grid; justify-content: stretch; gap: 10px; }
-.ask-card .need > .acts > .act { justify-self: start; }
-.answer { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 8px 10px; }
-.answer label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
-.answer .note { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
-.answer textarea { min-height: 5rem; }
-.answer + .answer { margin-top: 4px; }
-input[type="text"], textarea { width: 100%; padding: 7px 10px; border: 1px solid var(--control); border-radius: 8px;
-  background: var(--sheet); color: var(--ink); font: 14px/20px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
-textarea { resize: vertical; }
-textarea.mono, input.mono { font: 12px/18px ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-input[type="text"]:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent); }
-.brief { max-height: 15rem; overflow: auto; padding: 14px 16px; border-radius: 12px; background: var(--raised); white-space: pre-wrap; }
-.spec { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 6px 16px; margin-top: 12px; font-size: 13px; }
-.spec dt { color: var(--muted); }
-.timeline { position: relative; display: grid; gap: 0; border: 0; border-radius: 0; }
-.timeline .row { display: grid; grid-template-columns: 12px minmax(0, 1fr) auto; gap: 12px; padding: 8px 0; border: 0; border-radius: 6px; }
-.timeline .row > i { width: 9px; height: 9px; margin-top: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px var(--sheet); }
-.timeline::before { content: ""; position: absolute; left: 4px; top: 14px; bottom: 14px; width: 1px; background: var(--border); }
-.timeline .when { white-space: nowrap; }
-.log { max-height: 24rem; overflow: auto; padding: 12px 14px; border-radius: 10px; background: var(--raised); color: var(--ink);
-  font-size: 12px; line-height: 18px; white-space: pre-wrap; }
-.checks { display: grid; gap: 6px; margin-top: 10px; }
-.checks li { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 10px; align-items: baseline; }
-.result-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; font-size: 15px; line-height: 22px; }
-.compose { display: grid; gap: 16px; }
-.compose label, .compose legend { display: grid; gap: 6px; font-size: 13px; font-weight: 600; }
-.compose .opt { color: var(--muted); font-weight: 400; }
-.compose small { color: var(--muted); font-weight: 400; }
-.compose .split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 16px; align-items: start; }
-.where { display: grid; gap: 6px; }
-.choice { display: grid !important; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: start; padding: 10px 12px;
-  border: 1px solid var(--control); border-radius: 10px; cursor: pointer; font-weight: 400 !important; }
-.choice input { margin: 3px 0 0; accent-color: var(--accent); }
-.choice b { font-weight: 600; }
-.choice small { grid-column: 2; }
-.choice:has(input:checked) { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.compose .cmd { display: none; }
-.compose:has(input[value="local-shell"]:checked) .cmd { display: grid; }
-.compose details summary { width: max-content; color: var(--muted); font-size: 13px; cursor: pointer; }
-.compose .opts { display: grid; gap: 12px; margin-top: 12px; }
-.compose .needs { display: flex; flex-wrap: wrap; gap: 6px 14px; font-weight: 400; }
-.compose .needs label { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; }
-.compose .send { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; }
-.compose .send .note { color: var(--muted); font-size: 13px; }
-.compose .btn.primary { height: 36px; padding: 0 16px; font-size: 14px; }
-.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.act { position: relative; margin: 0; }
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 30px; padding: 0 11px;
-  border: 1px solid var(--control); border-radius: 7px; background: var(--sheet); color: var(--ink); text-decoration: none;
-  font: 500 13px/1 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; cursor: pointer; user-select: none;
-  white-space: nowrap; transition: transform .08s ease-out; }
-.need .btn, .answer .btn { height: 34px; padding: 0 13px; }
-.btn:hover { background: var(--raised); }
-.btn:active { transform: scale(.96); }
-.btn:focus-visible, .x:focus-visible, .bar a:focus-visible, .side-foot a:focus-visible, .back:focus-visible,
-summary.chip:focus-visible, .compose summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
-.btn.primary:hover { box-shadow: inset 0 0 0 99px rgba(0, 0, 0, .12); }
-.btn.danger { color: var(--bad-ink); }
-.btn.danger:hover { background: var(--bad-bg); }
-.btn.fill { background: var(--bad-ink); border-color: var(--bad-ink); color: var(--sheet); font-weight: 600; }
-.btn[aria-busy="true"] { pointer-events: none; }
-.btn[aria-busy="true"]::before { content: ""; width: 10px; height: 10px; border: 2px solid currentColor; border-right-color: transparent;
-  border-radius: 50%; animation: spin .7s linear infinite; }
+a.item[aria-current="page"] { background: var(--hover); box-shadow: inset 0 0 0 1px var(--border); }
+.item .dot { align-self: center; }
+.item .name { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.item .when { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.item .sub { grid-column: 2 / 4; font-size: 12px; line-height: 16px; color: var(--muted); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal; }
+.s-g-needs .item .sub { color: var(--warn); }
+.s-g-needs .item .sub.fail { color: var(--bad); }
+.row.pending .sub { color: var(--live); }
+.dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--control); }
+.dot.live { background: var(--live); }
+.dot.good { background: var(--good); }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+.dot.pulse { animation: pulse 1.6s ease-in-out infinite; }
+
+/* The check status at the foot of the sidebar. */
+.checks .line { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.checks .line.warn { color: var(--warn); }
+.checks .line.bad { color: var(--bad); }
+.checks .more { font-size: 12px; line-height: 16px; color: var(--muted); }
+.checks .btns { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -8px; }
+.checks .route { font-size: 12px; line-height: 16px; color: var(--bad); }
+.checks .route.warn { color: var(--warn); }
+.tools { display: flex; align-items: center; gap: 8px; margin-left: -8px; }
+.conn { font-size: 12px; color: var(--warn); }
+.conn[data-state="on"] { display: none; }
+
+/* Controls. */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 36px; padding: 0 14px;
+  border: 1px solid var(--control); border-radius: 8px; background: var(--surface); color: var(--ink); font: inherit;
+  font-weight: 500; text-decoration: none; cursor: pointer; white-space: nowrap; overflow-wrap: normal;
+  transition: background-color .12s, border-color .12s, color .12s; }
+.btn:hover { background: var(--hover); }
+.btn:active { transform: translateY(1px); }
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--on-primary); }
+.btn.primary:hover { background: var(--primary); opacity: .86; }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--muted); padding: 0 8px; }
+.btn.quiet:hover { color: var(--ink); background: var(--hover); }
+.btn.small { min-height: 28px; font-size: 13px; }
+.btn.danger.fill { background: var(--bad); border-color: var(--bad); color: var(--on-bad); }
+.btn.danger.fill:hover { background: var(--bad); opacity: .86; }
+.btn[aria-busy="true"] { opacity: .6; cursor: progress; }
 .btn.ok::before { content: "\\2713"; animation: pop .3s var(--ease); }
 .btn.no { animation: shake .32s ease-in-out; }
+summary { cursor: pointer; }
 summary.btn { list-style: none; }
-summary.btn::-webkit-details-marker { display: none; }
-.act[open] > summary.btn:not(.primary) { background: var(--raised); border-color: var(--ink); }
-.act[open] > summary.btn.danger { border-color: var(--bad-ink); }
-.pane[data-pane^="job:"] .btn[data-k]::after, .cards > .row:focus-within .btn[data-k]::after { content: attr(data-k); min-width: 16px; padding: 0 4px; border-radius: 4px;
-  background: var(--neutral-bg); color: var(--neutral-ink); font: 600 11px/16px ui-monospace, "SF Mono", Menlo, monospace; }
-.btn.primary[data-k]::after { background: rgba(255, 255, 255, .2); color: inherit; }
-.pop { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; gap: 10px; width: min(22rem, calc(100vw - 32px));
-  padding: 12px; background: var(--sheet); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 28px var(--shade);
-  color: var(--ink); font-size: 14px; font-weight: 400; animation: drop .16s var(--ease); }
-.pop.left { left: 0; right: auto; }
-.pop form { display: grid; gap: 10px; }
-.pop label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
-.pop .note { color: var(--muted); font-size: 13px; }
-.pop textarea { font: 12px/18px ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-.pop .btn.primary, .pop .btn.fill { justify-self: end; }
-.result { padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--raised); }
-.result p { font-weight: 600; }
-.result.good p { color: var(--good-ink); } .result.bad p { color: var(--bad-ink); }
-.result pre, .toast pre { margin-top: 6px; max-height: 10rem; overflow: auto; white-space: pre-wrap;
-  font-size: 12px; line-height: 18px; color: var(--muted); }
-.toasts { position: fixed; z-index: 30; right: 16px; bottom: 16px; display: grid; gap: 8px; width: min(26rem, calc(100vw - 32px)); }
-.toast { position: relative; padding: 12px 40px 12px 14px; background: var(--sheet); border: 1px solid var(--border);
-  border-radius: 12px; box-shadow: 0 12px 32px var(--shade); animation: rise .26s var(--ease); }
-.toast p { display: flex; align-items: center; gap: 8px; }
-.toast p i { width: 8px; height: 8px; border-radius: 50%; background: var(--good-ink); }
-.toast.no p i { background: var(--bad-ink); }
+summary::-webkit-details-marker { display: none; }
+details.act { position: relative; display: inline-block; }
+.pop { position: absolute; z-index: 20; top: calc(100% + 6px); right: 0; display: grid; gap: 10px;
+  width: min(320px, calc(100vw - 32px)); padding: 14px; background: var(--surface); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: 0 10px 28px var(--shade); animation: drop .16s var(--ease); }
+.pop.left { right: auto; left: 0; }
+.pop.up { top: auto; bottom: calc(100% + 6px); }
+.pop p { color: var(--muted); }
+label { display: grid; gap: 6px; font-size: 13px; font-weight: 500; }
+input[type="text"], textarea { width: 100%; padding: 7px 10px; border: 1px solid var(--control); border-radius: 6px;
+  background: var(--surface); color: var(--ink); font: inherit; }
+input[type="text"]:focus, textarea:focus { border-color: var(--ink); outline: none; }
+textarea { resize: vertical; }
+textarea.mono, input.mono { font-size: 13px; }
+.note { font-size: 12px; line-height: 16px; color: var(--muted); }
+
+/* The page. */
+.page { display: grid; gap: 24px; max-width: 760px; margin: 0 auto; padding: 32px 40px 72px; }
+.back { display: none; justify-self: start; margin: -8px 0 -8px -8px; }
+h1 { font-size: 24px; line-height: 32px; font-weight: 600; letter-spacing: -.01em; }
+.label { display: flex; align-items: center; gap: 8px; font-size: 12px; line-height: 16px; font-weight: 600;
+  color: var(--warn); }
+.result { padding: 12px 14px; border-radius: 8px; background: var(--raised); }
+.result.bad { background: var(--bad-bg); color: var(--bad); }
+.result pre, .toast pre { max-height: 10rem; margin-top: 6px; overflow: auto; font-size: 12px; line-height: 18px;
+  white-space: pre-wrap; color: var(--ink); }
+
+/* Home: what needs you, then the composer. */
+.home-top { padding-top: 6vh; }
+.s-needs .rows > .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+  gap: 8px 16px; padding: 14px 0; border-top: 1px solid var(--rule); }
+.s-needs .rows > .row:first-child { border-top: 0; padding-top: 4px; }
+.s-needs h2 { font-size: 16px; line-height: 24px; font-weight: 600; }
+.s-needs .head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.say { display: grid; gap: 2px; flex: 1 1 320px; min-width: 0; }
+.say .ask { font-weight: 500; }
+.say .detail, .say .for, .say > .when { font-size: 13px; color: var(--muted); }
+.say .for a { color: var(--ink); }
+.acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.cli { margin-top: 4px; }
+.compose { display: grid; gap: 12px; }
+.compose h1 { margin-bottom: 4px; }
+.box { border: 1px solid var(--control); border-radius: 12px; background: var(--surface);
+  box-shadow: 0 1px 2px var(--shade); transition: border-color .12s; }
+.box:focus-within { border-color: var(--ink); }
+.box textarea[name="brief"] { display: block; min-height: 104px; padding: 14px 16px 6px; border: 0; background: transparent;
+  font-size: 16px; line-height: 24px; resize: none; }
+.cmd { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: center;
+  padding: 6px 16px 8px; border-top: 1px solid var(--rule); }
+.cmd label { font-size: 12px; color: var(--muted); }
+.cmd input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; }
+.cmd small { grid-column: 2; font-size: 12px; color: var(--muted); }
+.compose:has(input[name="kind"][value="codex-cloud"]:checked) .cmd { display: none; }
+.box .bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; }
+.where { display: flex; flex-wrap: wrap; gap: 4px; }
+.chip { position: relative; display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px;
+  border: 1px solid transparent; border-radius: 999px; color: var(--muted); font-weight: 500; cursor: pointer; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip:hover { color: var(--ink); background: var(--hover); }
+.chip:has(input:checked) { border-color: var(--control); background: var(--raised); color: var(--ink); }
+.chip:has(input:focus-visible) { outline: 2px solid var(--live); outline-offset: 2px; }
+.chip small { font-size: 12px; font-weight: 400; color: var(--warn); }
+.compose .name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 400; color: var(--muted); }
+.compose .name input { width: 24ch; min-width: 0; padding: 4px 8px; font-size: 12px; }
+.send { margin-left: auto; }
+.under { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.opts > summary { margin-left: -8px; }
+.opts-body { display: grid; gap: 14px; width: min(100%, 560px); margin-top: 8px; padding: 14px;
+  border: 1px solid var(--border); border-radius: 10px; }
+.needs { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.needs label { display: flex; align-items: center; gap: 6px; font-weight: 400; }
+.opts legend { margin-bottom: 6px; font-size: 13px; font-weight: 500; }
+.steps { display: grid; gap: 14px; counter-reset: step; }
+.steps > li { display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 10px; }
+.steps > li::before { counter-increment: step; content: counter(step); font-weight: 600; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+.steps > li > div { display: grid; gap: 8px; justify-items: start; }
+.how { padding-top: 8px; color: var(--muted); }
+.how .steps b { color: var(--ink); font-weight: 500; }
+
+/* A job, read as a transcript. */
+.job-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px 16px; }
+.job-head > div:first-child { flex: 1 1 360px; min-width: 0; }
+.job-head h1:focus { outline: none; }
+.facts { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin-top: 6px; font-size: 13px;
+  color: var(--muted); }
+.state { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 500; }
+.talk { display: grid; gap: 20px; }
+.ask-bubble { justify-self: end; display: grid; gap: 8px; max-width: min(88%, 620px); }
+.bubble { padding: 12px 16px; border-radius: 14px; background: var(--raised); font-size: 15px; line-height: 22px;
+  white-space: pre-wrap; }
+.spec-more { justify-self: end; font-size: 13px; }
+.spec-more > summary { color: var(--muted); }
+.spec { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; margin-top: 8px; font-size: 13px; }
+.spec dt { color: var(--muted); }
+.timeline { display: grid; gap: 2px; }
+.timeline .row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; gap: 10px; align-items: baseline;
+  padding: 3px 0; font-size: 13px; color: var(--muted); }
+.timeline .row .dot { width: 6px; height: 6px; justify-self: center; align-self: start; margin-top: 7px; }
+.timeline .when { font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.s-j-output .head, .s-j-timeline .head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.s-j-output h2, .s-j-timeline h2, .receipt h2 { font-size: 12px; line-height: 16px; font-weight: 600;
+  color: var(--muted); }
+.livetag { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--live); font-weight: 500; }
+.log.ended { max-height: 168px; }
+.log { max-height: 360px; overflow: auto; padding: 12px 14px; border-radius: 10px; background: var(--raised);
+  font-size: 12px; line-height: 18px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ask-card { display: grid; gap: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--surface); box-shadow: 0 1px 2px var(--shade); }
+.ask-card h3 { font-size: 16px; line-height: 24px; font-weight: 600; }
+.ask-card .detail { color: var(--muted); }
+.ask-card form:not(.pop) { display: grid; gap: 10px; justify-items: start; width: 100%; }
+.ask-card form label { width: 100%; }
+.ask-card .foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.prompt, .envspec { width: 100%; max-height: 240px; overflow: auto; padding: 10px 12px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--raised); font-size: 12px; line-height: 18px; white-space: pre-wrap; }
+.hold { font-size: 13px; color: var(--warn); }
+.now { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.now .what { font-weight: 500; }
+.now .soft { flex-basis: 100%; padding-left: 18px; }
+.receipt { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.receipt > * + * { border-top: 1px solid var(--rule); }
+.verdict { display: grid; gap: 4px; padding: 16px; }
+.verdict .big { display: flex; align-items: baseline; gap: 10px; font-size: 18px; line-height: 26px; font-weight: 600; }
+.verdict .tick { color: var(--good); }
+.verdict.bad .tick { color: var(--bad); }
+.verdict.warn .tick { color: var(--warn); }
+.verdict .why { color: var(--muted); }
+.receipt .part { display: grid; gap: 8px; padding: 12px 16px; }
+.checklist li, .files li { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.checklist code { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.checklist .ok { color: var(--good); }
+.checklist .bad { color: var(--bad); }
+.checklist .exit { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; }
+.files { display: grid; gap: 4px; }
+.files a { color: var(--live); text-underline-offset: 2px; }
+.files .size { margin-left: auto; color: var(--muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.peek { max-height: 280px; overflow: auto; padding: 10px 12px; border-radius: 8px; background: var(--raised);
+  font-size: 12px; line-height: 18px; white-space: pre-wrap; }
+.stamp { padding: 10px 16px; font-size: 12px; line-height: 16px; color: var(--muted); background: var(--ground); }
+.receipt .acts { padding: 12px 16px; }
+.reply { display: flex; align-items: flex-end; gap: 8px; padding: 8px 8px 8px 14px; border: 1px solid var(--control);
+  border-radius: 12px; }
+.reply:focus-within { border-color: var(--ink); }
+.reply textarea { min-height: 36px; padding: 7px 0; border: 0; background: transparent; resize: none; }
+
+/* Motion and passing messages. */
+.toasts { position: fixed; z-index: 30; right: 16px; bottom: 16px; display: grid; gap: 8px;
+  width: min(24rem, calc(100vw - 32px)); }
+.toast { position: relative; padding: 12px 40px 12px 14px; border: 1px solid var(--border); border-radius: 10px;
+  background: var(--surface); box-shadow: 0 10px 28px var(--shade); animation: rise .2s var(--ease); }
+.toast p { display: flex; align-items: center; gap: 8px; font-weight: 500; }
+.toast.no p { color: var(--bad); }
+.toast details { margin-top: 4px; font-size: 12px; color: var(--muted); }
+.toast .x { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border: 0; border-radius: 6px;
+  background: transparent; color: var(--muted); font: inherit; font-size: 16px; cursor: pointer; }
+.toast .x:hover { background: var(--hover); color: var(--ink); }
 .toast.leaving { opacity: 0; transform: translateY(6px); transition: opacity .2s, transform .2s; }
-.x { position: absolute; top: 8px; right: 8px; width: 28px; height: 28px; border: 0; border-radius: 6px; background: none;
-  color: var(--muted); font: 18px/1 system-ui, sans-serif; cursor: pointer; }
-.x:hover { background: var(--raised); }
-.ghost { z-index: 25; background: var(--sheet); pointer-events: none; }
+.moving { z-index: 5; background: var(--surface); border-radius: 8px; box-shadow: 0 10px 28px var(--shade); }
+.ghost { z-index: 25; background: var(--ground); pointer-events: none; }
 .arrived { animation: arrive .36s var(--ease) both; }
 .entering { animation: enter .26s var(--ease) both; }
-.changed::before { animation: flash 1.4s ease-out; }
-.changed .state, .bumped { animation: pop .34s var(--ease); }
+.changed { animation: flash 1.4s ease-out; }
+.bumped { animation: pop .34s var(--ease); }
 .beating { animation: beat .6s var(--ease); }
-.bar a { color: var(--muted); font-size: 13px; text-decoration: none; border-radius: 4px; }
-.bar a:hover { color: var(--ink); }
 dialog { width: min(30rem, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 20px;
-  background: var(--sheet); color: var(--ink); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 20px 48px var(--shade); }
+  border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--ink);
+  box-shadow: 0 16px 40px var(--shade); }
 dialog[open] { animation: rise .2s var(--ease); }
 dialog::backdrop { background: rgba(0, 0, 0, .3); }
 dialog .title { margin-bottom: 12px; font-size: 15px; font-weight: 600; }
 dialog .title:focus { outline: none; }
-dialog dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0 0 20px; }
+dialog dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0 0 16px; }
 dialog dd { color: var(--muted); }
-dialog .words { grid-template-columns: 1fr; gap: 2px; }
-dialog .words dd { margin-bottom: 8px; }
-dialog .words dt { font-weight: 600; }
-dialog form { display: flex; justify-content: flex-end; }
+dialog .foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+dialog .foot a { font-size: 13px; color: var(--muted); }
 kbd { display: inline-block; min-width: 22px; padding: 0 6px; border: 1px solid var(--control); border-bottom-width: 2px;
-  border-radius: 5px; background: var(--raised); color: var(--ink); text-align: center; font: 600 12px/18px ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+  border-radius: 5px; font-size: 12px; line-height: 18px; text-align: center; }
 @keyframes pulse { 50% { opacity: .35; } }
-@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pop { from { opacity: 0; transform: scale(.8); } }
 @keyframes shake { 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
 @keyframes drop { from { opacity: 0; transform: translateY(-4px); } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px); } }
-@keyframes arrive { from { opacity: 0; transform: translateY(-8px); } }
-@keyframes enter { from { opacity: 0; transform: translateX(10px); } }
-@keyframes flash { 15% { opacity: 1; } }
+@keyframes arrive { from { opacity: 0; transform: translateY(-6px); } }
+@keyframes enter { from { opacity: 0; transform: translateY(6px); } }
+@keyframes flash { 15% { background-color: var(--live-bg); } }
 @keyframes beat { 40% { transform: scale(1.8); opacity: .5; } }
 @keyframes fade { from { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
-  .state.t-active i, .item > i.t-active, .beat, .changed .state, .bumped, .beating, .btn.no { animation: none; }
+  .dot.pulse, .changed, .bumped, .beating, .btn.no, .btn.ok::before { animation: none; }
   .arrived, .entering, .pop, .toast, dialog[open] { animation: fade .2s ease-out; }
-  .btn.ok::before { animation: none; }
-  .btn[aria-busy="true"]::before { animation: none; border-right-color: currentColor; opacity: .5; }
   .btn:active, .toast.leaving { transform: none; }
 }
-@media (min-width: 45rem) {
-  body { height: 100vh; overflow: hidden; }
-  .side, .pane { overflow: auto; overscroll-behavior: contain; }
-  .back { display: none; }
+@media (max-width: 1099px) {
+  .app { grid-template-columns: 240px minmax(0, 1fr); }
+  .page { padding: 28px 28px 64px; }
 }
-@media (max-width: 44.99rem) {
-  .app { display: flex; flex-direction: column; padding: 0; }
-  .pane { order: -1; border-width: 1px 0; border-radius: 0; }
-  .page { gap: 24px; padding: 20px 16px 28px; }
-  .side { padding: 24px 8px 32px; }
-  body[data-open^="job:"] .side, body[data-open="new"] .side, body[data-open="home"] .side .g-needs { display: none; }
-  .tools a, [data-keys] { display: none; }
-  .health { order: 3; flex: 1 1 100%; }
-  .need, .job-head, .answer, .compose .split { grid-template-columns: minmax(0, 1fr); }
-  .need > .acts { justify-content: flex-start; }
-  .need .act[open], .health .act[open], .job-head .act[open] { flex: 1 1 100%; }
-  .need .pop, .health .pop, .job-head .pop { position: static; width: auto; margin-top: 8px; box-shadow: none; }
-  .cards > .row { padding: 14px; }
-}
-@media (min-width: 50rem) {
-  dialog { width: min(54rem, calc(100vw - 32px)); }
-  dialog .pair { display: grid; grid-template-columns: 1fr 1.4fr; gap: 32px; }
+/* Phone: a top bar, the check line under it, then the page; the job list is the home page. */
+@media (max-width: 719px) {
+  .app { display: flex; flex-direction: column; height: auto; min-height: 100vh; min-height: 100dvh; }
+  .side-top, .side, .checks { border-right: 0; }
+  .side-top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 8px; min-height: 56px;
+    padding: 6px 8px 6px 12px; border-bottom: 1px solid var(--border); }
+  .btn.new { width: auto; margin-left: auto; }
+  .checks { order: 2; grid-template-columns: minmax(0, 1fr) auto; align-items: center; padding: 8px 8px 8px 16px;
+    border-top: 0; border-bottom: 1px solid var(--border); }
+  .checks .tools { display: none; }
+  .checks .more { display: none; }
+  .checks .btns { margin-left: 0; }
+  .pane { order: 3; overflow: visible; }
+  .side { order: 4; overflow: visible; padding: 0 8px 32px; background: var(--surface); }
+  body:not([data-open="home"]) .side { display: none; }
+  body[data-open="home"][data-jobs="1"] .s-compose,
+  body[data-open="home"][data-jobs="1"] .s-needs .row[data-job] { display: none; }
+  body[data-open="home"][data-jobs="1"] .s-needs:not(:has(.row:not([data-job]))) { display: none; }
+  body[data-open="home"][data-jobs="1"] .page { padding-bottom: 0; }
+  .page { gap: 20px; padding: 16px 16px 48px; }
+  .home-top { padding-top: 8px; }
+  .back { display: inline-flex; }
+  .btn, .chip { min-height: 44px; }
+  .btn.small { min-height: 36px; }
+  .item { padding: 10px 8px; }
+  .bubble { font-size: 14px; line-height: 21px; }
+  .ask-bubble { max-width: 100%; }
+  .toasts { right: 8px; left: 8px; bottom: 8px; width: auto; }
+  .compose .name { flex: 1 1 160px; }
+  .compose .name span { white-space: nowrap; }
+  .compose .name input { width: 100%; }
+  .checks .status { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; }
+  .reply { flex-wrap: wrap; }
+  .reply textarea { flex: 1 1 100%; min-height: 64px; }
+  .reply .btn { margin-left: auto; }
+  /* A popover anchored to its button can open past the screen edge; on a phone it is a sheet at the bottom. */
+  .pop, .pop.left, .pop.up { position: fixed; top: auto; right: 8px; bottom: 8px; left: 8px; width: auto;
+    max-height: calc(100dvh - 72px); overflow: auto; }
 }
 """
 
 # The client for the live page, served same-origin at /app.js. It polls the page it shows, swaps only what changed
-# (FLIP for rows that move between groups), follows app links without reloading, posts forms with fetch and reports
-# the CLI's answer, and adds the keyboard.
+# (FLIP for rows that move between groups), follows app links without reloading, posts forms with fetch and says
+# what happened in a toast, and adds the keyboard.
 SCRIPT = r"""(() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
-const wait = ms => new Promise(done => setTimeout(done, ms));
 const byKey = (k, r = document) => r.querySelector('[data-key="' + CSS.escape(k) + '"]');
 let skew = 0, inflight = 0, failures = 0, timer = 0, stash = null, ended = false, moving = 0;
 
@@ -382,7 +416,8 @@ const rel = s => s >= 0 ? span(s) + ' ago' : 'in ' + span(-s);
 function clock() {
   for (const el of $$('[data-t]')) {
     const s = Math.round(Date.now() / 1000 + skew - +el.dataset.t);
-    const text = s >= 0 && el.dataset.due ? el.dataset.due : (el.dataset.pre || '') + rel(s);
+    const text = el.dataset.short ? span(Math.max(0, s))
+      : s >= 0 && el.dataset.due ? el.dataset.due : (el.dataset.pre || '') + rel(s);
     if (el.textContent !== text) el.textContent = text;
   }
 }
@@ -418,6 +453,11 @@ function sync(old, fresh, doc, before, added, changed) {
   const ob = $('.body', old), fb = $('.body', fresh);
   if (!ob || !fb) return true;
   const ol = $('.rows', ob), fl = $('.rows', fb);
+  const olog = $(':scope > pre.log', ob), flog = $(':scope > pre.log', fb);
+  if (olog && flog && ob.children.length === 1 && fb.children.length === 1) {
+    if (olog.textContent !== flog.textContent) olog.textContent = flog.textContent;
+    return true;
+  }
   if (!ol || !fl) {
     if (busy(ob)) return false;
     for (const el of $$('[data-key]', ob)) if (!byKey(el.dataset.key, doc)) ghost(el, before.get(el.dataset.key));
@@ -484,18 +524,20 @@ function mark() {
     if (here) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   }
   for (const log of $$('.log')) if (!log.dataset.held) log.scrollTop = log.scrollHeight;
+  for (const b of $$('[data-copy]')) b.hidden = false;
 }
 
 function apply(doc, nav) {
   const now = +doc.body.dataset.now;
   if (now) skew = now - Date.now() / 1000;
-  document.body.dataset.open = doc.body.dataset.open || '';
+  for (const k of ['open', 'pace', 'jobs']) document.body.dataset[k] = doc.body.dataset[k] || '';
+  if (nav) document.title = doc.title;
   const before = new Map($$('[data-key]').map(el => [el.dataset.key, el.getBoundingClientRect()]));
   const focused = document.activeElement;
   const focusKey = focused && focused.closest && focused.closest('[data-key]') ? focused.closest('[data-key]').dataset.key : null;
   const added = [], changed = [];
   const pane = $('.pane'), fresh = $('.pane', doc);
-  // A different page, or a page whose sections changed (a job finished and grew a result), is swapped whole, unless
+  // A different page, or a page whose sections changed (a job finished and grew a receipt), is swapped whole, unless
   // someone is typing in it; then only the parts that still match are updated.
   let swap = !!(pane && fresh) && (nav || pane.dataset.pane !== fresh.dataset.pane || regions(pane) !== regions(fresh));
   if (swap && !nav && busy(pane)) swap = false;
@@ -505,6 +547,7 @@ function apply(doc, nav) {
     if (!old || old.dataset.sig === el.dataset.sig) continue;
     if (!$('.body', el)) { if (!busy(old)) { old.replaceWith(el); if (!nav) play(el, 'arrived', 400); } continue; }
     if (sync(old, el, doc, before, added, changed)) old.dataset.sig = el.dataset.sig;
+    old.hidden = el.hidden;
   }
   if (swap) {
     const top = nav ? 0 : pane.scrollTop;
@@ -540,10 +583,11 @@ function live(state) {
   const el = $('[data-live]');
   if (!el) return;
   el.dataset.state = state;
-  $('span', el).textContent = state === 'on' ? 'Live' : state === 'off' ? 'Reconnecting' : 'Session ended';
+  el.textContent = state === 'on' ? '' : state === 'off' ? 'Reconnecting…' : 'This page is closed. Run rh serve again.';
   if (state === 'ended') { ended = true; clearTimeout(timer); }
 }
 
+const pace = () => document.body.dataset.pace === 'fast' ? 1500 : 4000;
 async function poll() {
   clearTimeout(timer);
   if (ended) return;
@@ -555,11 +599,11 @@ async function poll() {
       if (!r.ok && r.status !== 404) throw new Error('status ' + r.status);
       const doc = parse(await r.text());
       if (inflight) stash = doc.getElementById('result') || stash;
-      else if (!moving && location.href === here) { const res = apply(doc, false); if (res) report('Last action', res, null); }
+      else if (!moving && location.href === here) { const res = apply(doc, false); if (res) report(res); }
       failures = 0; live('on');
     } catch (err) { failures += 1; live('off'); }
   }
-  timer = setTimeout(poll, failures ? Math.min(30000, 4000 * 2 ** failures) : 4000);
+  timer = setTimeout(poll, failures ? Math.min(30000, 4000 * 2 ** failures) : pace());
 }
 
 async function go(url, push) {
@@ -570,43 +614,46 @@ async function go(url, push) {
     const doc = parse(await r.text());
     if (push) history.pushState(null, '', r.url || url);
     const res = apply(doc, true);
-    if (res) report('Last action', res, null);
-    // A new page takes focus where its work starts: the brief on New job, else the pane, so j/k and the action
-    // keys carry on from there.
-    const brief = $('.pane textarea[name="brief"]');
-    if (document.body.dataset.open === 'new' && brief) brief.focus();
-    else { const pane = $('.pane'); if (pane) pane.focus({ preventScroll: true }); }
+    if (res) report(res);
+    settle();
   } catch (err) { location.href = url; }
   finally { moving -= 1; }
+  clearTimeout(timer); timer = setTimeout(poll, pace());
+}
+function settle() {
+  // A new page takes focus where its work starts: the brief on home and New job, else the page, so j/k and the action
+  // keys carry on from there.
+  const brief = $('.pane textarea[name="brief"]');
+  if (brief && brief.getClientRects().length && document.body.dataset.open !== 'home') brief.focus();
+  else { const h = $('.pane h1[tabindex]') || $('.pane'); if (h) h.focus({ preventScroll: true }); }
 }
 
-function report(label, res, fallback) {
-  const raw = res ? res.dataset.code : fallback;
-  const code = raw === '' || raw === null || raw === undefined ? null : +raw;
-  const pre = res && $('pre', res);
-  toast(label, code === null || code === 0, code, pre ? pre.textContent : '');
-  return code === null || code === 0;
+function report(res) {
+  const code = res.dataset.code === '' || res.dataset.code === undefined ? null : +res.dataset.code;
+  const pre = $('pre', res);
+  toast(res.dataset.say || 'Done.', code === null || code === 0, pre ? pre.textContent : '');
 }
 
-function toast(label, ok, code, out) {
+function toast(say, ok, out) {
   const box = $('.toasts');
   if (!box) return;
   const t = document.createElement('div');
   t.className = 'toast ' + (ok ? 'ok' : 'no');
   if (!ok) t.setAttribute('role', 'alert');
   const head = document.createElement('p');
-  const b = document.createElement('b');
-  b.textContent = label;
-  head.append(document.createElement('i'), b, (ok ? 'done' : 'failed') + (code === null ? '' : ' · exit ' + code));
+  head.textContent = say;
   const x = document.createElement('button');
   x.type = 'button'; x.className = 'x'; x.textContent = '×';
   x.setAttribute('aria-label', 'Dismiss');
   x.addEventListener('click', () => drop(t));
   t.append(head, x);
-  if (out.trim()) { const pre = document.createElement('pre'); pre.textContent = out.trim(); t.append(pre); }
+  if (out.trim()) {
+    const d = document.createElement('details'), s = document.createElement('summary'), pre = document.createElement('pre');
+    s.textContent = 'Details'; pre.textContent = out.trim(); d.append(s, pre); t.append(d);
+  }
   box.append(t);
   while (box.children.length > 3) box.firstElementChild.remove();
-  if (ok) setTimeout(() => drop(t), 6000);
+  if (ok) setTimeout(() => drop(t), 5000);
 }
 function drop(t) {
   if (!t.isConnected || t.classList.contains('leaving')) return;
@@ -614,45 +661,84 @@ function drop(t) {
   setTimeout(() => t.remove(), calm.matches ? 0 : 200);
 }
 
+function pending(form) {
+  // Start job answers at once: the job appears in the list as Starting while the harness adds it.
+  const grp = $('.s-g-running'), brief = form.elements.namedItem('brief'), id = form.elements.namedItem('id');
+  if (!grp || !brief) return null;
+  const li = document.createElement('li'), a = document.createElement('div');
+  li.className = 'row pending'; a.className = 'item';
+  const dot = document.createElement('i'); dot.className = 'dot live pulse';
+  const name = document.createElement('span'); name.className = 'name';
+  name.textContent = brief.value.trim().split('\n')[0].slice(0, 80) || (id && id.value) || 'New job';
+  const when = document.createElement('span'); when.className = 'when';
+  const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = 'Starting…';
+  a.append(dot, name, when, sub); li.append(a);
+  grp.hidden = false;
+  const empty = $('.side-empty'); if (empty) empty.hidden = true;
+  $('.rows', grp).prepend(li);
+  play(li, 'arrived', 400);
+  return li;
+}
+
 document.addEventListener('submit', async e => {
   const form = e.target;
   if (!(form instanceof HTMLFormElement) || !form.hasAttribute('data-act')) return;
   e.preventDefault();
-  const btn = e.submitter || $('button', form);
+  const btn = e.submitter || $('button:not([type="button"])', form);
   if (!btn || btn.getAttribute('aria-busy') === 'true') return;
   const label = form.dataset.label || btn.textContent.trim();
   const row = form.closest('[data-key]');
+  const body = new URLSearchParams(new FormData(form));
   btn.setAttribute('aria-busy', 'true');
+  const early = form.matches('.compose') ? pending(form) : null;
   inflight += 1; stash = null;
-  let doc = null, code = null, out = '', reached = true, landed = null;
+  let doc = null, code = null, say = '', out = '', reached = true, landed = null;
   try {
-    const r = await fetch(form.action, { method: 'POST', body: new URLSearchParams(new FormData(form)) });
+    const r = await fetch(form.action, { method: 'POST', body });
     if (r.status === 403) live('ended');
     doc = parse(await r.text());
     if (r.redirected && new URL(r.url).pathname !== location.pathname) landed = r.url;
     const res = doc.getElementById('result') || stash;
     if (res) {
       code = res.dataset.code === '' ? null : +res.dataset.code;
+      say = res.dataset.say || '';
       out = $('pre', res) ? $('pre', res).textContent : '';
     } else if (!r.ok) code = r.status;
-  } catch (err) { reached = false; out = 'The harness did not answer. Is rh serve still running?'; }
+  } catch (err) { reached = false; say = 'The app did not answer. Is rh serve still running?'; }
   btn.removeAttribute('aria-busy');
   const ok = reached && (code === null || code === 0);
-  toast(label, ok, code, out);
-  play(btn, ok ? 'ok' : 'no', ok ? 900 : 400);
+  if (!ok && early) early.remove();
+  if (!(ok && landed)) toast(say || (ok ? label + ': done.' : label + ' did not work.'), ok, out);
+  if (!landed) play(btn, ok ? 'ok' : 'no', ok ? 900 : 400);
   if (ok) { const d = form.closest('details'); if (d) d.open = false; if (!landed) form.reset(); }
-  await wait(ok ? 650 : 250);
   inflight -= 1;
   if (doc && doc.body && doc.body.dataset.now) {
-    if (landed) { history.pushState(null, '', landed); apply(doc, true); }
+    if (landed) { history.pushState(null, '', landed); apply(doc, true); settle(); }
     else apply(doc, false);
   }
   if (ok && row && !landed) { const again = byKey(row.dataset.key); if (again) (again.querySelector('a.item') || again).focus({ preventScroll: true }); }
   if (!document.activeElement || document.activeElement === document.body) { const p = $('.pane'); if (p) p.focus({ preventScroll: true }); }
+  clearTimeout(timer); timer = setTimeout(poll, pace());
 });
+
+async function copy(b) {
+  const src = document.getElementById(b.dataset.copy);
+  if (!src) return;
+  const value = 'value' in src ? src.value : src.textContent;
+  let done = false;
+  try { await navigator.clipboard.writeText(value); done = true; } catch (err) {
+    if ('select' in src) { src.focus(); src.select(); try { done = document.execCommand('copy'); } catch (e2) { done = false; } }
+  }
+  const was = b.dataset.was || b.textContent;
+  b.dataset.was = was;
+  b.textContent = done ? 'Copied' : 'Select it and copy';
+  setTimeout(() => { b.textContent = was; }, 1600);
+}
 
 document.addEventListener('click', e => {
   for (const d of $$('details.act[open]')) if (!d.contains(e.target)) d.open = false;
+  const c = e.target.closest && e.target.closest('[data-copy]');
+  if (c) { copy(c); return; }
   const a = e.target.closest && e.target.closest('a[data-nav]');
   if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
@@ -666,8 +752,10 @@ document.addEventListener('scroll', e => {
   }
 }, true);
 
-// The composer suggests a name from the first words of the brief until the name is typed, and asks for a command
-// only for a job that runs on this machine.
+// The composer suggests a name from the first words of the brief until a name is typed; the suggestion is selected
+// whole when the field is focused, so typing replaces it. It asks for a command only for a job on this machine.
+const NAME_SKIP = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'then', 'that', 'this', 'them', 'each',
+  'every', 'one', 'all', 'its', 'are', 'was']);
 document.addEventListener('input', e => {
   const t = e.target;
   if (!(t instanceof HTMLElement)) return;
@@ -676,15 +764,26 @@ document.addEventListener('input', e => {
   const id = form.elements.namedItem('id');
   if (t === id) { id.dataset.typed = id.value ? '1' : ''; return; }
   if (t.name === 'brief' && id && !id.dataset.typed) {
-    const words = t.value.toLowerCase().replace(/[^a-z0-9\s-]/g, ' ').split(/\s+/).filter(w => w.length > 2).slice(0, 4);
-    id.value = words.join('-').slice(0, 48);
+    // Content words only, each once, with file extensions dropped: "numbers.txt" adds nothing to "numbers".
+    const words = [...new Set(t.value.toLowerCase().replace(/\.[a-z0-9]+\b/g, ' ').replace(/[^a-z0-9\s-]/g, ' ')
+      .split(/\s+/).filter(w => w.length > 2 && !NAME_SKIP.has(w)))].slice(0, 3);
+    let name = words.join('-').slice(0, 48).replace(/-+$/, ''), n = 2;
+    const base = name;
+    while (name && byKey('job:' + name)) name = base + '-' + n++;
+    id.value = name;
   }
 });
+let picked = null;
+document.addEventListener('focusin', e => {
+  const t = e.target;
+  if (t instanceof HTMLInputElement && t.matches('form.compose input[name="id"]')) { t.select(); picked = t; }
+});
+document.addEventListener('mouseup', e => { if (picked && e.target === picked) e.preventDefault(); picked = null; });
 document.addEventListener('change', e => {
   const form = e.target.closest && e.target.closest('form.compose');
   if (!form) return;
-  const cmd = form.elements.namedItem('command');
-  if (cmd) cmd.required = form.elements.namedItem('kind').value === 'local-shell';
+  const cmd = form.elements.namedItem('command'), kind = form.querySelector('input[name="kind"]:checked');
+  if (cmd && kind) cmd.required = kind.value === 'local-shell';
 });
 
 const items = () => $$('.side a.item').filter(el => el.getClientRects().length);
@@ -699,24 +798,25 @@ function move(step) {
   list[i].scrollIntoView({ block: 'nearest', behavior: calm.matches ? 'auto' : 'smooth' });
 }
 function closeOthers(keep) { for (const d of $$('details.act[open]')) if (d !== keep) d.open = false; }
+const field = d => $('input:not([type="hidden"]):not([type="checkbox"]), textarea', d);
 function activate(c) {
   const d = c.closest('details');
-  if (d && c.tagName === 'SUMMARY') {
-    closeOthers(d); d.open = true;
-    const f = $('input:not([type="hidden"]), textarea', d);
-    (f || c).focus();
-  } else c.focus();
+  if (d && c.tagName === 'SUMMARY') { closeOthers(d); d.open = true; (field(d) || c).focus(); }
+  else c.focus();
 }
 document.addEventListener('toggle', e => {
   const d = e.target;
   if (!(d instanceof HTMLDetailsElement) || !d.open || !d.matches('.act')) return;
   closeOthers(d);
-  const f = $('input:not([type="hidden"]), textarea', d);
-  if (f && !d.contains(document.activeElement)) f.focus();
+  // Opened by mouse or key, the popover's first field takes focus so typing lands in it.
+  const f = field(d), at = document.activeElement;
+  if (f && !(d.contains(at) && at.matches('input, textarea'))) f.focus();
 }, true);
 document.addEventListener('keydown', e => {
-  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
   const t = e.target;
+  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && t instanceof HTMLTextAreaElement && t.form
+      && t.form.hasAttribute('data-act')) { e.preventDefault(); t.form.requestSubmit(); return; }
+  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.isComposing) return;
   if (e.key === 'Escape') {
     const d = t.closest && t.closest('details[open]');
     if (d) { d.open = false; $('summary', d).focus(); e.preventDefault(); return; }
@@ -732,8 +832,11 @@ document.addEventListener('keydown', e => {
   if (e.key === 'j' || e.key === 'ArrowDown') move(1);
   else if (e.key === 'k' || e.key === 'ArrowUp') move(-1);
   else if (e.key === '?' && keys) keys.showModal();
-  else if (e.key === 'i' && $('.g-needs a.item')) go($('.g-needs a.item').href, true);
-  else if (e.key === 'n' && $('[data-k="n"]')) { const f = $('.pane textarea[name="brief"]'); if (f) f.focus(); else go($('[data-k="n"]').href, true); }
+  else if (e.key === 'i' && $('.s-g-needs a.item')) go($('.s-g-needs a.item').href, true);
+  else if (e.key === 'n' && $('[data-k="n"]')) {
+    const f = $('.pane textarea[name="brief"]');
+    if (f && f.getClientRects().length) f.focus(); else go($('[data-k="n"]').href, true);
+  }
   else if (e.key === 't' && $('[data-k="t"]')) $('[data-k="t"]').focus();
   else if (/^[rahusclx]$/.test(e.key) && act(e.key)) activate(act(e.key));
   else return;
@@ -744,62 +847,54 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) poll
 const keysButton = $('[data-keys]');
 if (keysButton) { keysButton.hidden = false; keysButton.addEventListener('click', () => $('#keys').showModal()); }
 const first = $('#result');
-if (first) { report('Last action', first, null); first.remove(); }
+if (first) { report(first); first.remove(); }
 skew = (+document.body.dataset.now || Date.now() / 1000) - Date.now() / 1000;
 clock();
 mark();
 setInterval(clock, 1000);
 live('on');
-timer = setTimeout(poll, 4000);
+timer = setTimeout(poll, pace());
 })();
 """
 
 # Plain words for each job state and the tone of its dot. An unknown state is shown as the harness names it.
 _STATES = {
-    "draft": ("Draft", "neutral"), "ready": ("Ready to launch", "neutral"), "waiting": ("Waiting", "neutral"),
-    "held": ("On hold", "warn"), "launching": ("Launching", "active"), "handoff": ("Needs a hand launch", "warn"),
-    "running": ("Running", "active"), "stalled": ("No progress", "warn"), "collecting": ("Collecting the result", "active"),
-    "done": ("Done", "good"), "failed": ("Failed", "bad"), "blocked": ("Blocked", "warn"),
-    "capacity": ("Out of capacity", "warn"), "truncated": ("Cut short", "bad"), "aborted": ("Aborted", "bad"),
-    "no_result": ("No result", "bad"), "cancelled": ("Cancelled", "neutral"),
+    "draft": ("New", "neutral"), "ready": ("Ready", "neutral"), "waiting": ("Waiting", "neutral"),
+    "held": ("On hold", "warn"), "launching": ("Starting", "live"), "handoff": ("Launch by hand", "warn"),
+    "running": ("Running", "live"), "stalled": ("Past its time limit", "warn"),
+    "collecting": ("Checking the result", "live"), "done": ("Done", "good"), "failed": ("Failed", "bad"),
+    "blocked": ("Blocked", "warn"), "capacity": ("No capacity", "warn"), "truncated": ("Cut short", "bad"),
+    "aborted": ("Ended early", "bad"), "no_result": ("No result", "bad"), "cancelled": ("Cancelled", "neutral"),
 }
 _PRE = ("draft", "ready", "waiting", "held", "handoff")  # states rh job cancel accepts
-# What happens next to a job in a state that is waiting on the harness, so a quiet card still says what it is doing.
+_LIVE = ("launching", "handoff", "running", "stalled", "collecting")
+_FAILED = ("failed", "blocked", "capacity", "truncated", "aborted", "no_result")  # a finished job that needs a person
+_FAILURE_WINDOW = 86400  # a failure stays in Needs you this long, unless it was run again
+# What happens next to a job the harness is moving, so a quiet page still says what it is doing.
 _NEXT = {
-    "draft": "The next check reviews it.",
-    "ready": "Starts on the next check unless its platform is busy or down.",
-    "waiting": "Starts by itself once what it waits for is done.",
-    "held": "Rechecked on every pass. Fix what it needs, or cancel it.",
-    "launching": "Starting on its platform.",
-    "stalled": "It has run past its time limit; the harness keeps checking it.",
+    "draft": "Checking it now.",
+    "ready": "It starts as soon as a slot {place} is free.",
+    "waiting": "It starts by itself once what it waits for is ready.",
+    "held": "It is rechecked on every pass. Fix what it needs, or cancel it.",
+    "launching": "Starting it {place}.",
+    "handoff": "It waits for you to launch it in Codex.",
+    "stalled": "It has run past its time limit; it is still being checked.",
     "collecting": "Fetching and checking its result.",
 }
 # Platforms (routes and job kinds in the CLI) as people name them; anything else is shown as the harness names it.
-_PLATFORMS = {"codex-cloud": "Codex cloud", "local-shell": "This machine"}
+_PLATFORMS = {"codex-cloud": "Codex cloud", "codex-cloud-cli": "Codex cloud", "codex-cloud-web": "Codex cloud",
+              "local-shell": "This machine"}
+_PLACES = {"codex-cloud": "in Codex cloud", "local-shell": "on this machine"}
 _NEEDS = ("net", "python", "git", "loopback", "browser", "gpu")  # capabilities the composer offers
-_STALE = 300  # seconds without a check before the header says the harness may have stopped
-# serve's last result is "<p>Exit code: N</p><pre>escaped output</pre>"; anything else is shown as plain text.
-_RESULT = re.compile(r"<p>Exit code: (-?\d+)</p><pre>(.*)</pre>", re.S)
-_REASON = '<label>Why?<input type="text" name="reason" required autocomplete="off"></label>'
-_TASK = '<label>Task id<input type="text" name="task_id" required autocomplete="off" spellcheck="false" class="mono"></label>'
-_PATCH = ('<label>Saved patch or bundle reply<textarea name="text" rows="8" required spellcheck="false" class="mono">'
-          '</textarea></label>')
+_STALE = 300  # seconds without a check before the status line says the checks may have stopped
+_CODEX = "https://chatgpt.com/codex"  # the one page outside the app a live page links to, for a hand launch
+_SETUP = "create and publish the cloud environment"  # how the supervisor's Codex cloud setup step begins
 _KEYS = (("j / ↓", "Next job"), ("k / ↑", "Previous job"), ("Enter", "Open it"), ("n", "New job"),
-         ("i", "Open the first job that needs you"), ("r", "Answer, mark done or dismiss"), ("a", "Attach a cloud task"),
+         ("i", "Open the first job that needs you"), ("r", "Answer or mark done"), ("a", "Link a Codex task"),
          ("h", "Paste a patch"), ("u", "Resume"), ("s", "Pause"), ("c", "Cancel a job that has not started"),
-         ("l", "Save a result to a branch"), ("t", "Check now"), ("Esc", "Close or leave a field"), ("?", "This sheet"))
-# The app's words, each with the name the CLI and the older pages use for it.
-_WORDS = (("Harness", "The supervisor process: it launches ready jobs, watches running ones and collects their "
-                      "results (Supervisor on older pages)."),
-          ("Check now", "Runs one harness pass at once (rh supervise --once, once called Run tick)."),
-          ("Platform", "Where jobs run: Codex cloud, or this machine (a route in the CLI). A red chip means the "
-                       "harness is backing off and will retry by itself."),
-          ("Pause", "Nothing new starts for the job or platform, and a running job is not timed out. Work already "
-                    "running continues (rh stop --pause; the old Stops list)."),
-          ("On hold", "The harness parked the job until something is fixed and rechecks it on every pass (held)."),
-          ("Paste patch", "Saves the diff copied from the Codex web view into the job (rh cloud harvest)."),
-          ("Save to branch", "Commits a done cloud job's result to the local branch cloud/<job>. Nothing is pushed "
-                             "(rh land, once called Land)."))
+         ("l", "Save a result to a branch"), ("t", "Check now"), ("⌘ / Ctrl Enter", "Send the form you are typing in"),
+         ("Esc", "Close or leave a field"), ("?", "This sheet"))
+_ENV = re.compile(r"in environment (\S+?),")
 
 
 def _text(value):
@@ -830,11 +925,16 @@ def _relative(timestamp, now):
     return f"{_span(seconds)} ago" if seconds >= 0 else f"in {_span(-seconds)}"
 
 
-def _when(timestamp, now, key, pre="", due=None):
+def _when(timestamp, now, key, pre="", due=None, short=False):
     """A relative time the live page keeps ticking; data-tk lets it update a row that did not otherwise change.
-    `due` replaces a future time once it has passed ("retrying on the next check" rather than "8 s ago")."""
+    `due` replaces a future time once it has passed ("retrying on the next check" rather than "8 s ago"); `short`
+    gives just the span ("12 s"), for the job list."""
     marks = (f' data-pre="{_text(pre)}"' if pre else "") + (f' data-due="{_text(due)}"' if due else "")
-    text = due if due and now >= timestamp else pre + _relative(timestamp, now)
+    if short:
+        marks += ' data-short="1"'
+        text = _span(max(0, round(now - timestamp)))
+    else:
+        text = due if due and now >= timestamp else pre + _relative(timestamp, now)
     return f'<span class="when" data-t="{_text(timestamp)}" data-tk="{_text(key)}"{marks}>{_text(text)}</span>'
 
 
@@ -842,9 +942,13 @@ def _number(value):
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
+def _dot(tone, pulse=False):
+    return f'<i class="dot {tone}{" pulse" if pulse else ""}" aria-hidden="true"></i>'
+
+
 def _state(state):
     word, tone = _STATES.get(state, (state, "neutral"))
-    return f'<span class="state t-{tone}"><i></i>{_text(word)}</span>', tone
+    return f'<span class="state">{_dot(tone, state == "running")}{_text(word)}</span>', tone
 
 
 def _platform(route):
@@ -861,6 +965,59 @@ def _clause(text):
     return str(text).strip().rstrip(".")
 
 
+def _plain(detail):
+    """A state's detail as the harness wrote it, in the app's words: process ids and CLI hints left out."""
+    text = str(detail or "").strip()
+    rules = ((r"pid \d+", ""), (r"launched task_\w+", ""), (r"attached task_\w+", "Linked to its Codex task"),
+             (r"recovered after restart: pid \d+", "Picked up again after a restart"),
+             (r"harvested patch; .*", "Patch saved; checking it"),
+             (r"task completed; collecting", "Finished in Codex; collecting the result"),
+             (r"gate waiting for the heavy lease", "Waiting its turn to run the check"),
+             (r"command and gate exited 0", "The command and its check passed"),
+             (r"command exited (\d+)", r"The command exited with code \1"),
+             (r"acceptance gate exited (\d+)", r"The check exited with code \1"),
+             (r"launch deferred: (.*)", r"Waiting to start: \1"),
+             (r"no finish after (\d+) min", r"Past its \1-minute limit"),
+             (r"attached from the web composer", ""),
+             (r".*rh cloud prompt .*", "Launch it in Codex by hand"))
+    text = text.replace(" (operator step)", "")
+    for pattern, words in rules:
+        if re.fullmatch(pattern, text):
+            return re.sub(pattern, words, text)
+    return _sentence(re.sub(r"\s*\(?pid \d+\)?", "", text))
+
+
+def _title(meta, jid):
+    """A job's name in the list and on its page: the first sentence of its brief, else its id."""
+    brief = str((meta or {}).get("brief") or "").strip()
+    if not brief:
+        return str(jid)
+    line = brief.splitlines()[0].strip()
+    line = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0].rstrip(".")
+    if len(line) > 100:
+        line = line[:98].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return line or str(jid)
+
+
+def _size(n):
+    if not _number(n):
+        return ""
+    if n < 1024:
+        return f"{n} B"
+    if n < 1024 * 1024:
+        return f"{n / 1024:.1f} KB"
+    return f"{n / 1024 / 1024:.1f} MB"
+
+
+def _duration(seconds):
+    seconds = max(0, round(seconds))
+    if seconds < 60:
+        return f"{seconds} s"
+    if seconds < 3600:
+        return f"{seconds // 60} min {seconds % 60} s" if seconds < 600 else f"{seconds // 60} min"
+    return f"{seconds // 3600} h {seconds % 3600 // 60} min"
+
+
 def _hidden(ctx, fields):
     back = [("next", ctx["back"])] if ctx.get("back") else []
     return "".join(f'<input type="hidden" name="{name}" value="{_text(value)}">'
@@ -871,125 +1028,294 @@ def _cls(kind):
     return f"btn {kind}" if kind else "btn"
 
 
-def _tip(cli):
-    return f' title="{_text(cli)}"' if cli else ""
-
-
 def _url(ctx, path):
     return _text(f"{path}?t={ctx['token']}")
 
 
-def _button(ctx, route, fields, label, key, kind="", cli=""):
-    """A one-step action; the title names the CLI command it runs."""
-    return (f'<form class="act" method="post" action="{route}" data-act data-label="{label}">'
-            f'{_hidden(ctx, fields)}<button class="{_cls(kind)}" data-k="{key}"{_tip(cli)}>{label}</button></form>')
+def _button(ctx, route, fields, label, key="", kind="", say=None):
+    """A one-step action."""
+    k = f' data-k="{key}"' if key else ""
+    return (f'<form class="act" method="post" action="{route}" data-act data-label="{_text(say or label)}">'
+            f'{_hidden(ctx, fields)}<button class="{_cls(kind)}"{k}>{label}</button></form>')
 
 
-def _popover(ctx, route, fields, label, key, inputs, submit, kind="", cli="", note="", left=False):
+def _popover(ctx, route, fields, label, key, inputs, submit, kind="", note="", where=""):
     """An action that opens its form in place: the inputs, what submitting does, and the button that confirms."""
-    confirm = "btn danger fill" if kind == "danger" else "btn primary"
+    confirm = "btn danger fill" if "danger" in kind.split() else "btn primary"
     note = f'<p class="note">{note}</p>' if note else ""
-    return (f'<details class="act"><summary class="{_cls(kind)}" data-k="{key}"{_tip(cli)}>{label}…</summary>'
-            f'<form class="pop{" left" if left else ""}" method="post" action="{route}" data-act data-label="{submit}">'
-            f'{_hidden(ctx, fields)}{inputs}{note}<button class="{confirm}">{submit}</button></form></details>')
+    k = f' data-k="{key}"' if key else ""
+    return (f'<details class="act"><summary class="{_cls(kind)}"{k}>{label}…</summary>'
+            f'<form class="pop{" " + where if where else ""}" method="post" action="{route}" data-act '
+            f'data-label="{_text(submit)}">{_hidden(ctx, fields)}{inputs}{note}<button class="{confirm}">{submit}</button>'
+            '</form></details>')
 
 
-def _inline(ctx, route, fields, inputs, submit, kind="", cli="", note=""):
-    """An answer form written out in the open job's pane, where the space is there to type in."""
-    note = f'<p class="note">{note}</p>' if note else ""
-    return (f'<form class="answer" method="post" action="{route}" data-act data-label="{submit}">'
-            f'{_hidden(ctx, fields)}{inputs}<button class="{_cls(kind)}"{_tip(cli)}>{submit}</button>{note}</form>')
-
-
-def _note(label, key="r", rows=0):
-    field = (f'<textarea name="note" rows="{rows}" required></textarea>' if rows
-             else '<input type="text" name="note" required autocomplete="off">')
-    return f'<label>{label}{field.replace(" name=", f" data-k={chr(34)}{key}{chr(34)} name=", 1) if key else field}</label>'
+def _field(label, name, *, required=False, placeholder="", key="", mono=False, rows=0, value=""):
+    attrs = (f' name="{name}"' + (" required" if required else "") + (f' data-k="{key}"' if key else "")
+             + (f' placeholder="{_text(placeholder)}"' if placeholder else "") + (' class="mono" spellcheck="false"'
+                                                                                 if mono else ""))
+    box = (f'<textarea{attrs} rows="{rows}">{_text(value)}</textarea>' if rows
+           else f'<input type="text"{attrs} autocomplete="off" value="{_text(value)}">')
+    return f"<label>{label}{box}</label>"
 
 
 def _acts(items):
-    return f'<span class="acts">{"".join(items)}</span>' if items else ""
+    return f'<div class="acts">{"".join(items)}</div>' if items else ""
 
 
-def _row(key, live, inner, state=None, tone=None, acts=(), card=False):
-    marks = f' data-state="{_text(state)}" data-tone="{tone}"' if state is not None else ""
-    focus = ' tabindex="-1"' if live else ""
-    body = f'<div class="cell">{inner}</div>{_acts(acts)}'
-    return (f'<li class="row{" card" if card else ""}" data-key="{_text(key)}" data-sig="{_sig(_still(body))}"'
-            f'{marks}{focus}>{body}</li>')
+def _row(key, inner, cls="row", attrs=""):
+    return f'<li class="{cls}" data-key="{_text(key)}" data-sig="{_sig(_still(inner))}"{attrs}>{inner}</li>'
 
 
-def _need(ctx, ask, detail, when, acts, cli):
-    """One thing a person can settle, written as an instruction, beside the buttons that settle it. The snapshot
-    has no buttons, so it prints the command instead."""
-    say = (f'<p class="ask">{ask}</p>' + (f'<p class="detail">{detail}</p>' if detail else "") + when
-           + ("" if ctx["live"] else f'<p class="cli"><code>{_text(cli)}</code></p>'))
-    return f'<div class="need"><div class="say">{say}</div>{_acts(acts if ctx["live"] else ())}</div>'
+def _codex_link(label="Open Codex"):
+    return (f'<a class="btn" href="{_CODEX}" target="_blank" rel="noopener noreferrer">{label}'
+            '<span aria-hidden="true">↗</span><span class="sr"> (opens a new tab)</span></a>')
 
 
-def _ask_text(item):
-    """(instruction html, detail text, cli) for one inbox item."""
+def _copy(target, label):
+    return f'<button type="button" class="btn small" data-copy="{_text(target)}" hidden>{label}</button>'
+
+
+def _setup_item(item, ready):
+    return (item.get("kind") == "operator-step" and not item.get("job") and not ready
+            and str(item.get("action") or "").startswith(_SETUP))
+
+
+def _ask_line(item):
+    """(what to do, detail) for one inbox item, in plain words."""
     job, kind = item.get("job"), item.get("kind")
     action, detail = str(item.get("action") or ""), str(item.get("detail") or "")
     if kind == "web-launch" and job:
-        return (f"Launch {_text(job)} in the Codex web composer, then attach its task id", detail,
-                f"rh cloud attach {job} <task id>")
+        return "Launch it in Codex, then link the task", ""
     if kind == "harvest" and job:
-        return (f"Paste the patch for {_text(job)} from the Codex web view",
-                " ".join(part for part in (_sentence(action), detail) if part), f"rh cloud harvest {job} <saved file>")
-    return _text(_sentence(action or kind)), detail, f"rh inbox resolve {item['id']} <note>"
+        return "Paste the patch from Codex", " ".join(part for part in (_sentence(action), detail) if part)
+    if kind == "operator-step" and action.startswith(_SETUP):
+        return "Set up Codex cloud", "Cloud jobs wait until Codex has an environment for this repository."
+    if kind == "refusal":
+        return f"The job stopped at a refusal: {_clause(action)}", detail
+    return _sentence(action or kind), detail
 
 
-def _ask_acts(item, ctx, lead):
-    """The controls that settle an inbox item: popovers on a card, open forms in the job's pane."""
-    iid, job, kind = item["id"], item.get("job"), item.get("kind")
+class _Job:
+    """Everything the app says about one job, worked out once: which group it belongs in, what it needs from a
+    person, the pauses on it, and the actions it offers."""
+
+    def __init__(self, row, where, ctx):
+        self.row, self.where, self.ctx = row, where, ctx
+        self.id, self.state = row["id"], row["state"]
+        self.meta = ctx["meta"].get(self.id) or {}
+        self.kind = self.meta.get("kind", "")
+        self.word, self.tone = _STATES.get(self.state, (self.state, "neutral"))
+        self.stops = ctx["scopes"].get(f"job:{self.id}", [])
+        self.items = ctx["asks"].get(self.id, [])
+        self.handoff = self.state == "handoff" and not any(i.get("kind") == "web-launch" for i in self.items)
+        self.mine = [s for s in self.stops if s.get("owner") == "app"]
+        ended = self.meta.get("updated")
+        self.failure = (self.state in _FAILED and where == "recent" and self.id not in ctx["followed"]
+                        and (not _number(ended) or ctx["now"] - ended < _FAILURE_WINDOW))
+        self.held = self.state == "held" and not self.items
+        self.setup = bool(ctx["setup"]) and self.kind == "codex-cloud" and self.state in _PRE
+        self.count = len(self.items) + self.handoff + len(self.mine) + self.failure + self.held
+        if self.count:
+            self.group = "needs"
+        elif where == "live" or self.state == "draft" or (self.state == "ready" and not row.get("detail")):
+            self.group = "running"
+        else:
+            self.group = {"not_started": "queued", "recent": "done"}.get(where, "running")
+        times = [i["created"] for i in self.items if _number(i.get("created"))]
+        times += [s["created"] for s in self.mine if _number(s.get("created"))]
+        self.first = min(times, default=float("inf"))
+        self.title = _title(self.meta, self.id)
+
+    def headline(self):
+        """The one line the list shows under the title: what it needs when it needs you, else its state."""
+        if self.items:
+            return _ask_line(self.items[0])[0]
+        if self.handoff:
+            return "Launch it in Codex"
+        if self.mine:
+            return "Paused from the app"
+        detail = _plain(self.row.get("detail"))
+        parts = []
+        held = [s for s in self.stops if s.get("owner") != "app"]
+        if held:
+            parts.append(f"{'Paused' if held[0].get('kind') == 'pause' else 'Stopped'} by {held[0]['owner']}")
+        elif self.row.get("paused"):
+            parts.append("Paused")
+        if self.failure or self.held:
+            return " · ".join(parts + [f"{self.word}: {detail}" if detail else self.word])
+        if self.setup:
+            return " · ".join(parts + ["Waits for Codex cloud to be set up"])
+        if self.group == "running" and self.state in ("draft", "ready", "launching"):
+            parts.append("Starting")
+        elif self.state == "running" and self.kind in _PLACES:
+            parts.append(f"Running {_PLACES[self.kind]}")
+        else:
+            parts.append(self.word)
+        if detail and self.state not in ("draft", "ready", "launching"):
+            parts.append(detail)
+        return " · ".join(parts)
+
+    def since(self):
+        """The time the list shows: how long it has waited on you, run, or been finished."""
+        if self.first != float("inf"):
+            return self.first
+        key = {"running": "started", "done": "updated", "needs": "updated"}.get(self.group, "created")
+        stamp = self.meta.get(key) or self.meta.get("created")
+        return stamp if _number(stamp) else None
+
+    def item(self):
+        """The list entry: a link to the job's page."""
+        ctx = self.ctx
+        since = self.since()
+        when = _when(since, ctx["now"], f"since:{self.id}", short=True) if since is not None else '<span></span>'
+        pulse = self.state == "running"
+        dot = "bad" if self.failure else self.tone if self.group != "needs" else "warn"
+        inner = (f'{_dot(dot, pulse)}<span class="name">{_text(self.title)}</span>{when}'
+                 f'<span class="sub{" fail" if self.failure else ""}">{_text(self.headline())}</span>')
+        link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{inner}</a>' if ctx["live"]
+                else f'<div class="item">{inner}</div>')
+        return _row(f"job:{self.id}", link, attrs=f' data-tone="{self.tone}"')
+
+
+def _need_row(ctx, key, ask, detail, when, acts, cli, job=None, title=None, status="", listed=None):
+    """One thing a person can settle on the home page, written as an instruction, beside what settles it. The
+    snapshot has no buttons, so it prints the command instead. `listed` names the job whose row in the job list
+    leads to the same place, so a phone, which shows that list on home, can leave this row out."""
+    about = ""
+    if job:
+        name = _text(title or job)
+        tail = f" · {_text(status)}" if status else ""
+        about = (f'<p class="for">For <a href="{_url(ctx, "/job/" + job)}" data-nav>{name}</a>{tail}</p>'
+                 if ctx["live"] else f'<p class="for">For {name}{tail}</p>')
+    say = (f'<p class="ask">{ask}</p>' + (f'<p class="detail">{detail}</p>' if detail else "") + about
+           + (when if when else "") + ("" if ctx["live"] else f'<p class="cli"><code>{_text(cli)}</code></p>'))
+    inner = f'<div class="say">{say}</div>{_acts(acts) if ctx["live"] else ""}'
+    return _row(key, inner, attrs=(f' data-job="{_text(job or listed)}"' if job or listed else "") + ' tabindex="-1"')
+
+
+def _home_acts(ctx, item, lead, job=None):
+    """The controls a home row offers for an inbox item; a launch or a patch is done on the job's page."""
+    iid, kind = item["id"], item.get("kind")
     first = "primary" if lead else ""
-    resolve = f"rh inbox resolve {iid} <note>"
-    label, field = {"decision": ("Record decision", "Your decision"),
-                    "operator-step": ("Mark done", "What did you do?")}.get(kind, ("Mark handled", "Note"))
-    if kind == "web-launch" and job:
-        main = ("/attach", [("job", job)], "Attach task", "a", _TASK, "Links the cloud task to the job and closes this "
-                "item.", f"rh cloud attach {job} <task id>")
-    elif kind == "harvest" and job:
-        main = ("/harvest", [("job", job)], "Paste patch", "h", _PATCH, "Saves the patch into the job and closes this "
-                "item.", f"rh cloud harvest {job} <saved file>")
+    if kind in ("web-launch", "harvest") and job:
+        label = "Launch" if kind == "web-launch" else "Paste patch"
+        return [f'<a class="{_cls(first)}" href="{_url(ctx, "/job/" + job)}" data-nav data-k="'
+                f'{"a" if kind == "web-launch" else "h"}">{label}…</a>']
+    if kind == "decision":
+        return [_popover(ctx, "/inbox/resolve", [("id", iid)], "Answer", "r",
+                         _field("Your decision", "note", required=True, rows=3), "Record decision", first,
+                         "Closes the question and keeps your answer with it.")]
+    return [_button(ctx, "/inbox/resolve", [("id", iid), ("note", "")], "Mark done", "r", first, "Mark done")]
+
+
+def _setup_card(ctx, view, lead=True):
+    """Codex cloud set up from the app: the settings, a link to Codex, and the environment ID back."""
+    spec = str(view.get("env_spec") or "").strip()
+    first = "primary" if lead else ""
+    if not ctx["live"]:
+        return ('<div class="ask-card"><p class="label">' + _dot("warn") + 'Needs you</p><h3>Set up Codex cloud</h3>'
+                '<p class="detail">Cloud jobs wait until Codex has an environment for this repository.</p>'
+                '<p class="cli"><code>rh env spec</code> · <code>rh config set cloud.env_id &lt;ID&gt;</code></p></div>')
+    settings = (f'<pre class="envspec" id="envspec" tabindex="0">{_text(spec)}</pre>{_copy("envspec", "Copy settings")}'
+                if spec else '<p class="detail">The settings could not be read here; <code>rh env spec</code> prints '
+                             'them.</p>')
+    form = (f'<form method="post" action="/setup" data-act data-label="Save environment">{_hidden(ctx, [])}'
+            '<label>Environment ID<input type="text" name="env_id" required autocomplete="off" spellcheck="false" '
+            'class="mono" pattern="[A-Za-z0-9_.:\\-]{1,128}" data-k="r"></label>'
+            f'<button class="{_cls(first)}">Save and start cloud jobs</button></form>')
+    return ('<div class="ask-card setup"><p class="label">' + _dot("warn") + 'Needs you</p><h3>Set up Codex cloud</h3>'
+            '<p class="detail">Cloud jobs wait until Codex has an environment for this repository. You do this once.'
+            '</p><ol class="steps">'
+            f'<li><div><p>Create an environment in Codex with these settings.</p>{settings}</div></li>'
+            f'<li><div><p>Open Codex, create and publish it, then copy its ID.</p>{_codex_link()}</div></li>'
+            f'<li><div>{form}</div></li></ol></div>')
+
+
+def _launch_card(ctx, jid, opened, lead, foot=""):
+    """A hand launch in order: copy the prompt, open Codex, paste the task link back."""
+    first = "primary" if lead else ""
+    if not ctx["live"]:
+        return (f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you</p><h3>Launch it in Codex</h3>'
+                f'<p class="cli"><code>rh cloud prompt {_text(jid)}</code> · <code>rh cloud attach {_text(jid)} '
+                f'&lt;task id&gt;</code></p>{foot}</div>')
+    prompt = opened.get("prompt")
+    env = _ENV.search(str((opened.get("job") or {}).get("detail") or ""))
+    where = f" in environment <code>{_text(env.group(1))}</code>" if env else ""
+    pid = f"prompt-{jid}"
+    copy = (f'<textarea class="prompt mono" id="{_text(pid)}" rows="4" readonly>{_text(prompt)}</textarea>'
+            f'{_copy(pid, "Copy prompt")}' if isinstance(prompt, str) and prompt.strip() else
+            f'<p class="detail">The prompt could not be read here; <code>rh cloud prompt {_text(jid)}</code> prints it.'
+            '</p>')
+    attach = (f'<form method="post" action="/attach" data-act data-label="Link task">{_hidden(ctx, [("job", jid)])}'
+              '<label>Paste the task link<input type="text" name="task_id" required autocomplete="off" '
+              'spellcheck="false" class="mono" placeholder="https://chatgpt.com/codex/tasks/task_…" data-k="a">'
+              f'</label><button class="{_cls(first)}">Link task</button></form>')
+    return ('<div class="ask-card launch"><p class="label">' + _dot("warn") + 'Needs you</p>'
+            '<h3>Launch it in Codex</h3><p class="detail">Codex cannot start this job from here. Start it in the Codex '
+            'web app, then link the task so this page can follow it.</p><ol class="steps">'
+            f'<li><div><p>Copy the prompt.</p>{copy}</div></li>'
+            f'<li><div><p>Open Codex, start a task{where} and paste the prompt.</p>{_codex_link()}</div></li>'
+            f'<li><div>{attach}</div></li></ol>{foot}</div>')
+
+
+def _dismiss(ctx, iid):
+    return _popover(ctx, "/inbox/resolve", [("id", iid)], "Dismiss", "x",
+                    _field("Why dismiss it? (optional)", "note"), "Dismiss", "quiet",
+                    "Closes this item without doing it.", "left")
+
+
+def _ask_card(ctx, item, opened, lead, view):
+    """One inbox item on the job's page, with the form that settles it written out."""
+    iid, kind, jid = item["id"], item.get("kind"), item.get("job")
+    first = "primary" if lead else ""
+    if not ctx["live"] and not _setup_item(item, ctx["ready"]):
+        ask, detail = _ask_line(item)
+        return (f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you</p><h3>{_text(ask)}</h3>'
+                + (f'<p class="detail">{_text(detail)}</p>' if detail else "")
+                + f'<p class="cli"><code>rh inbox resolve {_text(iid)} &lt;note&gt;</code></p></div>')
+    if kind == "web-launch" and jid:
+        return _launch_card(ctx, jid, opened, lead, f'<div class="foot">{_dismiss(ctx, iid)}</div>' if ctx["live"] else "")
+    if _setup_item(item, ctx["ready"]):
+        return _setup_card(ctx, view, lead)
+    ask, detail = _ask_line(item)
+    when = (_when(item["created"], ctx["now"], f"inbox:{iid}", "asked ") if _number(item.get("created")) else "")
+    head = (f'<p class="label">{_dot("warn")}Needs you · {when}</p><h3>{_text(ask)}</h3>'
+            + (f'<p class="detail">{_text(detail)}</p>' if detail else ""))
+    if kind == "harvest" and jid:
+        form = (f'<form method="post" action="/harvest" data-act data-label="Save patch">{_hidden(ctx, [("job", jid)])}'
+                + _field("The patch or bundle reply, as copied", "text", required=True, key="h", mono=True, rows=8)
+                + f'<button class="{_cls(first)}">Save patch</button></form>')
+        return f'<div class="ask-card">{head}{form}<div class="foot">{_dismiss(ctx, iid)}</div></div>'
+    if kind == "decision":
+        inputs, submit = _field("Your decision", "note", required=True, key="r", rows=3), "Record decision"
     else:
-        main = ("/inbox/resolve", [("id", iid)], label, "r", None, "Closes this item and keeps your note with it.", resolve)
-    route, fields, name, key, inputs, note, cli = main
-    extra = route != "/inbox/resolve"
-    if ctx["mode"] == "inline":
-        inputs = inputs.replace(' name=', f' data-k="{key}" name=', 1) if inputs else _note(field, key, 3)
-        out = [_inline(ctx, route, fields, inputs, name, first, cli, note)]
-        if extra:
-            out.append(_popover(ctx, "/inbox/resolve", [("id", iid)], "Dismiss", "x", _note("Why dismiss it?", ""),
-                                "Dismiss", cli=resolve, note="Closes this item without doing it."))
-        return out
-    out = [_popover(ctx, route, fields, name, key, inputs or _note(field, ""), name, first, cli, note)]
-    if extra:
-        out.append(_popover(ctx, "/inbox/resolve", [("id", iid)], "Dismiss", "x", _note("Why dismiss it?", ""),
-                            "Dismiss", cli=resolve, note="Closes this item without doing it."))
-    return out
+        inputs = _field("What did you do? (optional)", "note", key="r")
+        submit = "Mark handled" if kind == "refusal" else "Mark done"
+    form = (f'<form method="post" action="/inbox/resolve" data-act data-label="{submit}">'
+            f'{_hidden(ctx, [("id", iid)])}{inputs}<button class="{_cls(first)}">{submit}</button></form>')
+    return f'<div class="ask-card">{head}{form}</div>'
 
 
-def _ask(item, ctx, lead):
-    """An inbox item as one plain instruction; the first need on a card gets the filled button."""
-    ask, detail, cli = _ask_text(item)
-    when = (_when(item["created"], ctx["now"], f"inbox:{item['id']}", "asked ")
-            if _number(item.get("created")) else "")
-    return _need(ctx, ask, _text(detail), when, _ask_acts(item, ctx, lead), cli)
+def _pause(ctx, jid):
+    return _popover(ctx, "/stop", [("job", jid), ("pause", "on")], "Pause job", "s",
+                    _field("Why? (optional)", "reason", placeholder="Paused from the app"), "Pause job",
+                    "quiet danger", "Nothing new starts for it until you resume it. Work already running continues.")
 
 
-def _resume(stop, ctx, lead, noun, what, fields, scope):
-    """A pause this app placed: only the app's own stops can be lifted from here (rh resume --owner app)."""
+def _cancel(ctx, jid):
+    return _popover(ctx, "/job/cancel", [("job", jid)], "Cancel job", "c", _field("Why?", "reason", required=True),
+                    "Cancel job", "quiet danger", "It will not start. You can run it again later.")
+
+
+def _resume_card(ctx, stop, lead, what, fields):
     pause = stop.get("kind") == "pause"
     verb = "Paused" if pause else "Stopped"
     fields = fields + ([("pause", "on")] if pause else [])
-    cli = f"rh resume --owner app{' --pause' if pause else ''}{scope}"
     when = (_when(stop["created"], ctx["now"], f"stop:{stop.get('id', stop['scope'])}", verb.lower() + " ")
             if _number(stop.get("created")) else "")
-    act = _button(ctx, "/resume", fields, f"Resume {noun}", "u", "primary" if lead else "", cli)
-    return _need(ctx, f"{verb} from the app: {_text(_clause(stop['reason']))}",
-                 f"Nothing new starts for {what} until you resume it.", when, [act], cli)
+    return (verb, f"Nothing new starts for {what} until you resume it.", when,
+            [_button(ctx, "/resume", fields, "Resume", "u", "primary" if lead else "", f"Resume {what}")])
 
 
 def _hold(stop, running):
@@ -1000,422 +1326,512 @@ def _hold(stop, running):
             f'<span class="soft">{tail}only {owner} can undo it.</span></p>')
 
 
-def _pause(ctx, jid, left=False):
-    return _popover(ctx, "/stop", [("job", jid), ("pause", "on")], "Pause", "s", _REASON, "Pause job", "danger",
-                    f"rh stop --owner app --pause --job {jid} --reason <why>",
-                    "Nothing new starts for it until you resume it here. Work already running continues.", left)
-
-
-def _cancel(ctx, jid):
-    return _popover(ctx, "/job/cancel", [("job", jid)], "Cancel job", "c", _REASON, "Cancel job", "danger",
-                    f"rh job cancel {jid} --reason <why>", "The job will not start. It moves to Done as cancelled.")
-
-
-def _land(ctx, jid, kind=""):
-    return _button(ctx, "/land", [("job", jid)], "Save to branch", "l", kind, f"rh land {jid}")
-
-
-def _local(row):
-    return str(row.get("external_id") or "-").isdigit()  # a bare pid is a local job
-
-
-class _Job:
-    """Everything the app says about one job, worked out once: which group it belongs in, what it needs from a
-    person, the pauses on it, and the actions it offers."""
-
-    def __init__(self, row, where, ctx):
-        self.row, self.where, self.ctx = row, where, ctx
-        self.id, self.state = row["id"], row["state"]
-        self.status, self.tone = _state(self.state)
-        self.stops = ctx["scopes"].get(f"job:{self.id}", [])
-        self.items = ctx["asks"].get(self.id, [])
-        self.handoff = self.state == "handoff" and not any(i.get("kind") == "web-launch" for i in self.items)
-        self.mine = [s for s in self.stops if s.get("owner") == "app"]
-        self.count = len(self.items) + self.handoff + len(self.mine)
-        self.group = "needs" if self.count else {"live": "running", "not_started": "queued", "recent": "done"}[where]
-        times = [i["created"] for i in self.items if _number(i.get("created"))]
-        times += [s["created"] for s in self.mine if _number(s.get("created"))]
-        self.first = min(times, default=float("inf"))
-
-    def headline(self):
-        """The one line the sidebar shows under the name: the question when there is one, else the state."""
-        if self.items:
-            return re.sub(r"<[^>]+>", "", _ask_text(self.items[0])[0])
-        if self.handoff:
-            return "Launch it in the Codex web composer"
-        if self.mine:
-            return "Paused from the app"
-        parts = [_STATES.get(self.state, (self.state,))[0]]
-        held = [s for s in self.stops if s.get("owner") != "app"]
-        if held:
-            parts.insert(0, f"{'Paused' if held[0].get('kind') == 'pause' else 'Stopped'} by {held[0]['owner']}")
-        elif self.row.get("paused"):
-            parts.insert(0, "Paused")
-        if self.row.get("detail"):
-            parts.append(self.row["detail"])
-        return " · ".join(map(str, parts))
-
-    def needs(self, ctx):
-        out = [_ask(item, ctx, i == 0) for i, item in enumerate(self.items)]
-        if self.handoff:
-            cli = f"rh cloud attach {self.id} <task id>"
-            first = "" if out else "primary"
-            act = (_inline(ctx, "/attach", [("job", self.id)], _TASK.replace(' name=', ' data-k="a" name=', 1),
-                           "Attach task", first, cli, "Links the cloud task to the job.") if ctx["mode"] == "inline"
-                   else _popover(ctx, "/attach", [("job", self.id)], "Attach task", "a", _TASK, "Attach task", first,
-                                 cli, "Links the cloud task to the job."))
-            out.append(_need(ctx, f"Launch {_text(self.id)} in the Codex web composer, then attach its task id",
-                             "", "", [act], cli))
-        for stop in self.mine:
-            out.append(_resume(stop, ctx, not out, "job", "this job", [("job", self.id)], f" --job {self.id}"))
-        return out
-
-    def holds(self):
-        out = [_hold(s, self.where == "live") for s in self.stops if s.get("owner") != "app"]
-        if self.row.get("paused") and not any(s.get("kind") == "pause" for s in self.stops):
-            out.append('<p class="hold"><b>Paused:</b> its platform or all launches are paused.</p>')
-        return out
-
-    def actions(self, ctx, left=False):
-        """The job's own actions, outlined: the filled button always belongs to what it needs from a person."""
-        if not ctx["live"]:
-            return []
-        acts = []
-        if self.where != "recent" and not self.mine:
-            acts.append(_pause(ctx, self.id, left))
-        if self.state in _PRE and self.where != "recent":
-            acts.append(_cancel(ctx, self.id))
-        if self.state == "done" and not _local(self.row):
-            acts.append(_land(ctx, self.id, "" if self.count or ctx["mode"] != "inline" else "primary"))
-        return acts
-
-    def item(self):
-        """The sidebar entry: a link to the job's pane."""
-        ctx = self.ctx
-        inner = (f'<i class="t-{self.tone}"></i><span class="name">{_text(self.id)}</span>'
-                 f'<span class="sub">{_text(self.headline())}</span>')
-        link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{inner}</a>' if ctx["live"]
-                else f'<div class="item">{inner}</div>')
-        return (f'<li class="row" data-key="job:{_text(self.id)}" data-sig="{_sig(_still(link))}" '
-                f'data-tone="{self.tone}">{link}</li>')
-
-    def card(self):
-        """The overview's card: what the job needs, then which job it is."""
-        ctx = self.ctx
-        task = _task(self.row)
-        what = f' <span class="what">{_text(self.row["detail"])}</span>' if self.row.get("detail") else ""
-        tag = f'<span class="task">{task}</span>' if task else ""
-        link = f'<a class="btn" href="{_url(ctx, "/job/" + self.id)}" data-nav>Open job</a>' if ctx["live"] else ""
-        about = (f'<div class="about"><span class="name">{_text(self.id)}</span>{self.status}{what}{tag}'
-                 f'{_acts([link] if link else [])}</div>')
-        return _row(f"card:{self.id}", ctx["live"], "".join(self.needs(ctx)) + about + "".join(self.holds()),
-                    self.state, self.tone, card=True)
-
-
-def _task(row):
-    ext = row.get("external_id")
-    return f"Cloud task {_text(ext)}" if ext is not None and not str(ext).isdigit() else ""
-
-
-def _health(view, ctx):
-    """The header's one line: is the harness checking, when did it last check, and is any platform down."""
+def _checks(view, ctx):
+    """The status line at the foot of the sidebar: who checks the harness, when it last did, and Pause."""
     now, live = ctx["now"], ctx["live"]
-    sup, chips = view.get("supervisor"), []
-    if sup:
-        age = sup["age_s"]
-        counted = isinstance(age, int) and not isinstance(age, bool)
-        ago = _when(now - age, now, "tick", "checked ") if counted else f"checked {_text(age)} s ago"
-        quiet = counted and age > _STALE
-        head, tone = ("Harness quiet", "warn") if quiet else ("Harness running", "")
-        more = (f"Process {_text(sup['pid'])}. It checks on a timer: it launches ready jobs, watches "
-                "running ones and collects results." + (" It has not checked for a while and may have stopped; "
-                                                        "rh supervise starts it." if quiet else ""))
-        line = f"{head} · {ago}"
+    sup, loop = view.get("supervisor"), view.get("checks") if isinstance(view.get("checks"), dict) else None
+    age = sup.get("age_s") if isinstance(sup, dict) else None
+    counted = _number(age)
+    quiet = counted and age > _STALE
+    last = _when(now - age, now, "tick", "Last check ") if counted else ""
+    mode = loop.get("mode") if loop else None
+    btns, more, inline = [], last, ""
+    if mode == "on":
+        word, dot = ("Checking, but not lately", "warn") if quiet else ("Checking automatically", "live")
+        btns = [_button(ctx, "/checks", [("on", "0")], "Pause", "", "quiet small", "Pause checks"),
+                _button(ctx, "/tick", [], "Check now", "t", "quiet small", "Check now")]
+    elif mode == "paused":
+        word, dot, more = "Checks paused", "warn", "Nothing new starts and nothing is collected until you resume."
+        btns = [_button(ctx, "/checks", [("on", "1")], "Resume", "", "small", "Resume checks"),
+                _button(ctx, "/tick", [], "Check once", "t", "quiet small", "Check once")]
+    elif mode == "other":
+        word, dot = f"Checked by rh supervise (process {loop.get('pid')})", "live"
+        more = (last + ". " if last else "") + "This app watches while that process runs and takes over when it stops."
+    elif sup:
+        word, dot = "Harness", "warn" if quiet else "good"
+        inline = " " + _when(now - age, now, "tick", "checked ") if counted else f" checked {_text(age)} s ago"
+        more = f"Process {_text(sup.get('pid'))}." + (" It may have stopped." if quiet else "")
+        if live:
+            btns = [_button(ctx, "/tick", [], "Check now", "t", "quiet small", "Check now")]
     else:
-        line, tone = "Harness not running", "warn"
-        more = ("Nothing launches or gets checked until the supervisor runs. Check now runs one pass; "
-                "rh supervise keeps it running.")
-    chips.append(f'<details class="act"><summary class="chip {tone}"><i class="beat"></i><span>{line}</span></summary>'
-                 f'<div class="pop left"><p>{more}</p></div></details>')
+        word, dot, more = "The harness has not run yet.", "warn", ""
+        if live:
+            btns = [_button(ctx, "/tick", [], "Check now", "t", "small", "Check now")]
+    tone = dot if dot in ("warn", "bad") else ""
+    out = [f'<p class="line {tone}"><i class="dot {dot} beat" aria-hidden="true"></i><span>{_text(word)}{inline}'
+           '</span></p>']
+    if loop and loop.get("failed"):
+        out.append('<p class="line bad"><i class="dot bad" aria-hidden="true"></i><span>The last check failed</span></p>')
+        more = _text(str(loop["failed"])[:300])
+    if more:
+        out.append(f'<p class="more">{more}</p>')
     for route in view.get("routes", []):
         name = route["route"]
-        label = _platform(name)
         retry = _when(route["next_try"], now, f"route:{name}:next", "retrying ", "retrying on the next check")
         last = (f", the last {_when(route['updated'], now, f'route:{name}:updated')}"
                 if _number(route.get("updated")) else "")
-        panel = (f'<p>{_text(route["failures"])} failures in a row{last}. The harness waits and retries by itself; '
-                 'nothing needs doing unless it stays down.</p>')
+        pause = ""
         if live and not any(s.get("owner") == "app" for s in ctx["scopes"].get(f"route:{name}", [])):
-            panel += (f'<form method="post" action="/stop" data-act data-label="Pause platform">'
-                      f'{_hidden(ctx, [("route", name), ("pause", "on")])}{_REASON}'
-                      f'<p class="note">No new job starts on {_text(label)} until you resume it from Needs you.</p>'
-                      f'<button class="btn danger fill"{_tip(f"rh stop --owner app --pause --route {name} --reason <why>")}>'
-                      'Pause platform</button></form>')
-        chips.append(f'<details class="act"><summary class="chip bad"><i></i><span>{_text(label)}: '
-                     f'{_text(route["last_status"])} · {retry}</span></summary><div class="pop left">{panel}</div></details>')
+            pause = _popover(ctx, "/stop", [("route", name), ("pause", "on")], "Pause it", "",
+                             _field("Why? (optional)", "reason", placeholder="Paused from the app"),
+                             f"Pause {_text(_platform(name))}", "quiet small danger",
+                             f"No new job starts on {_text(_platform(name))} until you resume it.", "up left")
+        out.append(f'<div class="route"><p>{_text(_platform(name))}: {_text(route["last_status"])} · {retry}. '
+                   f'{_text(route["failures"])} failures in a row{last}; it retries by itself.</p>{pause}</div>')
     for stop in ctx["others"]:
         scope = str(stop["scope"])
         what = ("All launches" if scope == "*" else
                 _text(_platform(scope[6:])) if scope.startswith("route:") else _text(scope))
         verb = "paused" if stop.get("kind") == "pause" else "stopped"
-        chips.append(f'<span class="chip warn"><i></i><span>{what} {verb} by '
-                     f'{_text(stop["owner"])}: {_text(_clause(stop["reason"]))}</span></span>')
-    if not view.get("routes") and not ctx["others"]:
-        chips.append('<span class="chip"><i class="t-good"></i>No platform problems</span>')
-    if live:
-        chips.append(_button(ctx, "/tick", [], "Check now", "t", "" if sup else "primary", "rh supervise --once"))
-    body = "".join(chips)
-    return f'<div class="health" data-region="status" data-sig="{_sig(_still(body))}">{body}</div>'
+        out.append(f'<p class="route warn">{what} {verb} by {_text(stop["owner"])}: '
+                   f'{_text(_clause(stop["reason"]))}</p>')
+    if btns and live:
+        out.append(f'<div class="btns">{"".join(btns)}</div>')
+    body = "".join(out)
+    return f'<div class="status" data-region="checks" data-sig="{_sig(_still(body))}">{body}</div>'
 
 
 def _result(result):
-    match = _RESULT.fullmatch(result.strip())
-    if match:
-        code, output = int(match.group(1)), escape(unescape(match.group(2)), quote=True)
-        tone, head = ("good", "Last action finished") if code == 0 else ("bad", "Last action failed")
-        head = f"{head} · exit {code}"
+    """The last action's result, as serve hands it over: {"code", "say", "output"}; a plain string is shown as is."""
+    if isinstance(result, dict):
+        code = result.get("code")
+        say, output = str(result.get("say") or ""), str(result.get("output") or "")
     else:
-        code, output, tone, head = "", _text(result), "neutral", "Last action"
-    return (f'<div id="result" class="result {tone}" role="status" data-code="{code}">'
-            f'<p>{head}</p><pre>{output}</pre></div>')
+        code, say, output = "", "", str(result)
+    code = code if isinstance(code, int) and not isinstance(code, bool) else ""
+    tone = "bad" if code not in ("", 0) else "good"
+    shown = _text(say or ("Done." if code == 0 else "That did not work." if code != "" else "Last action"))
+    details = f'<details><summary>Details</summary><pre>{_text(output)}</pre></details>' if output else ""
+    return (f'<div id="result" class="result {tone}" role="status" data-code="{code}" data-say="{_text(say)}">'
+            f'<p>{shown}</p>{details}</div>')
 
 
-def _section(key, heading, body, head_extra="", cls=""):
+def _section(key, heading, body, head_extra="", cls="", hidden=False, h="h2"):
     """A keyed region the script reconciles: a head it can swap, and a body whose rows it can move."""
-    head = f'<div class="head"><h2 id="{key}">{heading}</h2>{head_extra}</div>'
+    head = f'<div class="head"><{h} id="{key}">{heading}</{h}>{head_extra}</div>'
+    flag = " hidden" if hidden else ""
     return (f'<section class="s-{key}{" " + cls if cls else ""}" aria-labelledby="{key}" data-region="{key}" '
-            f'data-key="section:{key}" data-sig="{_sig(key, _still(head + body))}">{head}<div class="body">{body}</div>'
-            '</section>')
+            f'data-key="section:{key}" data-sig="{_sig(key, hidden, _still(head + body))}"{flag}>{head}'
+            f'<div class="body">{body}</div></section>')
 
 
 def _rows(items, cls="rows"):
     return f'<ul class="{cls}">{"".join(items)}</ul>'
 
 
-def _sidebar(jobs, loose, view, ctx):
+def _sidebar(jobs, loose, ctx):
     live = ctx["live"]
     groups = {"needs": [], "running": [], "queued": [], "done": []}
     for job in sorted(jobs, key=lambda j: j.first if j.group == "needs" else 0):
         groups[job.group].append(job.item())
-    needs = ctx["count"]
-    top = ""
-    if live:
-        new = (f'<a class="btn primary new" href="{_url(ctx, "/new")}" data-nav data-k="n"><span>New job</span>'
-               '<kbd>n</kbd></a>' if ctx["can_add"] else "")
-        home = f'<a class="item home-item" href="{_url(ctx, "/")}" data-nav><span class="name">Overview</span></a>'
-        top = f'<div class="side-top" data-region="side-top" data-sig="{_sig(new, home)}">{new}{home}</div>'
     if loose:
+        setup = ctx["setup"] is not None
         word = "question" if loose == 1 else "questions"
-        other = (f'<a class="item" href="{_url(ctx, "/")}" data-nav>' if live else '<div class="item">')
-        other += (f'<i class="t-warn"></i><span class="name">{loose} more {word}</span>'
-                  f'<span class="sub">Not tied to a listed job; answer them in the overview</span>'
-                  + ("</a>" if live else "</div>"))
-        groups["needs"].append(f'<li class="row" data-key="loose" data-sig="{_sig(_still(other))}">{other}</li>')
-    empty = {"needs": "Nothing needs you", "running": "Nothing running", "queued": "Nothing queued",
-             "done": "Nothing finished yet"}
-    if any(job.where == "recent" for job in jobs):
-        empty["done"] = "Finished jobs that need you are above"
+        title = "Set up Codex cloud" if setup else f"{loose} more {word}"
+        sub = "Cloud jobs wait for it" if setup else "Not tied to a job; they are on the home page"
+        inner = f'{_dot("warn")}<span class="name">{title}</span><span></span><span class="sub">{sub}</span>'
+        # Setup is done on a waiting cloud job's page; other loose questions are answered on the home page.
+        target = next((j for j in jobs if j.setup), None) if setup else None
+        link = (f'<a class="item" href="{_url(ctx, "/job/" + target.id if target else "/")}" data-nav>{inner}</a>'
+                if live
+                else f'<div class="item">{inner}</div>')
+        groups["needs"].insert(0, _row("loose", link))
     out = []
     for key, heading in (("needs", "Needs you"), ("running", "Running"), ("queued", "Queued"), ("done", "Done")):
         items = groups[key]
-        n = needs if key == "needs" else len(items)
+        n = ctx["count"] if key == "needs" else len(items)
         count = f'<span class="count">{n}</span>' if n else ""
-        body = _rows(items) if items else f'<p class="empty">{empty[key]}</p>'
-        out.append(_section(f"g-{key}", heading, body, count, "group"))
-    foot = (f'<p class="side-foot"><a href="{_url(ctx, "/actions")}">Every action as a plain form</a></p>' if live else "")
-    return f'<nav class="side" aria-label="Jobs">{top}{"".join(out)}{foot}</nav>'
+        out.append(_section(f"g-{key}", heading, _rows(items), count, "group", hidden=not items))
+    none = not jobs and not loose
+    empty = ('<p class="side-empty" data-region="side-empty" data-sig="'
+             f'{_sig(none)}"{"" if none else " hidden"}>No jobs yet.</p>')
+    return f'<nav class="side" aria-label="Jobs">{empty}{"".join(out)}</nav>'
 
 
-def _composer(ctx, draft):
-    """New job: the brief first, then where it runs, the name, and the rest folded away."""
+def _composer(ctx, draft, ready, first):
+    """The home page's one control: what the job should do, where it runs, its name, and the rest folded away."""
     draft = draft if isinstance(draft, dict) else {}
     value = lambda name: _text(draft.get(name, ""))  # noqa: E731
-    kind = draft.get("kind", "codex-cloud")
-    picked = {k: " checked" if kind == k else "" for k in ("codex-cloud", "local-shell")}
+    kind = draft.get("kind") or ("codex-cloud" if ready else "local-shell")
+    picked = {k: " checked" if kind == k else "" for k in ("local-shell", "codex-cloud")}
     have = set(draft.get("needs", [])) if isinstance(draft.get("needs"), list) else set()
     needs = "".join(f'<label><input type="checkbox" name="needs" value="{n}"{" checked" if n in have else ""}>{n}</label>'
                     for n in _NEEDS)
     timeout = value("timeout_min") or "120"
+    later = "" if ready else "<small>set up first</small>"
+    required = " required" if kind == "local-shell" else ""
     form = (f'<form class="compose" method="post" action="/job" data-act data-label="Start job">{_hidden(ctx, [])}'
-            '<label>What should the job do?<textarea name="brief" rows="6" required placeholder="Survey the papers '
-            'on … and write runs/&lt;name&gt;/summary.md with one paragraph per paper.">'
-            f'{value("brief")}</textarea></label>'
-            '<div class="split"><label>Name<input type="text" name="id" required autocomplete="off" spellcheck="false" '
-            f'class="mono" pattern="[a-z0-9][a-z0-9._\\-]{{0,62}}" placeholder="lit-scan-03" value="{value("id")}">'
-            '<small>Lowercase letters, digits, dot, dash. Its files go to runs/&lt;name&gt;/.</small></label>'
-            '<fieldset class="where"><legend>Runs on</legend>'
-            f'<label class="choice"><input type="radio" name="kind" value="codex-cloud"{picked["codex-cloud"]}>'
-            '<b>Codex cloud</b><small>Works on a copy of the repo at its current commit and returns a patch.</small></label>'
-            f'<label class="choice"><input type="radio" name="kind" value="local-shell"{picked["local-shell"]}>'
-            '<b>This machine</b><small>Runs one command here, in runs/&lt;name&gt;/.</small></label></fieldset></div>'
-            '<label class="cmd">Command<input type="text" name="command" autocomplete="off" spellcheck="false" '
-            f'class="mono" placeholder="python3 tools/scan.py --out runs/lit-scan-03/" value="{value("command")}">'
-            '<small>Split like a shell line; no shell runs it.</small></label>'
-            '<label><span>Done when <span class="opt">· optional</span></span><input type="text" name="accept" autocomplete="off" '
-            f'placeholder="summary.md lists every paper with its DOI" value="{value("accept")}"></label>'
-            f'<details><summary>More options</summary><div class="opts"><fieldset><legend>It needs</legend>'
-            f'<div class="needs">{needs}</div></fieldset><label>Time limit, minutes<input type="text" name="timeout_min" '
-            f'inputmode="numeric" pattern="[0-9]{{1,5}}" value="{timeout}"></label></div></details>'
-            '<div class="send"><p class="note">The next check picks it up. Nothing is pushed.</p>'
-            '<button class="btn primary">Start job</button></div></form>')
-    return _section("compose", "New job", form)
+            '<h1 id="compose-title">What should run?</h1>'
+            '<div class="box"><label class="sr" for="brief">What should the job do?</label>'
+            '<textarea id="brief" name="brief" rows="3" required placeholder="Describe the job. For example: list '
+            'every TODO in the notes and write them to todo.md">'
+            f'{value("brief")}</textarea>'
+            '<div class="cmd"><label for="command">Command</label><input type="text" id="command" name="command" '
+            f'class="mono" autocomplete="off" spellcheck="false" placeholder="sh -c \'date &gt; today.txt\'"{required} '
+            f'value="{value("command")}"><small>Runs in runs/&lt;name&gt;/, so write plain file names. Pipes and &gt; need sh -c, as shown.'
+            '</small></div>'
+            '<div class="bar"><fieldset class="where"><legend class="sr">Runs on</legend>'
+            f'<label class="chip"><input type="radio" name="kind" value="local-shell"{picked["local-shell"]}>'
+            'This machine</label>'
+            f'<label class="chip"><input type="radio" name="kind" value="codex-cloud"{picked["codex-cloud"]}>'
+            f'Codex cloud{later}</label></fieldset>'
+            '<label class="name"><span>Name</span><input type="text" name="id" required autocomplete="off" '
+            'spellcheck="false" class="mono" pattern="[a-z0-9][a-z0-9._\\-]{0,62}" placeholder="todo-scan" '
+            f'aria-label="Job name" value="{value("id")}"></label>'
+            '<button class="btn primary send">Start job</button></div></div>'
+            '<div class="under"><details class="opts"><summary class="btn quiet small">Options</summary>'
+            '<div class="opts-body">'
+            '<label><span>Done when <span class="soft">· a command that exits 0 when the job worked</span></span>'
+            f'<input type="text" name="accept" autocomplete="off" spellcheck="false" class="mono" '
+            f'placeholder="test -s todo.md" value="{value("accept")}"></label>'
+            f'<fieldset><legend>It needs</legend><div class="needs">{needs}</div></fieldset>'
+            '<label>Time limit, minutes<input type="text" name="timeout_min" inputmode="numeric" '
+            f'pattern="[0-9]{{1,5}}" value="{timeout}"></label></div></details>'
+            '<p class="note">Starts at once. Nothing is pushed.</p></div></form>')
+    if first:
+        form += ('<div class="how"><ol class="steps">'
+                 '<li><div><p><b>Describe a job and start it.</b> A job on this machine runs one command in its own '
+                 'folder.</p></div></li>'
+                 '<li><div><p><b>Watch it here.</b> Its page shows the output as it runs and the files it made when '
+                 'it is done.</p></div></li>'
+                 '<li><div><p><b>Answer when it asks.</b> A question or a step only you can take shows up under '
+                 'Needs you.</p></div></li></ol></div>')
+    body = f'<div class="body">{form}</div>'
+    return (f'<section class="s-compose home-top" aria-labelledby="compose-title" data-region="compose" '
+            f'data-key="section:compose" data-sig="{_sig("compose", body)}">{body}</section>')
 
 
-def _event(ev, now):
-    """One timeline entry in plain words."""
-    kind, data = str(ev.get("kind", "")), ev.get("data") if isinstance(ev.get("data"), dict) else {}
+def _event(ev, now, kind):
+    """One line of what happened to the job, in plain words, or None for a line that says nothing new."""
+    what, data = str(ev.get("kind", "")), ev.get("data") if isinstance(ev.get("data"), dict) else {}
     tone = "neutral"
-    if kind == "state":
-        word, tone = _STATES.get(data.get("to"), (data.get("to"), "neutral"))
-        text = f"{word}: {data['detail']}" if data.get("detail") else str(word)
-    elif kind == "job-added":
-        text = f"Added, to run on {_platform(data.get('kind', ''))}"
-    elif kind == "inbox":
-        text, tone = f"Asked you: {_sentence(data.get('action', ''))}", "warn"
-    elif kind == "harvested":
+    if what == "state":
+        to, detail = data.get("to"), _plain(data.get("detail"))
+        word, tone = _STATES.get(to, (to, "neutral"))
+        if to == "draft" or (to == "launching" and not detail):
+            return None
+        if to == "running":
+            text = detail or f"Started {_PLACES.get(kind, '')}".strip()
+        elif to == "ready":
+            if not detail:
+                return None
+            text = f"Ready: {detail}"
+        elif to == "handoff":
+            return None
+        elif to == "collecting":
+            text = detail or "Checking the result"
+        elif to in _STATES and to not in _PRE and to not in _LIVE:
+            text = str(word)
+        else:
+            text = f"{word}: {detail}" if detail else str(word)
+        tone = "neutral" if tone == "live" and to != "running" else tone
+    elif what == "job-added":
+        text = f"Added to run {_PLACES.get(data.get('kind', ''), 'on ' + _platform(data.get('kind', '')))}"
+    elif what == "inbox":
+        text, tone = f"Asked you: {_sentence(_ask_line({**data, 'job': ev.get('job')})[0])}", "warn"
+    elif what == "harvested":
         text = f"Patch saved from the {data.get('source', 'web view')}"
-    elif kind == "landed":
+    elif what == "landed":
         text, tone = f"Saved to branch {data.get('branch', '')}", "good"
-    elif kind == "job-error":
+    elif what == "job-error":
         text, tone = f"Harness error: {data.get('error', '')}", "bad"
-    elif kind == "prompt":
-        text = "Prompt written for the web composer"
+    elif what in ("prompt", "notify"):
+        return None
     else:
         extra = ", ".join(f"{k} {v}" for k, v in sorted(data.items()) if isinstance(v, (str, int, float)))[:200]
-        text = _sentence(kind.replace("-", " ")) + (f": {extra}" if extra else "")
+        text = _sentence(what.replace("-", " ")) + (f": {extra}" if extra else "")
     when = _when(ev["ts"], now, f"ev:{ev.get('seq')}") if _number(ev.get("ts")) else ""
-    inner = f'<i class="t-{tone}"></i><p>{_text(text)}</p>{when}'
-    return (f'<li class="row" data-key="ev:{_text(ev.get("seq", ""))}" data-sig="{_sig(_still(inner))}" '
-            f'data-tone="{tone}">{inner}</li>')
+    inner = f'{_dot(tone)}<p>{_text(text)}</p>{when}'
+    return text, _row(f"ev:{ev.get('seq', '')}", inner, attrs=f' data-tone="{tone}"')
 
 
-def _job_pane(opened, jobs, ctx, feedback):
-    """The open job, read top to bottom: what it needs from you, what it was asked, its result and output, then
-    everything that happened to it."""
+def _receipt(ctx, opened, job, spec, lead):
+    """Where a finished job's transcript ends: the verdict, the checks it passed, the files it made, and its stamp."""
+    jid, state = job["id"], job.get("state")
+    receipt = opened.get("receipt") if isinstance(opened.get("receipt"), dict) else {}
+    word, tone = _STATES.get(state, (state, "neutral"))
+    started, ended = receipt.get("started") or job.get("started"), receipt.get("ended") or job.get("updated")
+    took = f" in {_duration(ended - started)}" if _number(started) and _number(ended) and state == "done" else (
+        f" after {_duration(ended - started)}" if _number(started) and _number(ended) else "")
+    why = _plain(receipt.get("detail") or job.get("detail"))
+    tick = {"good": "✓", "bad": "✕"}.get(tone, "•")
+    ended_at = _when(ended, ctx["now"], "j:ended", "finished ") if _number(ended) else ""
+    parts = [f'<div class="verdict {tone}"><p class="big"><span class="tick" aria-hidden="true">{tick}</span>'
+             f'<span>{_text(word)}{took}.</span></p>'
+             + (f'<p class="why">{_text(why)}.</p>' if why and why != word else "")
+             + (f'<p class="why">{ended_at}</p>' if ended_at else "") + '</div>']
+    checks = [c for c in receipt.get("checks", []) if isinstance(c, dict)] if isinstance(receipt.get("checks"),
+                                                                                          list) else []
+    argv = spec.get("command")
+    if isinstance(argv, list) and all(isinstance(a, str) for a in argv):
+        # The harness records the command space-joined, which loses its quotes; show what can be pasted and run.
+        checks = [dict(c, cmd=shlex.join(argv)) if c.get("cmd") == " ".join(argv) else c for c in checks]
+    if checks:
+        lines = "".join(f'<li><span class="{"ok" if c.get("exit") == 0 else "bad"}" aria-hidden="true">'
+                        f'{"✓" if c.get("exit") == 0 else "✕"}</span><code>{_text(c.get("cmd", ""))}</code>'
+                        f'<span class="exit">exit {_text(c.get("exit"))}</span></li>' for c in checks)
+        parts.append(f'<div class="part"><h2>Checks</h2><ul class="checklist">{lines}</ul></div>')
+    files = opened.get("files") if isinstance(opened.get("files"), list) else []
+    if files:
+        rows = []
+        for f in files:
+            path = str(f.get("path", ""))
+            name = (f'<a href="{_text("/job/" + jid + "/file?p=" + quote(path) + "&t=" + ctx["token"])}" '
+                    f'target="_blank" rel="noopener">{_text(path)}</a>' if ctx["live"] else _text(path))
+            rows.append(f'<li><span class="mono">{name}</span><span class="size">{_text(_size(f.get("size")))}</span>'
+                        '</li>')
+        where = _text(spec.get("write_root") or "")
+        parts.append(f'<div class="part"><h2>Files in {where}</h2><ul class="files">{"".join(rows)}</ul>')
+        peek = opened.get("peek") if isinstance(opened.get("peek"), dict) else None
+        if peek:
+            more = '\n…' if peek.get("more") else ""
+            caption = f'<p class="note">{_text(peek.get("path", ""))}</p>' if len(files) > 1 else ""
+            parts[-1] += f'{caption}<pre class="peek" tabindex="0">{_text(peek.get("text", ""))}{more}</pre>'
+        parts[-1] += "</div>"
+    elif state == "done" and spec.get("kind") == "local-shell":
+        parts.append(f'<div class="part"><p class="soft">It left no files in {_text(spec.get("write_root", ""))}.</p>'
+                     '</div>')
+    tail = receipt.get("log_tail") if isinstance(receipt.get("log_tail"), list) else []
+    if tail and not (isinstance(opened.get("log"), str) and opened["log"].strip()) and tone == "bad":
+        parts.append(f'<div class="part"><h2>Last lines of output</h2><pre class="peek">'
+                     f'{_text(chr(10).join(map(str, tail[-12:])))}</pre></div>')
+    stamp = [_platform(receipt.get("route") or job.get("kind") or spec.get("kind", ""))]
+    if job.get("pinned_sha"):
+        stamp.append(str(job["pinned_sha"])[:7])
+    if receipt.get("model_served"):
+        stamp.append(f"model {receipt['model_served']}")
+    if receipt.get("diff_sha256"):
+        stamp.append(f"diff {str(receipt['diff_sha256'])[:12]}")
+    stamp.append(jid)
+    parts.append(f'<p class="stamp mono">{" · ".join(_text(s) for s in stamp)}</p>')
+    if ctx["live"] and state == "done" and spec.get("kind") == "codex-cloud":
+        parts.append(_acts([_button(ctx, "/land", [("job", jid)], "Save to branch", "l", "primary" if lead else "",
+                                    "Save to branch")]))
+    body = "".join(parts)
+    return (f'<section class="receipt" aria-label="Result" data-region="j-now" data-sig="{_sig(_still(body))}">'
+            f'{body}</section>')
+
+
+def _job_pane(opened, jobs, ctx, feedback, view):
+    """The open job, read top to bottom: what it was asked, what happened, its output, what it needs from you, and
+    the receipt it ends on."""
     now = ctx["now"]
     job = opened.get("job") if isinstance(opened.get("job"), dict) else {}
     jid = str(job.get("id") or opened.get("id") or "")
-    back = (f'<a class="back" href="{_url(ctx, "/")}" data-nav>‹ All jobs</a>' if ctx["live"] else "")
+    back = (f'<a class="btn quiet back" href="{_url(ctx, "/")}" data-nav>‹ Jobs</a>' if ctx["live"] else "")
     if not job:
-        body = (f'{back}<section class="s-missing" data-region="j-missing" data-sig="{_sig(jid)}"><h2 class="job-name">'
-                f'No job named {_text(jid)}</h2><p class="soft">It may have been a typo in the address. The jobs the '
-                'harness knows are in the list.</p></section>')
-        return "job:" + jid, body
-    entry = next((j for j in jobs if j.id == jid), None)
-    row = {"id": jid, "state": job.get("state"), "paused": False, "detail": job.get("detail", ""),
-           "external_id": job.get("external_id")}
-    if entry is None:
-        where = ("live" if job.get("state") in ("launching", "handoff", "running", "stalled", "collecting")
-                 else "not_started" if job.get("state") in _PRE else "recent")
-        entry = _Job(row, where, ctx)
+        body = (f'{back}<section class="s-missing" data-region="j-missing" data-sig="{_sig(jid)}"><h1>No job named '
+                f'{_text(jid)}</h1><p class="soft">It may have been a typo in the address. The jobs the harness knows '
+                'are in the list.</p></section>')
+        return "job:" + jid, body, jid
     spec = job.get("spec") if isinstance(job.get("spec"), dict) else {}
-    status, tone = _state(job.get("state"))
-    facts = [status, _text(_platform(job.get("kind") or spec.get("kind", "")))]
-    if _number(job.get("started")) and entry.where == "live":
+    kind = job.get("kind") or spec.get("kind", "")
+    entry = next((j for j in jobs if j.id == jid), None)
+    if entry is None:
+        row = {"id": jid, "state": job.get("state"), "paused": False, "detail": job.get("detail", ""),
+               "external_id": job.get("external_id")}
+        where = ("live" if job.get("state") in _LIVE else "not_started" if job.get("state") in _PRE else "recent")
+        entry = _Job(row, where, ctx)
+    state = job.get("state")
+    finished = entry.where == "recent" or state in ("done", "cancelled") or state in _FAILED
+    title = _title(spec, jid)
+    status, tone = _state(state)
+    facts = [status, f'<span class="mono">{_text(jid)}</span>', f"<span>{_text(_platform(kind))}</span>"]
+    if _number(job.get("started")) and not finished:
         facts.append(_when(job["started"], now, "j:started", "started "))
-    elif entry.where == "recent" and _number(job.get("updated")):
-        facts.append(_when(job["updated"], now, "j:ended", "finished "))
-    elif _number(job.get("created")):
+    elif not finished and _number(job.get("created")):
         facts.append(_when(job["created"], now, "j:added", "added "))
-    task = _task(job)
-    if task:
-        facts.append(f"<span>{task}</span>")
-    head_body = (f'<div><h2 class="job-name" id="j-name" tabindex="-1">{_text(jid)}</h2><p class="facts">'
-                 f'{"".join(f if f.startswith("<") else f"<span>{f}</span>" for f in facts)}</p></div>'
-                 f'{_acts(entry.actions(ctx))}')
-    parts = [back, f'<header class="job-head" data-region="j-head" data-sig="{_sig(_still(head_body))}">'
-                   f'{head_body}</header>', feedback]
-    needs = entry.needs(ctx)
-    if needs:
-        cards = "".join(f'<div class="ask-card"><p class="label">Needs you</p>{n}</div>' for n in needs)
-        parts.append(f'<section class="asks" data-region="j-asks" data-sig="{_sig(_still(cards))}">{cards}</section>')
-    holds = "".join(entry.holds())
-    detail = _text(job.get("detail") or "")
-    next_line = _NEXT.get(job.get("state"), "")
-    now_body = (f'<p class="result-line">{status}{f" <span class=\"what\">{detail}</span>" if detail else ""}</p>'
-                + (f'<p class="soft">{next_line}</p>' if next_line else "") + holds)
-    receipt = opened.get("receipt") if isinstance(opened.get("receipt"), dict) else None
-    if receipt:
-        checks = receipt.get("checks") if isinstance(receipt.get("checks"), list) else []
-        lines = "".join(
-            f'<li><span class="state t-{"good" if c.get("exit") == 0 else "bad"}"><i></i>exit {_text(c.get("exit"))}'
-            f'</span><code>{_text(c.get("cmd", c))}</code></li>' if isinstance(c, dict) else f"<li>{_text(c)}</li>"
-            for c in checks)
-        model = receipt.get("model_served") or receipt.get("model_requested")
-        rest = "".join(f"<dt>{label}</dt><dd>{_text(receipt[key])}</dd>" for key, label in
-                       (("route", "Ran on"), ("model_served", "Model")) if receipt.get(key))
-        now_body += ((f'<ul class="checks">{lines}</ul>' if lines else "")
-                     + (f'<dl class="spec">{rest}</dl>' if rest or model else ""))
-    heading = "Result" if entry.where == "recent" else "Now"
-    parts.append(_section("j-now", heading, now_body))
-    log = opened.get("log")
-    if isinstance(log, str) and log.strip():
-        parts.append(_section("j-output", "Output", f'<pre class="log" tabindex="0">{_text(log)}</pre>',
-                              '<span class="count">the end of out.log</span>'))
-    brief = _text(spec.get("brief") or "")
+    ext = job.get("external_id")
+    if ext is not None and not str(ext).isdigit():
+        facts.append(f"<span>Codex task {_text(ext)}</span>")
+    if spec.get("prior"):
+        prior = _text(spec["prior"])
+        facts.append(f'<span>Runs again after <a href="{_url(ctx, "/job/" + str(spec["prior"]))}" data-nav>{prior}</a>'
+                     '</span>' if ctx["live"] else f"<span>Runs again after {prior}</span>")
+    acts = []
+    if ctx["live"] and not finished and not entry.mine:
+        acts.append(_pause(ctx, jid))
+    if ctx["live"] and state in _PRE and not finished:
+        acts.append(_cancel(ctx, jid))
+    head_body = (f'<div><h1 tabindex="-1">{_text(title)}</h1><p class="facts">{"".join(facts)}</p></div>'
+                 f'{_acts(acts)}')
+    parts = [back, f'<header class="job-head" data-region="j-head" data-sig="{_sig(_still(head_body))}">{head_body}'
+                   '</header>', feedback]
+    # What it was asked, as the person wrote it, with the rest of its contract folded away.
     rows = []
     if spec.get("command"):
-        rows.append(("Command", f'<code>{_text(" ".join(map(str, spec["command"])))}</code>'))
+        rows.append(("Command", f'<code>{_text(shlex.join(map(str, spec["command"])))}</code>'))
     if spec.get("accept"):
-        rows.append(("Done when", _text(spec["accept"])))
+        rows.append(("Done when", f'<code>{_text(spec["accept"])}</code>'))
     if spec.get("needs"):
         rows.append(("Needs", _text(", ".join(map(str, spec["needs"])))))
     if spec.get("write_root"):
         rows.append(("Writes to", f'<code>{_text(spec["write_root"])}</code>'))
     if spec.get("timeout_min"):
         rows.append(("Time limit", f"{_text(spec['timeout_min'])} min"))
-    spec_list = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)
-    parts.append(_section("j-brief", "Asked", f'<div class="brief">{brief}</div>'
-                          + (f'<dl class="spec">{spec_list}</dl>' if spec_list else "")))
-    events = [e for e in opened.get("events", []) if isinstance(e, dict)][-60:]
-    timeline = _rows([_event(e, now) for e in events], "rows timeline") if events else (
-        '<p class="empty">Nothing has happened yet. The next check reviews it.</p>')
-    parts.append(_section("j-timeline", "Timeline", timeline))
-    return "job:" + jid, "".join(parts)
-
-
-def _home_pane(jobs, loose_cards, view, ctx, feedback):
-    """The overview: what needs you, a New job composer when the server can add one, and how the day went."""
-    cards = sorted([(j.first, j.card()) for j in jobs if j.group == "needs"] + loose_cards, key=lambda pair: pair[0])
-    sup = view.get("supervisor")
-    checked = (f'The harness checked {_when(ctx["now"] - sup["age_s"], ctx["now"], "tick:empty")}.'
-               if sup and isinstance(sup["age_s"], int) and not isinstance(sup["age_s"], bool)
-               else "The harness has not run yet." if not sup else "")
-    anything = bool(jobs or loose_cards)
+    if spec.get("changed") and spec.get("prior"):
+        rows.append(("Changed", _text(spec["changed"])))
+    details = "".join(f"<dt>{k}</dt><dd>{v}</dd>" for k, v in rows)
+    said = str(spec.get("brief") or "").strip()
+    bubble = "" if said.rstrip(".") == title else f'<div class="bubble">{_text(said)}</div>'
+    brief = (f'<div class="ask-bubble">{bubble}'
+             + (f'<details class="spec-more"><summary>Details</summary><dl class="spec">{details}</dl></details>'
+                if details else "") + '</div>')
+    talk = [f'<section class="s-j-brief" aria-label="What it was asked" data-region="j-brief" '
+            f'data-sig="{_sig(brief)}">{brief}</section>']
+    lines, seen = [], None
+    for ev in [e for e in opened.get("events", []) if isinstance(e, dict)][-60:]:
+        made = _event(ev, now, kind)
+        if made and made[0] != seen:
+            seen = made[0]
+            lines.append(made[1])
+    if lines:
+        talk.append(_section("j-timeline", "What happened", _rows(lines, "rows timeline")))
+    log = opened.get("log")
+    if isinstance(log, str) and log.strip():
+        tag = (f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else "")
+        cls = "log" + (" ended" if finished else "")
+        talk.append(_section("j-output", "Output", f'<pre class="{cls}" tabindex="0">{_text(log)}</pre>', tag))
+    # What it needs from you, each with the form that settles it.
+    cards = []
+    lead = True
+    for item in entry.items:
+        cards.append(_ask_card(ctx, item, opened, lead, view))
+        lead = False
+    if entry.handoff:
+        cards.append(_launch_card(ctx, jid, opened, lead))
+        lead = False
+    if entry.setup and not any(_setup_item(i, ctx["ready"]) for i in entry.items):
+        cards.append(_setup_card(ctx, view, lead))
+        lead = False
+    for stop in entry.mine:
+        verb, detail, when, act = _resume_card(ctx, stop, lead, "this job", [("job", jid)])
+        cards.append(f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you · {when}</p>'
+                     f'<h3>{verb} from the app: {_text(_clause(stop["reason"]))}</h3><p class="detail">{detail}</p>'
+                     f'{_acts(act) if ctx["live"] else ""}</div>')
+        lead = False
+    if entry.held:
+        cards.append(f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you</p>'
+                     f'<h3>On hold: {_text(_plain(job.get("detail")))}</h3>'
+                     f'<p class="detail">{_NEXT["held"]}</p></div>')
+    holds = [_hold(s, entry.where == "live") for s in entry.stops if s.get("owner") != "app"]
+    if entry.row.get("paused") and not any(s.get("kind") == "pause" for s in entry.stops):
+        holds.append('<p class="hold"><b>Paused:</b> its platform or all launches are paused.</p>')
     if cards:
-        body = _rows([html for _, html in cards], "rows cards")
-    elif anything or not ctx["live"]:
-        body = (f'<div class="empty"><p class="ask">Nothing needs you.</p><p>{checked}</p><p class="soft">Questions to '
-                'answer, patches to paste and jobs paused from this app show up here, each with the button that '
-                'settles it.</p></div>')
+        body = "".join(cards)
+        talk.append(f'<section class="s-j-asks talk" aria-label="Needs you" data-region="j-asks" '
+                    f'data-sig="{_sig(_still(body))}">{body}</section>')
+    if finished:
+        talk.append(_receipt(ctx, opened, job, spec, lead))
     else:
-        start = ("<b>Start a job</b><span class=\"soft\">Describe it in New job below, or add a job file with "
-                 "<code>rh job add &lt;file&gt;</code>.</span>")
-        body = ('<div class="empty"><p class="ask">Nothing here yet.</p><ol class="steps">'
-                '<li><b>Let the harness check</b><span class="soft">The header says when it last checked. Check now '
-                'runs one pass; <code>rh supervise</code> keeps it running.</span></li>'
-                f'<li>{start}</li><li><b>Answer what it asks</b><span class="soft">Questions, patches to paste and '
-                'paused jobs appear here with the button that settles each.</span></li></ol></div>')
+        loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
+        doing = (f"Running {_PLACES[kind]}" if state == "running" and kind in _PLACES else entry.word)
+        next_line = ("It starts once Codex cloud is set up." if entry.setup
+                     else _NEXT.get(state, "").replace("{place}", _PLACES.get(kind, "on its platform")))
+        if loop and loop.get("mode") == "paused":
+            next_line = (next_line + " Automatic checks are paused, so nothing moves until you resume them.").strip()
+        detail = _plain(job.get("detail")) if state not in ("held", "handoff") else ""
+        now_body = (f'<p class="now">{_dot(tone, state == "running")}<span class="what">{_text(doing)}</span>'
+                    + (f'<span class="soft">{_text(detail)}</span>' if detail and detail != doing else "")
+                    + (f'<span class="soft">{_text(next_line)}</span>' if next_line else "") + "</p>" + "".join(holds))
+        if state != "running" or next_line or (detail and detail != doing) or holds:
+            talk.append(f'<section class="s-j-now" aria-label="Now" data-region="j-now" '
+                        f'data-sig="{_sig(_still(now_body))}">{now_body}</section>')
+    if finished and holds:
+        talk.append("".join(holds))
+    if finished and ctx["live"]:
+        again = state != "done" or spec.get("kind") != "codex-cloud"
+        form = (f'<form class="reply" method="post" action="/again" data-act data-label="Run again">'
+                f'{_hidden(ctx, [("job", jid)])}<label class="sr" for="changed">What should change?</label>'
+                '<textarea id="changed" name="changed" rows="1" placeholder="Ask for a change, or leave this empty to '
+                'run it again as it was"></textarea>'
+                f'<button class="{_cls("primary" if lead and again and state != "done" else "")}">Run again</button>'
+                '</form>')
+        talk.append(f'<section class="s-j-reply" aria-label="Run again" data-region="j-reply" '
+                    f'data-sig="{_sig(form)}">{form}</section>')
+    parts.append(f'<div class="talk">{"".join(talk)}</div>')
+    return "job:" + jid, "".join(parts), title
+
+
+def _home_pane(jobs, loose_rows, view, ctx, feedback):
+    """Home: what needs you, then the composer when the server can add a job. The snapshot adds how the day went."""
+    rows = []
+    for j in jobs:
+        if j.group != "needs":
+            continue
+        if j.items:
+            item = j.items[0]
+            ask, detail = _ask_line(item)
+            when = (_when(item["created"], ctx["now"], f"inbox:{item['id']}", "asked ")
+                    if _number(item.get("created")) else "")
+            acts = _home_acts(ctx, item, False, j.id)
+            cli = {"web-launch": f"rh cloud attach {j.id} <task id>",
+                   "harvest": f"rh cloud harvest {j.id} <saved file>"}.get(item.get("kind"),
+                                                                           f"rh inbox resolve {item['id']} <note>")
+            more = len(j.items) - 1
+            if more:
+                detail = (detail + " " if detail else "") + f"And {more} more on its page."
+        elif j.handoff:
+            ask, detail, when, cli = "Launch it in Codex, then link the task", "", "", f"rh cloud attach {j.id} <task id>"
+            acts = [f'<a class="btn" href="{_url(ctx, "/job/" + j.id)}" data-nav data-k="a">Launch…</a>']
+        elif j.mine:
+            verb, detail, when, acts = _resume_card(ctx, j.mine[0], False, "this job", [("job", j.id)])
+            ask, cli = f"{verb} from the app: {_clause(j.mine[0]['reason'])}", f"rh resume --owner app --job {j.id}"
+        elif j.failure:
+            ask = f"{j.word}: {_plain(j.row.get('detail'))}" if j.row.get("detail") else j.word
+            detail, when, cli = "", "", f"rh job show {j.id}"
+            acts = [_button(ctx, "/again", [("job", j.id), ("changed", "")], "Run again", "r", "", "Run again"),
+                    f'<a class="btn quiet" href="{_url(ctx, "/job/" + j.id)}" data-nav>Open</a>']
+        else:
+            ask, detail, when, cli = f"On hold: {_plain(j.row.get('detail'))}", _NEXT["held"], "", f"rh job show {j.id}"
+            acts = [f'<a class="btn" href="{_url(ctx, "/job/" + j.id)}" data-nav>Open</a>']
+        holds = "".join(_hold(s, j.where == "live") for s in j.stops if s.get("owner") != "app")
+        status = (" · ".join(x for x in ("Paused" if j.row.get("paused") else "", j.word, _plain(j.row.get("detail")))
+                             if x) if j.items else "")
+        rows.append((j.first, _need_row(ctx, f"card:{j.id}", _text(ask), _text(detail) + holds, when, acts, cli,
+                                        j.id, j.title, status)))
+    setup = ctx["setup"]
+    if setup is not None:
+        # The setup itself is done on a waiting cloud job's page, where the job it unblocks is in view.
+        target = next((j for j in jobs if j.setup), None)
+        acts = ([f'<a class="btn" href="{_url(ctx, "/job/" + target.id)}" data-nav data-k="r">Set up…</a>']
+                if target else [])
+        when = (_when(setup["created"], ctx["now"], f"inbox:{setup['id']}", "asked ")
+                if _number(setup.get("created")) else "")
+        rows.append((setup.get("created") if _number(setup.get("created")) else float("inf"),
+                     _need_row(ctx, f"inbox:{setup['id']}", "Set up Codex cloud",
+                               "Cloud jobs wait until Codex has an environment for this repository.", when, acts,
+                               "rh env spec, then rh config set cloud.env_id <ID>", listed=target and target.id)))
+    rows = [html for _, html in sorted(rows + loose_rows, key=lambda pair: pair[0])]
     count = ctx["count"]
-    parts = [feedback, _section("needs", "Needs you", body, f'<span class="count warn">{count}</span>' if count else "")]
+    parts = [feedback]
     if ctx["live"] and ctx["can_add"]:
-        parts.append(_composer(ctx, view.get("compose")))
-    day = ", ".join(f"{_text(n)} {_text(_STATES[s][0].lower() if s in _STATES else s)}"
-                    for s, n in sorted(view.get("last_24h", {}).items()))
-    groups = {g: sum(1 for j in jobs if j.group == g) for g in ("running", "queued")}
-    tallies = (f'<p class="tallies"><span><b>{groups["running"]}</b>running</span><span><b>{groups["queued"]}</b>queued'
-               f'</span><span><b>{len(view.get("recent", []))}</b>recently finished</span></p>'
-               f'<p class="soft">Last 24 h: {day or "nothing finished"}</p>')
-    parts.append(_section("today", "Today", tallies))
-    return "home", "".join(parts)
+        parts.append(_composer(ctx, view.get("compose"), ctx["ready"], not jobs))
+    if rows:
+        parts.append(_section("needs", "Needs you", _rows(rows, "rows cards"), f'<span class="count">{count}</span>'))
+    elif not ctx["live"]:
+        sup = view.get("supervisor")
+        checked = (f'The harness checked {_when(ctx["now"] - sup["age_s"], ctx["now"], "tick:empty")}.'
+                   if sup and _number(sup.get("age_s")) else "The harness has not run yet." if not sup else "")
+        parts.append(_section("needs", "Needs you", f'<p class="soft">Nothing needs you. {checked}</p>'))
+    if not ctx["live"]:
+        day = ", ".join(f"{_text(n)} {_text(_STATES[s][0].lower() if s in _STATES else s)}"
+                        for s, n in sorted(view.get("last_24h", {}).items()))
+        groups = {g: sum(1 for j in jobs if j.group == g) for g in ("running", "queued")}
+        parts.append(_section("today", "Today", f'<p>{groups["running"]} running · {groups["queued"]} queued · '
+                                                f'{len(view.get("recent", []))} recently finished</p>'
+                                                f'<p class="soft">Last 24 h: {day or "nothing finished"}</p>'))
+    return "".join(parts)
 
 
-def render(view: dict, now: float, token: str | None = None, result: str | None = None) -> str:
+def render(view: dict, now: float, token: str | None = None, result=None) -> str:
     """Return one self-contained HTML5 page, escaping all supplied text. Without a token it is the static snapshot:
     no script and no controls. With one it is the live app, with forms and <script src="/app.js">. The view may also
-    carry "open" (the job `rh job show` returned, plus "log", its output tail; or {"id", "job": None} for a job the
-    harness does not know), "can_add" (the server takes POST /job), "new" (show the New job form on its own) and
-    "compose" (a draft to refill that form with)."""
+    carry "open" (the job `rh job show` returned, plus "log", its output tail, "prompt" for a hand launch, and
+    "files" and "peek" for a finished job's folder; or {"id", "job": None} for a job the harness does not know),
+    "can_add" (the server takes POST /job), "new" (show the composer on its own page), "compose" (a draft to refill it
+    with), "meta" (each job's brief, kind and times), "checks" (the app's check loop: mode, pid, failed),
+    "cloud_ready" and "env_spec" (for Codex cloud setup). `result` is serve's {"code", "say", "output"}."""
     live = token is not None
     opened = view.get("open") if isinstance(view.get("open"), dict) else None
     can_add = live and bool(view.get("can_add"))
@@ -1425,15 +1841,20 @@ def render(view: dict, now: float, token: str | None = None, result: str | None 
         scopes.setdefault(str(stop["scope"]), []).append(stop)
     rows = [(row, where) for where in ("live", "not_started", "recent") for row in view.get(where, [])]
     known = {row["id"] for row, _ in rows}
-    asks = {}
+    meta = view.get("meta") if isinstance(view.get("meta"), dict) else {}
+    ready = bool(view.get("cloud_ready"))
+    asks, setup = {}, None
     for item in inbox:
-        if item.get("job") in known:
+        if _setup_item(item, ready):
+            setup = setup or item
+        elif item.get("job") in known:
             asks.setdefault(item["job"], []).append(item)
-    # Every form on a job's page, or on the New job page, returns there; elsewhere forms return to the overview.
+    # Every form on a job's page, or on the New job page, returns there; elsewhere forms return to home.
     named = opened["job"]["id"] if opened and isinstance(opened.get("job"), dict) else None
     back = f"/job/{named}" if named else "/new" if compose else None
-    ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "mode": "card",
-           "can_add": can_add, "back": back,
+    ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
+           "back": back, "meta": meta, "ready": ready, "setup": setup,
+           "followed": {str(m.get("prior")) for m in meta.values() if isinstance(m, dict) and m.get("prior")},
            "others": [s for s in view.get("stops", []) if s.get("owner") != "app"
                       and not str(s["scope"]).startswith("job:")]}
     jobs = [_Job(row, where, ctx) for row, where in rows]
@@ -1441,57 +1862,70 @@ def render(view: dict, now: float, token: str | None = None, result: str | None 
     # every launch, or on jobs no longer listed.
     loose = []
     for item in inbox:
-        if item.get("job") not in known:
-            about = (f'<div class="about">For job <span class="name">{_text(item["job"])}</span></div>'
-                     if item.get("job") else "")
-            loose.append((item.get("created") if _number(item.get("created")) else float("inf"),
-                          _row(f"inbox:{item['id']}", live, _ask(item, ctx, True) + about, card=True)))
+        if item.get("job") in known or item is setup:
+            continue
+        ask, detail = _ask_line(item)
+        when = (_when(item["created"], now, f"inbox:{item['id']}", "asked ") if _number(item.get("created")) else "")
+        about = f" For job {_text(item['job'])}." if item.get("job") else ""
+        loose.append((item.get("created") if _number(item.get("created")) else float("inf"),
+                      _need_row(ctx, f"inbox:{item['id']}", _text(ask), _text(detail) + about, when,
+                                _home_acts(ctx, item, False), f"rh inbox resolve {item['id']} <note>")))
     for stop in view.get("stops", []):
         scope = str(stop["scope"])
         name, _, value = scope.partition(":")
         if stop.get("owner") != "app" or (name == "job" and value in known):
             continue
         if scope == "*":
-            need = _resume(stop, ctx, True, "launches", "any job", [], "")
+            what, fields = "any job", []
         elif name == "route":
-            need = _resume(stop, ctx, True, "platform", _text(_platform(value)), [("route", value)], f" --route {value}")
+            what, fields = _platform(value), [("route", value)]
         else:
-            need = _resume(stop, ctx, True, name, _text(value), [(name, value)] if value else [],
-                           f" --{name} {value}" if value else "")
+            what, fields = value or name, [(name, value)] if value else []
+        verb, detail, when, acts = _resume_card(ctx, stop, False, _text(what), fields)
         loose.append((stop.get("created") if _number(stop.get("created")) else float("inf"),
-                      _row(f"stop:{stop.get('id', scope)}", live, need, card=True)))
-    ctx["count"] = sum(j.count for j in jobs) + len(loose)
+                      _need_row(ctx, f"stop:{stop.get('id', scope)}", f"{verb} from the app: "
+                                f"{_text(_clause(stop['reason']))}", detail, when, acts,
+                                f"rh resume --owner app --{name} {value}".strip())))
+    ctx["count"] = sum(j.count for j in jobs) + len(loose) + (setup is not None)
     feedback = _result(result) if live and result else ""
     if opened:
-        ctx["mode"] = "inline"
-        page, pane = _job_pane(opened, jobs, ctx, feedback)
-        ctx["mode"] = "card"
+        page, pane, name = _job_pane(opened, jobs, ctx, feedback, view)
+        title = f"{name} · Research harness"
     elif compose:
-        page, pane = "new", feedback + _composer(ctx, view.get("compose"))
+        page, title = "new", "New job · Research harness"
+        back_link = f'<a class="btn quiet back" href="{_url(ctx, "/")}" data-nav>‹ Jobs</a>'
+        pane = back_link + feedback + _composer(ctx, view.get("compose"), ready, False)
     else:
-        page, pane = _home_pane(jobs, loose, view, ctx, feedback)
-    side = _sidebar(jobs, len(loose), view, ctx)
+        page, title = "home", "Research harness"
+        pane = _home_pane(jobs, loose, view, ctx, feedback)
+    side = _sidebar(jobs, len(loose) + (setup is not None), ctx)
+    fast = any(j.state in ("draft", "launching", "collecting") or (j.state == "running" and j.kind == "local-shell")
+               or (j.state == "ready" and not j.row.get("detail")) for j in jobs)
+    loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
+    pace = "fast" if fast and loop and loop.get("mode") == "on" else "calm"
     if live:
         head = ('<noscript><meta http-equiv="refresh" content="30"></noscript>\n'
                 '<script src="/app.js" defer></script>\n')
-        tools = ('<button type="button" class="btn" data-keys hidden>Shortcuts <kbd>?</kbd></button>'
-                 '<span class="live" data-live data-state="on"><i></i><span>Live</span></span>')
+        new = (f'<a class="btn new" href="{_url(ctx, "/new")}" data-nav data-k="n"><span class="plus" '
+               'aria-hidden="true">+</span>New job</a>' if can_add else "")
+        tools = ('<div class="tools"><button type="button" class="btn quiet small" data-keys hidden>Shortcuts '
+                 '<kbd>?</kbd></button><span class="conn" data-live data-state="on" role="status"></span></div>')
         keys = "".join(f"<dt><kbd>{k}</kbd></dt><dd>{v}</dd>" for k, v in _KEYS)
-        words = "".join(f"<dt>{_text(k)}</dt><dd>{_text(v)}</dd>" for k, v in _WORDS)
         extra = ('<div class="toasts" aria-live="polite"></div>'
-                 '<dialog id="keys" aria-label="Keyboard shortcuts and words"><div class="pair">'
-                 f'<div><p class="title" tabindex="-1" autofocus>Keyboard</p><dl>{keys}</dl></div>'
-                 f'<div><p class="title">Words in this app</p><dl class="words">{words}</dl></div></div>'
-                 '<form method="dialog"><button class="btn">Close</button></form></dialog>\n')
+                 '<dialog id="keys" aria-label="Keyboard shortcuts">'
+                 f'<p class="title" tabindex="-1" autofocus>Keyboard</p><dl>{keys}</dl>'
+                 f'<div class="foot"><a href="{_url(ctx, "/actions")}">Every action as a plain form</a>'
+                 '<form method="dialog"><button class="btn">Close</button></form></div></dialog>\n')
     else:
-        head, extra = "", ""
-        tools = '<span class="live"><span>Snapshot</span></span>'
-    title = f"{named} · Research harness" if named else "New job · Research harness" if compose else "Research harness"
+        head, extra, new = "", "", ""
+        tools = '<div class="tools"><span class="soft">Snapshot</span></div>'
+    top = (f'<div class="side-top" data-region="side-top" data-sig="{_sig(new)}"><p class="brand">'
+           f'<span class="mark" aria-hidden="true"></span>Research harness</p>{new}</div>')
+    foot = f'<footer class="checks">{_checks(view, ctx)}{tools}</footer>'
     return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<title>{_text(title)}</title>\n'
-            f'{head}<style>{_STYLE}</style>\n</head>\n<body data-now="{now:.3f}" data-open="{_text(page)}">\n'
-            f'<header class="bar"><span class="mark" aria-hidden="true"></span><h1>Research harness</h1>'
-            f'{_health(view, ctx)}<div class="tools">{tools}</div></header>\n'
-            f'<div class="app">{side}<main class="pane" data-pane="{_text(page)}" tabindex="-1"><div class="page">'
-            f'{pane}</div></main></div>\n{extra}</body>\n</html>\n')
+            f'{head}<style>{_STYLE}</style>\n</head>\n<body data-now="{now:.3f}" data-open="{_text(page)}" '
+            f'data-pace="{pace}" data-jobs="{1 if jobs else 0}">\n'
+            f'<div class="app">{top}{side}{foot}<main class="pane" data-pane="{_text(page)}" tabindex="-1">'
+            f'<div class="page">{pane}</div></main></div>\n{extra}</body>\n</html>\n')

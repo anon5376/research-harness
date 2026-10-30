@@ -2,7 +2,7 @@
 
 research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and a job that ends gets exactly one typed state with a receipt. A job counts as done when it finishes and, if it names an acceptance check, that check passes on your machine.
 
-Status: [in progress] v0.6.0. Python 3.11+, standard library only. 280 tests pass: `python3 -I tests/run.py`. CI is set up for Ubuntu, macOS and Windows but has not run yet. Windows support is partial, and local-shell jobs run on macOS and Linux only. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
+Status: [in progress] v0.7.0. Python 3.11+, standard library only. 310 tests pass: `python3 -I tests/run.py`. CI is set up for Ubuntu, macOS and Windows but has not run yet. Windows support is partial, and local-shell jobs run on macOS and Linux only. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
 
 ## What it does
 

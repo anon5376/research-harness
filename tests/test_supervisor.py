@@ -253,7 +253,6 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(len([e for e in self.led.events("c1") if e["kind"] == "unknown-status"]), 1)
 
 
-@unittest.skipIf(os.name == "nt", "POSIX only: detached local-shell jobs")
 class LocalJobTest(unittest.TestCase):
     """Real subprocesses through the detached runner."""
 
@@ -278,6 +277,7 @@ class LocalJobTest(unittest.TestCase):
             time.sleep(0.1)
         self.fail(f"{jid} did not finish: {self.led.job(jid)}")
 
+    @unittest.skipIf(os.name == "nt", "POSIX-only fixture: sys.executable is interpolated into TOML without escaping")
     def test_command_and_gate_pass_ends_done_in_write_root(self):
         py = sys.executable
         self.led.add_job(local_spec("l1", f'["{py}", "-c", "open(\'out.txt\', \'w\').write(\'x\')"]',

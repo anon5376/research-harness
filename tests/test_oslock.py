@@ -3,6 +3,7 @@ import contextlib
 import errno
 import importlib.util
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -14,8 +15,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from rh import collect, config, contract, lease, supervisor
-from rh.ledger import Ledger
+from rh import collect, lease, supervisor
 from rh.adapters import local_shell
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -125,39 +125,30 @@ class IntegrationTest(unittest.TestCase):
 
 
 class WindowsPathsTest(unittest.TestCase):
-    def test_alive_never_probes_or_signals_a_windows_process(self):
+    def test_alive_delegates_to_the_windows_process_query(self):
         with mock.patch.object(os, 'name', 'nt'), \
+                mock.patch.object(local_shell, '_windows_alive', return_value=True) as query, \
                 mock.patch.object(os, 'kill', side_effect=AssertionError('must not signal a Windows process')):
-            self.assertFalse(local_shell._alive(os.getpid()))
+            self.assertTrue(local_shell._alive(123))
+        query.assert_called_once_with(123)
 
-    def test_start_refuses_windows_before_creating_any_run_files(self):
+    def test_start_uses_detached_windows_flags_and_creates_run_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             run_dir, cwd = Path(tmp) / 'job', Path(tmp) / 'work'
-            with mock.patch.object(os, 'name', 'nt'), self.assertRaisesRegex(
-                    NotImplementedError, '^local-shell jobs run on macOS and Linux only$'):
-                local_shell.start(str(run_dir), str(cwd), [sys.executable, '-c', 'pass'])
-            self.assertFalse(run_dir.exists())
-            self.assertFalse(cwd.exists())
-
-    def test_supervisor_parks_the_unsupported_windows_job_with_its_clear_error(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            cfg = config.load(Path(tmp) / 'home')
-            led = Ledger(Path(cfg['home']) / 'ledger.db')
-            try:
-                spec = contract.normalize({'id': 'windows-local', 'kind': 'local-shell', 'brief': 'Run a step.',
-                                           'command': [sys.executable, '-c', 'pass']})
-                led.add_job(spec)
-                led.set_state(spec['id'], 'ready')
-                sup = supervisor.Supervisor(led, cfg, caps={}, policy={},
-                    send=lambda *args: {'ok': True, 'exit': 0, 'out': ''})
-                with mock.patch.object(os, 'name', 'nt'):
-                    sup._isolated(led.job(spec['id']), sup._launch_local)
-                self.assertEqual(led.job(spec['id'])['state'], 'held')
-                self.assertIn('NotImplementedError: local-shell jobs run on macOS and Linux only',
-                              led.job(spec['id'])['detail'])
-                self.assertFalse((Path(cfg['home']) / 'jobs').exists())
-            finally:
-                led.close()
+            path_type = type(run_dir)
+            process = mock.Mock(pid=123)
+            with mock.patch.object(os, 'name', 'nt'), \
+                    mock.patch.object(local_shell, 'Path', side_effect=path_type), \
+                    mock.patch.object(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0x200, create=True), \
+                    mock.patch.object(subprocess, 'DETACHED_PROCESS', 0x8, create=True), \
+                    mock.patch.object(local_shell.subprocess, 'Popen', return_value=process) as popen:
+                self.assertEqual(local_shell.start(str(run_dir), str(cwd), [sys.executable, '-c', 'pass']), 123)
+            self.assertEqual(popen.call_args.kwargs['creationflags'], 0x208)
+            self.assertNotIn('start_new_session', popen.call_args.kwargs)
+            self.assertTrue((run_dir / 'out.log').is_file())
+            self.assertEqual(json.loads((run_dir / 'runner.json').read_text()),
+                             {'pid': 123, 'argv': [sys.executable, '-c', 'pass']})
+            self.assertTrue(cwd.is_dir())
 
     def test_gate_without_git_sh_returns_127_and_explains_the_dependency(self):
         err = io.StringIO()
@@ -209,19 +200,11 @@ class BackendTest(unittest.TestCase):
             module_spec.loader.exec_module(module)
         return module
 
-    def test_windows_locks_and_unlocks_byte_zero_after_the_import_platform_is_restored(self):
-        calls = []
-        def locking(fd, mode, count):
-            calls.append((mode, count, os.lseek(fd, 0, os.SEEK_CUR), os.fstat(fd).st_size))
-        module = self.backend(True, locking)
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / 'byte.lock'
-            fd = module.try_lock(path)
-            os.lseek(fd, 9, os.SEEK_SET)
-            module.unlock(fd)
-            self.assertEqual(calls, [(10, 1, 0, 1), (20, 1, 0, 1)])
-            with self.assertRaises(OSError):
-                os.fstat(fd)
+    def test_windows_dispatches_to_share_lock_after_import_platform_is_restored(self):
+        module = self.backend(True, None)
+        with mock.patch.object(module, '_windows_lock', return_value=123) as lock:
+            self.assertEqual(module.try_lock('windows.lock'), 123)
+        lock.assert_called_once_with('windows.lock')
 
     def test_posix_uses_nonblocking_exclusive_flock_and_explicit_unlock(self):
         calls = []
@@ -232,47 +215,44 @@ class BackendTest(unittest.TestCase):
         self.assertEqual(calls, [6, 8])
 
     def test_contended_native_lock_raises_locked_and_closes_the_opened_fd(self):
-        for windows in (False, True):
-            with self.subTest(windows=windows), tempfile.TemporaryDirectory() as tmp:
-                fds = []
-                def contend(fd, *args):
-                    fds.append(fd)
-                    raise OSError(errno.EACCES if windows else errno.EAGAIN, 'fixture contention')
-                module = self.backend(windows, contend)
-                with self.assertRaises(module.Locked):
-                    module.try_lock(Path(tmp) / 'busy.lock')
-                self.assertEqual(len(fds), 1)
-                with self.assertRaises(OSError):
-                    os.fstat(fds[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            fds = []
+            def contend(fd, *args):
+                fds.append(fd)
+                raise OSError(errno.EAGAIN, 'fixture contention')
+            module = self.backend(False, contend)
+            with self.assertRaises(module.Locked):
+                module.try_lock(Path(tmp) / 'busy.lock')
+            self.assertEqual(len(fds), 1)
+            with self.assertRaises(OSError):
+                os.fstat(fds[0])
 
     def test_unexpected_native_failure_is_not_misreported_as_contention(self):
-        for windows in (False, True):
-            with self.subTest(windows=windows), tempfile.TemporaryDirectory() as tmp:
-                fds = []
-                def fail(fd, *args):
-                    fds.append(fd)
-                    raise OSError(errno.EIO, 'fixture lock I/O error')
-                module = self.backend(windows, fail)
-                with self.assertRaises(OSError) as error:
-                    module.try_lock(Path(tmp) / 'broken.lock')
-                self.assertEqual(error.exception.errno, errno.EIO)
-                with self.assertRaises(OSError):
-                    os.fstat(fds[0])
+        with tempfile.TemporaryDirectory() as tmp:
+            fds = []
+            def fail(fd, *args):
+                fds.append(fd)
+                raise OSError(errno.EIO, 'fixture lock I/O error')
+            module = self.backend(False, fail)
+            with self.assertRaises(OSError) as error:
+                module.try_lock(Path(tmp) / 'broken.lock')
+            self.assertEqual(error.exception.errno, errno.EIO)
+            with self.assertRaises(OSError):
+                os.fstat(fds[0])
 
     def test_failed_unlock_still_closes_the_fd(self):
-        for windows in (False, True):
-            with self.subTest(windows=windows), tempfile.TemporaryDirectory() as tmp:
-                calls = []
-                def locking(*args):
-                    calls.append(args)
-                    if len(calls) == 2:
-                        raise OSError(errno.EIO, 'fixture unlock I/O error')
-                module = self.backend(windows, locking)
-                fd = module.try_lock(Path(tmp) / 'release.lock')
-                with self.assertRaises(OSError):
-                    module.unlock(fd)
-                with self.assertRaises(OSError):
-                    os.fstat(fd)
+        with tempfile.TemporaryDirectory() as tmp:
+            calls = []
+            def locking(*args):
+                calls.append(args)
+                if len(calls) == 2:
+                    raise OSError(errno.EIO, 'fixture unlock I/O error')
+            module = self.backend(False, locking)
+            fd = module.try_lock(Path(tmp) / 'release.lock')
+            with self.assertRaises(OSError):
+                module.unlock(fd)
+            with self.assertRaises(OSError):
+                os.fstat(fd)
 
 
 if __name__ == '__main__':

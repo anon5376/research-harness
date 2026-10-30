@@ -85,7 +85,6 @@ class CliTest(unittest.TestCase):
             "diff": {TASK: ok(diff)},
             "list": ok(json.dumps({"tasks": [], "cursor": None}))}))
 
-    @unittest.skipIf(os.name == "nt", "POSIX only: detached local-shell jobs")
     def test_local_and_cloud_jobs_reach_typed_ends_with_receipts_and_one_inbox_view(self):
         result = {"job": "c1", "state": "done", "head": self.sha, "summary": "notes written",
                   "checks": [{"cmd": "true", "exit": 0}], "outputs": ["runs/c1/notes.md"], "refusals": []}

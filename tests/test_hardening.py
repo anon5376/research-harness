@@ -254,7 +254,6 @@ class GateTest(HarnessCase):
         self.assertEqual(self.led.job("j1")["state"], "failed")
         self.assertEqual(self.led.receipt("j1")["checks"][-1]["exit"], 124)
 
-    @unittest.skipIf(os.name == "nt", "POSIX only: heavy gates inherit a lease descriptor")
     def test_heavy_gate_uses_job_timeout_and_records_exit_124(self):
         j = self.local_exited(heavy=True, accept="sleep 0.3", timeout_min=0.001)
         self.s._poll_local(j, {"finished": 0})

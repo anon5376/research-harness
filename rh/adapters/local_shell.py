@@ -16,8 +16,6 @@ _ROOT = Path(__file__).resolve().parents[2]
 
 def start(run_dir, cwd, command, heavy=False, lease_cfg=None, python=sys.executable):
     """Start the runner detached (own session) and return its pid."""
-    if os.name == "nt":
-        raise NotImplementedError("local-shell jobs run on macOS and Linux only")
     run_dir, cwd = Path(run_dir), Path(cwd)
     run_dir.mkdir(parents=True, exist_ok=True)
     cwd.mkdir(parents=True, exist_ok=True)
@@ -29,9 +27,11 @@ def start(run_dir, cwd, command, heavy=False, lease_cfg=None, python=sys.executa
         argv += ["--lock", str(lc["lock"]), "--max-load", str(lc.get("max_load", 10.0)),
                  "--max-wait", str(lc.get("max_wait", 600))]
     argv += ["--", *command]
+    detached = ({"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS}
+                if os.name == "nt" else {"start_new_session": True})
     with open(run_dir / "out.log", "ab") as log:
         p = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                             start_new_session=True)
+                             **detached)
     (run_dir / "runner.json").write_text(json.dumps({"pid": p.pid, "argv": command}))
     return p.pid
 
@@ -52,8 +52,10 @@ def tail(run_dir, lines=5):
 
 
 def _alive(pid):
-    if os.name == "nt" or not pid:
+    if not pid:
         return False
+    if os.name == "nt":
+        return _windows_alive(pid)
     try:
         done, _ = os.waitpid(pid, os.WNOHANG)  # reap our own child if it exited
         if done == pid:
@@ -67,6 +69,35 @@ def _alive(pid):
     except PermissionError:
         return True
     return True
+
+
+def _windows_alive(pid):
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+    kernel.GetExitCodeProcess.restype = wintypes.BOOL
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not handle:
+        error = ctypes.WinError(ctypes.get_last_error())
+        if error.winerror == 87:  # no such process
+            return False
+        if error.winerror == 5:  # protected process: do not declare it dead
+            return True
+        raise error
+    try:
+        code = wintypes.DWORD()
+        if not kernel.GetExitCodeProcess(handle, ctypes.byref(code)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return code.value == 259  # STILL_ACTIVE
+    finally:
+        if not kernel.CloseHandle(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
 
 
 def _exec(argv):

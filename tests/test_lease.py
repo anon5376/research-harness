@@ -1,5 +1,6 @@
 """Tests for rh/lease.py: admission, the flock lease, the status probe, and leased steps in real processes."""
 import contextlib
+import gc
 import io
 import json
 import os
@@ -18,6 +19,7 @@ if os.name != "nt":
 from rh import lease
 
 ROOT = Path(__file__).resolve().parents[1]
+_WINDOW_HANDLE_COUNT_WARMED = False
 
 # A leased runner in its own process. argv: root, lock, what, then the step's argv after the interpreter.
 RUNNER = (
@@ -48,6 +50,29 @@ PROBE = (
 
 
 def open_fds():
+    global _WINDOW_HANDLE_COUNT_WARMED
+    if os.name == "nt":
+        import ctypes
+        from ctypes import wintypes
+
+        if not _WINDOW_HANDLE_COUNT_WARMED:
+            with tempfile.TemporaryDirectory() as tmp:
+                fd = os.open(Path(tmp) / "warmup.lock", os.O_CREAT | os.O_RDWR, 0o600)
+                try:
+                    if lease._spawn([sys.executable, "-c", "pass"], (fd,), dict(os.environ)) != 0:
+                        raise AssertionError("Windows subprocess warmup failed")
+                finally:
+                    os.close(fd)
+            _WINDOW_HANDLE_COUNT_WARMED = True
+        gc.collect()
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel.GetProcessHandleCount.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        kernel.GetProcessHandleCount.restype = wintypes.BOOL
+        count = wintypes.DWORD()
+        if not kernel.GetProcessHandleCount(kernel.GetCurrentProcess(), ctypes.byref(count)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return count.value
     return len(os.listdir("/dev/fd"))
 
 
@@ -121,10 +146,13 @@ class LeaseCase(unittest.TestCase):
         os.environ.pop(lease.ENV_HELD, None)
 
     def foreign_hold(self):
-        """Hold the lock the way another launcher would: a plain flock on its own open file."""
-        f = open(self.lock, "a")
+        """Hold the lock the way another launcher would."""
+        if os.name == "nt":
+            f = os.fdopen(lease._try_lock(self.lock), "r+b")
+        else:
+            f = open(self.lock, "a")
+            fcntl.flock(f, fcntl.LOCK_EX)
         self.addCleanup(f.close)
-        fcntl.flock(f, fcntl.LOCK_EX)
         return f
 
     def script(self, name, body):
@@ -141,7 +169,7 @@ class LeaseCase(unittest.TestCase):
 
 class AdmitTest(unittest.TestCase):
     def test_missing_getloadavg_fails_closed(self):
-        with mock.patch("sys.platform", "win32"), mock.patch.object(lease, "os") as host_os:
+        with mock.patch("sys.platform", "linux"), mock.patch.object(lease, "os") as host_os:
             del host_os.getloadavg
             with self.assertRaisesRegex(lease.HostReadError, "load average"):
                 lease.read_host()
@@ -235,7 +263,6 @@ class AcquireTest(LeaseCase):
             os.close(fd)
         self.assertEqual(lease.status(lock), {"held": False, "holder": None, "age_s": None})
 
-    @unittest.skipIf(os.name == "nt", "POSIX only: foreign flock and /dev/fd")
     def test_times_out_and_leaves_sidecar_alone(self):
         self.foreign_hold()
         clock = FakeClock()
@@ -246,7 +273,6 @@ class AcquireTest(LeaseCase):
         self.assertFalse(self.side.exists(), "sidecar written without holding the lock")
         self.assertEqual(open_fds(), fds)
 
-    @unittest.skipIf(os.name == "nt", "POSIX only: foreign flock")
     def test_waits_until_holder_releases(self):
         holder = self.foreign_hold()
         clock = FakeClock(on_sleep=lambda n: n == 2 and holder.close())
@@ -265,7 +291,6 @@ class StatusTest(LeaseCase):
         self.side.write_text(json.dumps({"pid": 1, "what": "old", "since": time.time(), "by": "research-harness"}))
         self.assertEqual(lease.status(self.lock), {"held": False, "holder": None, "age_s": None})
 
-    @unittest.skipIf(os.name == "nt", "POSIX only: foreign flock")
     def test_foreign_holder_without_sidecar(self):
         self.foreign_hold()
         self.assertEqual(lease.status(self.lock), {"held": True, "holder": None, "age_s": None})
@@ -288,7 +313,6 @@ class StatusTest(LeaseCase):
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if the probe kept the lock
 
 
-@unittest.skipIf(os.name == "nt", "POSIX only: leased steps inherit file descriptors")
 class RunTest(LeaseCase):
     def test_step_gets_lease_and_env_and_cleanup_follows(self):
         out = self.tmp / "probe.json"
@@ -304,6 +328,7 @@ class RunTest(LeaseCase):
         self.assertFalse(lease.status(self.lock)["held"])
         self.assertEqual(open_fds(), fds)
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: Unix signal exit codes")
     def test_signal_death_is_128_plus_n(self):
         rc, _ = self.run_quiet([sys.executable, "-c", "import os, signal; os.kill(os.getpid(), signal.SIGTERM)"],
                                max_load=10, max_wait=5, reader=Readings(reading()))
@@ -313,7 +338,10 @@ class RunTest(LeaseCase):
         fds = open_fds()
         rc, err = self.run_quiet([str(self.tmp / "no-such-step")], max_load=10, max_wait=5, reader=Readings(reading()))
         self.assertEqual(rc, 127)
-        self.assertIn("no-such-step", err)
+        if os.name == "nt":
+            self.assertIn("cannot find the file", err.lower())
+        else:
+            self.assertIn("no-such-step", err)
         self.assertFalse(lease.status(self.lock)["held"])
         self.assertFalse(self.side.exists())
         self.assertEqual(open_fds(), fds)
@@ -385,7 +413,6 @@ class RunTest(LeaseCase):
         self.assertTrue(json.loads(out.read_text())["held"], "stale RH_LEASE_HELD skipped the lease")
 
 
-@unittest.skipIf(os.name == "nt", "POSIX only: signals and lease descriptor inheritance")
 class ProcessTest(LeaseCase):
     """Leased steps in real processes; the kernel, not the test, decides who holds the lock."""
 
@@ -397,8 +424,11 @@ class ProcessTest(LeaseCase):
 
     def kill_orphans(self):
         for pid in self.orphans:
-            with contextlib.suppress(ProcessLookupError):
-                os.kill(pid, signal.SIGKILL)
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+            else:
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, signal.SIGKILL)
 
     def runner(self, what, out, seconds):
         p = subprocess.Popen([sys.executable, "-I", "-c", RUNNER, str(ROOT), str(self.lock), what,
@@ -416,6 +446,7 @@ class ProcessTest(LeaseCase):
         self.assertFalse(lease.status(self.lock)["held"])
         self.assertFalse(self.side.exists())
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: SIGKILL process-tree behavior")
     def test_lease_follows_step_and_kill9_frees_waiter(self):
         held_out, wait_out = self.tmp / "held", self.tmp / "waiter"
         holder = self.runner("holder", held_out, 20)

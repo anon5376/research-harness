@@ -1,0 +1,21 @@
+# Windows-only: these tests skip elsewhere, so run this list on Windows.
+[[mutant]]
+name = "a finished runner still looks alive"
+file = "rh/adapters/local_shell.py"
+find = 'return code.value == 259  # STILL_ACTIVE'
+replace = 'return True'
+tests = ["tests.test_windows.LocalShellTest"]
+
+[[mutant]]
+name = "memory pressure never warns"
+file = "rh/lease.py"
+find = 'level = 1 if memory.load < 80 else 2 if memory.load < 90 else 4'
+replace = 'level = 1'
+tests = ["tests.test_windows.WindowsHostTest"]
+
+[[mutant]]
+name = "the lock shares write access"
+file = "rh/oslock.py"
+find = 'kernel.CreateFileW(os.fspath(path), 0xC0000000, 1, None, 4, 0x80, None)'
+replace = 'kernel.CreateFileW(os.fspath(path), 0xC0000000, 3, None, 4, 0x80, None)'
+tests = ["tests.test_oslock", "tests.test_windows"]

@@ -15,19 +15,12 @@ class Locked(Exception):
 
 def try_lock(path) -> int:
     """Open or create path, take an exclusive non-blocking lock, return the fd. Raise Locked if it is held."""
-    flags = os.O_RDWR | getattr(os, 'O_BINARY', 0) if _WINDOWS else os.O_RDONLY
-    fd = os.open(path, flags | os.O_CREAT, 0o666)
+    if _WINDOWS:
+        return _windows_lock(path)
+    fd = os.open(path, os.O_RDONLY | os.O_CREAT, 0o666)
     try:
-        if _WINDOWS:
-            # Use a real first byte for the Windows byte-range lock.
-            if os.fstat(fd).st_size == 0:
-                os.write(fd, b'\0')
-            os.lseek(fd, 0, os.SEEK_SET)
         try:
-            if _WINDOWS:
-                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
-            else:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError as error:
             if error.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK):
                 raise Locked() from None
@@ -40,11 +33,39 @@ def try_lock(path) -> int:
 
 def unlock(fd: int) -> None:
     """Release the lock and close the fd."""
+    if _WINDOWS:
+        os.close(fd)
+        return
     try:
-        if _WINDOWS:
-            os.lseek(fd, 0, os.SEEK_SET)
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
-        else:
-            fcntl.flock(fd, fcntl.LOCK_UN)
+        fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+
+
+def _windows_lock(path):
+    """Deny write/delete sharing until the last inherited handle closes.
+
+    Unlike Windows byte-range locks, sharing restrictions survive the opening
+    process's death when a leased step still holds an inherited handle.
+    """
+    import ctypes
+    from ctypes import wintypes
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
+                                  wintypes.LPVOID, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.CloseHandle.restype = wintypes.BOOL
+    handle = kernel.CreateFileW(os.fspath(path), 0xC0000000, 1, None, 4, 0x80, None)
+    if handle == wintypes.HANDLE(-1).value:
+        error = ctypes.WinError(ctypes.get_last_error())
+        if error.winerror == 32:  # ERROR_SHARING_VIOLATION
+            raise Locked() from None
+        raise error
+    try:
+        return msvcrt.open_osfhandle(handle, os.O_RDWR | os.O_BINARY)
+    except BaseException:
+        if not kernel.CloseHandle(handle):
+            raise ctypes.WinError(ctypes.get_last_error())
+        raise

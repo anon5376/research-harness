@@ -39,7 +39,15 @@ class LeaseTimeout(Exception):
 
 
 def read_host(sysctl="sysctl"):
-    """Sample memory pressure (darwin only) and the 1-minute load average."""
+    """Sample POSIX 1-minute load and Darwin pressure, or Windows equivalents.
+
+    Windows load is busy CPU fraction over 100 ms times logical CPU count:
+    occupied CPU equivalents, comparable to max_load, not a run-queue average.
+    GlobalMemoryStatusEx physical memory use maps <80% to normal (1),
+    80..89% to warning (2), and >=90% to critical (4), like Darwin's levels.
+    """
+    if sys.platform == "win32":
+        return _read_windows_host()
     level = None
     if sys.platform == "darwin":
         try:
@@ -60,6 +68,48 @@ def read_host(sysctl="sysctl"):
     except (AttributeError, OSError) as e:
         raise HostReadError(f"load average: {e}") from e
     return Reading(level=level, load1=load1, taken=time.time())
+
+
+def _read_windows_host():
+    import ctypes
+    from ctypes import wintypes
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [("length", wintypes.DWORD), ("load", wintypes.DWORD),
+                    *[(name, ctypes.c_ulonglong) for name in
+                      ("total_phys", "avail_phys", "total_page", "avail_page",
+                       "total_virtual", "avail_virtual", "avail_extended")]]
+
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.GetSystemTimes.argtypes = [ctypes.POINTER(wintypes.FILETIME)] * 3
+    kernel.GetSystemTimes.restype = wintypes.BOOL
+    kernel.GlobalMemoryStatusEx.argtypes = [ctypes.POINTER(MemoryStatus)]
+    kernel.GlobalMemoryStatusEx.restype = wintypes.BOOL
+
+    def sample():
+        values = [wintypes.FILETIME() for _ in range(3)]
+        if not kernel.GetSystemTimes(*(ctypes.byref(value) for value in values)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return [(value.dwHighDateTime << 32) | value.dwLowDateTime for value in values]
+
+    try:
+        before = sample()
+        time.sleep(0.1)
+        after = sample()
+        idle, kern, user = [b - a for a, b in zip(before, after)]
+        total = kern + user  # Windows kernel time includes idle time.
+        if total <= 0 or not 0 <= idle <= total:
+            raise HostReadError("GetSystemTimes: invalid CPU sample")
+        memory = MemoryStatus(length=ctypes.sizeof(MemoryStatus))
+        if not kernel.GlobalMemoryStatusEx(ctypes.byref(memory)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    except OSError as error:
+        raise HostReadError(f"Windows host reading: {error}") from error
+    cpus = os.cpu_count()
+    if not cpus or not 0 <= memory.load <= 100:
+        raise HostReadError("Windows host reading: invalid CPU count or memory load")
+    level = 1 if memory.load < 80 else 2 if memory.load < 90 else 4
+    return Reading(level=level, load1=(total - idle) / total * cpus, taken=time.time())
 
 
 def admit(reading, max_load, max_level=1):
@@ -189,7 +239,24 @@ def _try_lock(lock_path):
 
 def _spawn(cmd, fds, env):
     try:
-        rc = subprocess.run(cmd, pass_fds=fds, env=env).returncode
+        if os.name == "nt":
+            import msvcrt
+            duplicates = []
+            try:
+                for fd in fds:
+                    duplicate = os.dup(fd)
+                    duplicates.append(duplicate)
+                    os.set_handle_inheritable(msvcrt.get_osfhandle(duplicate), True)
+                startup = subprocess.STARTUPINFO()
+                startup.lpAttributeList = {"handle_list": [msvcrt.get_osfhandle(fd) for fd in duplicates]}
+                process = subprocess.Popen(cmd, env=env, startupinfo=startup, close_fds=True)
+            finally:
+                for fd in duplicates:
+                    os.close(fd)
+            with process:
+                rc = process.wait()
+        else:
+            rc = subprocess.run(cmd, pass_fds=fds, env=env).returncode
     except FileNotFoundError as e:
         print(f"rh lease: {e}", file=sys.stderr)
         return 127

@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import secrets
 import socket
+import socketserver
 import threading
 import time
 import urllib.parse
@@ -135,6 +136,14 @@ def _action(cfg, path, fields):
     if path == "/land":
         return ["land", "--", value("job")]
     return ["supervise", "--once"]  # /tick, checked by the request handler
+
+
+class _Server(http.server.HTTPServer):
+    def server_bind(self):
+        # HTTPServer asks the resolver for the host's full name, which can hang on a machine whose reverse lookup
+        # of 127.0.0.1 never answers. Nothing here uses that name.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 
 
 def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0,
@@ -280,7 +289,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0,
             last_result = _result(code, output)
             self.reply(303, location=page_path)
 
-    server = http.server.HTTPServer((host, port), Handler)
+    server = _Server((host, port), Handler)
     return server, f"http://127.0.0.1:{server.server_port}{page_path}"
 
 

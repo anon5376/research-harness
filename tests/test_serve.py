@@ -312,6 +312,13 @@ class ServeTest(unittest.TestCase):
         self.assertNotIn("TAIL-MARKER", page)
         self.assertEqual(os.environ.get("RH_HOME"), previous)
 
+    def test_server_starts_without_a_name_lookup(self):
+        # The desktop app starts this server; a resolver that never answers for 127.0.0.1 must not stop it.
+        with patch("socket.getfqdn", side_effect=AssertionError("name lookup")):
+            server, url = self.serve.make_server(self.cfg)
+        with server:
+            self.assertEqual(urlsplit(url).port, server.server_port)
+
     def test_default_token_and_main_lifecycle(self):
         server, url = self.serve.make_server(self.cfg)
         with server:

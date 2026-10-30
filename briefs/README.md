@@ -10,14 +10,16 @@ Each brief has a job contract in `jobs/` that the harness runs:
 - The supervisor collects the diff, checks custody against the job's write paths, validates RESULT.json and runs the job's `accept` command locally.
 - `rh land <id>` commits it on branch `cloud/<id>`. The lead reviews and merges.
 
-| Brief | Job | Model (fast) | Needs first |
+| Brief | Job | Model, speed | Needs first |
 |---|---|---|---|
-| [M5 environment probe](M5-probe.md) | `probe-env-01` | Sol, extra-high, best of 2 | environment published, Full access |
-| [M5h hardening from the v0 review](M5h-hardening.md) | `m5h-hardening` | Astra, ultra, best of 2 | probe; lands before M6c and M6d |
-| [M6a static dashboard](M6a-dashboard.md) | `m6a-dashboard` | Sol, extra-high, best of 2 | probe done and imported |
-| [M6b research goals and roles](M6b-goals.md) | `m6b-goals` | Sol, extra-high, best of 2 | probe |
-| [M6c paced cloud launches](M6c-pacing.md) | `m6c-pacing` | Astra, ultra, best of 2 | probe |
-| [M6d event wake](M6d-wake.md) | `m6d-wake` | Astra, ultra, best of 2 | probe; lands after M5h and M6c (all touch `rh/supervisor.py`) |
+| [M5 environment probe](M5-probe.md) | `probe-env-01` | Sol, extra-high, fast (ran 30 Oct) | environment published, Full access |
+| [M5h hardening from the v0 review](M5h-hardening.md) | `m5h-hardening` | Sol, extra-high, fast (launched 30 Oct; Astra was blocked) | probe; lands before M6c and M6d |
+| [M6a static dashboard](M6a-dashboard.md) | `m6a-dashboard` | Sol, extra-high, fast (launched 30 Oct) | probe done and imported |
+| [M6b research goals and roles](M6b-goals.md) | `m6b-goals` | Sol, extra-high, fast (launched 30 Oct) | probe |
+| [M6c paced cloud launches](M6c-pacing.md) | `m6c-pacing` | Sol, extra-high, standard; follow-up in the m5h task | probe |
+| [M6d event wake](M6d-wake.md) | `m6d-wake` | Sol, extra-high, standard; follow-up in the m5h task | probe; lands after M5h and M6c (all touch `rh/supervisor.py`) |
+
+Next milestone: desktop builds and the v1.0.0 definition of done, planned in [M7-desktop-plan.md](M7-desktop-plan.md); its briefs follow the lead's yes.
 
 Rules every brief inherits (the harness prompt states them too):
 - Python 3.11+ standard library only.

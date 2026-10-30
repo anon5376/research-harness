@@ -30,8 +30,8 @@ role = "Desktop and release: rh serve, the desktop app, packaging and the releas
 route = "codex-cloud"
 model = "gpt-6.1-sol"
 effort = "max"
-owns = ["rh/serve.py", "desktop/app.py", "desktop/requirements.txt", "desktop/rh-desktop.spec",
-        ".github/workflows/build.yml", "docs/releases/", "tests/test_serve.py", "tests/test_desktop.py"]
+owns = ["desktop/app.py", "desktop/requirements.txt", "desktop/rh-desktop.spec",
+        ".github/workflows/build.yml", "docs/releases/", "tests/test_desktop.py"]
 done = "the job's brief is met and python3 -I tests/run.py passes on the lead's machine"
 
 [seat.testing]
@@ -47,7 +47,7 @@ role = "Design: the look of every page and the app icon (Claude)"
 route = "claude"
 model = "claude-opus-5-5"
 effort = "default"
-owns = ["rh/dashboard.py", "tests/test_dashboard.py", "desktop/icons/"]
+owns = ["rh/dashboard.py", "rh/serve.py", "tests/test_dashboard.py", "tests/test_serve.py", "desktop/icons/"]
 done = "existing tests stay green; no scripts, no external URLs; light and dark; no horizontal scroll at 375 px"
 
 [seat.lead]

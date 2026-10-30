@@ -377,7 +377,10 @@ class NegationTest(unittest.TestCase):
                                 ("Never push. Publish it.", ["Publish it"]),
                                 ("Do not push; deploy.", ["deploy"]),
                                 ("Write notes, never push, publish or deploy.", []),
-                                ("Check that it does not push, publish it.", ["publish it"])):
+                                ("Check that it does not push, publish it.", ["publish it"]),
+                                ("Do not edit tests, push to main.", ["push to main"]),
+                                ("Don't touch the README, publish the release.", ["publish the release"]),
+                                ("Never rename files, deploy when green.", ["deploy when green"])):
             with self.subTest(brief=brief):
                 self.assertEqual(contract.operator_steps(brief), expected)
 

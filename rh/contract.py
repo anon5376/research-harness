@@ -179,7 +179,8 @@ def operator_steps(brief):
                 if not negated and not _NEGATION.search(" ".join(words[-3:])):
                     out.append(clause.strip())
                     break
-            negated = negated or bool(_LEADING_NEGATION.match(clause))
+            # carry a negation only from a clause that itself names an action: "Do not edit tests, push" still pushes
+            negated = negated or (bool(_LEADING_NEGATION.match(clause)) and any(v.search(clause) for v in _VERBS))
     return out
 
 

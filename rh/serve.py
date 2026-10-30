@@ -301,7 +301,7 @@ def _say(path, fields, ok, made=None):
         "/land": f"Saved to the local branch cloud/{job}.",
         "/job/cancel": f"Cancelled {job}.",
         "/tick": "Checked.",
-        "/setup": "Codex cloud is set up. Cloud jobs start on the next check.",
+        "/setup": "Environment ID saved. Cloud jobs start on the next check.",
     }.get(path, "Done.")
 
 
@@ -751,7 +751,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 on = fields.get("on") == ["1"]
                 loop.switch(on)
                 last_result = _result(0, "", "Checking automatically." if on else
-                                      "Automatic checks are paused. Nothing new starts until you resume them.")
+                                      "Automatic checks are paused. The app starts nothing until you resume them or press Check once.")
             elif path == "/tick" and loop:
                 ok = loop.now()
                 state = loop.state()

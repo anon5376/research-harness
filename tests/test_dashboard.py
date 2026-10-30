@@ -466,6 +466,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('value="net" checked', page)
         self.assertIn('value="45"', page)
         self.assertIn('value="python3 x.py"', page)
+        # Without the script the command field must not block a cloud job's submit: the server refuses a local job
+        # that has no command, so the browser must not require one.
+        command = page[page.index('id="command"'):page.index('>', page.index('id="command"'))]
+        self.assertNotIn("required", command)
         # Codex cloud is the default only once it is set up; before that a new job runs on this machine.
         def kind(page):
             return Forms(page).forms[[f["action"] for f in Forms(page).forms].index("/job")]["fields"]["kind"]

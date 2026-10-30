@@ -1341,7 +1341,7 @@ def _checks(view, ctx):
         btns = [_button(ctx, "/checks", [("on", "0")], "Pause", "", "quiet small", "Pause checks"),
                 _button(ctx, "/tick", [], "Check now", "t", "quiet small", "Check now")]
     elif mode == "paused":
-        word, dot, more = "Checks paused", "warn", "Nothing new starts and nothing is collected until you resume."
+        word, dot, more = "Checks paused", "warn", "The app starts and collects nothing until you resume or press Check once."
         btns = [_button(ctx, "/checks", [("on", "1")], "Resume", "", "small", "Resume checks"),
                 _button(ctx, "/tick", [], "Check once", "t", "quiet small", "Check once")]
     elif mode == "other":
@@ -1459,7 +1459,6 @@ def _composer(ctx, draft, ready, first):
                     for n in _NEEDS)
     timeout = value("timeout_min") or "120"
     later = "" if ready else "<small>set up first</small>"
-    required = " required" if kind == "local-shell" else ""
     form = (f'<form class="compose" method="post" action="/job" data-act data-label="Start job">{_hidden(ctx, [])}'
             '<h1 id="compose-title">What should run?</h1>'
             '<div class="box"><label class="sr" for="brief">What should the job do?</label>'
@@ -1467,7 +1466,7 @@ def _composer(ctx, draft, ready, first):
             'every TODO in the notes and write them to todo.md">'
             f'{value("brief")}</textarea>'
             '<div class="cmd"><label for="command">Command</label><input type="text" id="command" name="command" '
-            f'class="mono" autocomplete="off" spellcheck="false" placeholder="sh -c \'date &gt; today.txt\'"{required} '
+            f'class="mono" autocomplete="off" spellcheck="false" placeholder="sh -c \'date &gt; today.txt\'" '
             f'value="{value("command")}"><small>Runs in runs/&lt;name&gt;/, so write plain file names. Pipes and &gt; need sh -c, as shown.'
             '</small></div>'
             '<div class="bar"><fieldset class="where"><legend class="sr">Runs on</legend>'
@@ -1487,7 +1486,7 @@ def _composer(ctx, draft, ready, first):
             f'<fieldset><legend>It needs</legend><div class="needs">{needs}</div></fieldset>'
             '<label>Time limit, minutes<input type="text" name="timeout_min" inputmode="numeric" '
             f'pattern="[0-9]{{1,5}}" value="{timeout}"></label></div></details>'
-            '<p class="note">Starts at once. Nothing is pushed.</p></div></form>')
+            '<p class="note">Starts on the next check, usually within seconds. Nothing is pushed.</p></div></form>')
     if first:
         form += ('<div class="how"><ol class="steps">'
                  '<li><div><p><b>Describe a job and start it.</b> A job on this machine runs one command in its own '
@@ -1546,7 +1545,7 @@ def _event(ev, now, kind):
 
 
 def _receipt(ctx, opened, job, spec, lead):
-    """Where a finished job's transcript ends: the verdict, the checks it passed, the files it made, and its stamp."""
+    """Where a finished job's transcript ends: the verdict, its checks, the files it made, and its stamp."""
     jid, state = job["id"], job.get("state")
     receipt = opened.get("receipt") if isinstance(opened.get("receipt"), dict) else {}
     word, tone = _STATES.get(state, (state, "neutral"))

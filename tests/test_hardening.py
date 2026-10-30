@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -81,6 +82,7 @@ class HarnessCase(unittest.TestCase):
             return subprocess.run(["git", "-C", str(repo), *args], check=True,
                                   capture_output=True, text=True).stdout
         git("init", "-q", "-b", "main")
+        git("config", "core.autocrlf", "false")
         git("config", "user.name", "test")
         git("config", "user.email", "test@example.com")
         git("config", "core.hooksPath", "/dev/null")
@@ -245,12 +247,14 @@ class GateTest(HarnessCase):
             self.s._poll_local(self.led.job("j1"), {"finished": 0})
         self.assertEqual(self.led.job("j1")["state"], "done")
 
+    @unittest.skipIf(os.name == "nt" and not shutil.which("sh"), "POSIX only: gates need Git sh")
     def test_nonheavy_gate_uses_job_timeout_and_records_exit_124(self):
         j = self.local_exited(accept="sleep 0.3", timeout_min=0.001)
         self.s._poll_local(j, {"finished": 0})
         self.assertEqual(self.led.job("j1")["state"], "failed")
         self.assertEqual(self.led.receipt("j1")["checks"][-1]["exit"], 124)
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: heavy gates inherit a lease descriptor")
     def test_heavy_gate_uses_job_timeout_and_records_exit_124(self):
         j = self.local_exited(heavy=True, accept="sleep 0.3", timeout_min=0.001)
         self.s._poll_local(j, {"finished": 0})

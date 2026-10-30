@@ -1,6 +1,5 @@
 """Tests for rh/lease.py: admission, the flock lease, the status probe, and leased steps in real processes."""
 import contextlib
-import fcntl
 import io
 import json
 import os
@@ -12,6 +11,9 @@ import time
 import unittest
 from pathlib import Path
 from unittest import mock
+
+if os.name != "nt":
+    import fcntl
 
 from rh import lease
 
@@ -159,6 +161,7 @@ class AdmitTest(unittest.TestCase):
         self.assertIn("load 12.00 above 10.00", why)
 
 
+@unittest.skipIf(os.name == "nt", "POSIX only: sysctl scripts and load averages")
 class ReadHostTest(LeaseCase):
     def fake_sysctl(self, body):
         path = self.tmp / "sysctl"
@@ -226,6 +229,7 @@ class AcquireTest(LeaseCase):
             os.close(fd)
         self.assertEqual(lease.status(lock), {"held": False, "holder": None, "age_s": None})
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: foreign flock and /dev/fd")
     def test_times_out_and_leaves_sidecar_alone(self):
         self.foreign_hold()
         clock = FakeClock()
@@ -236,6 +240,7 @@ class AcquireTest(LeaseCase):
         self.assertFalse(self.side.exists(), "sidecar written without holding the lock")
         self.assertEqual(open_fds(), fds)
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: foreign flock")
     def test_waits_until_holder_releases(self):
         holder = self.foreign_hold()
         clock = FakeClock(on_sleep=lambda n: n == 2 and holder.close())
@@ -254,6 +259,7 @@ class StatusTest(LeaseCase):
         self.side.write_text(json.dumps({"pid": 1, "what": "old", "since": time.time(), "by": "research-harness"}))
         self.assertEqual(lease.status(self.lock), {"held": False, "holder": None, "age_s": None})
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: foreign flock")
     def test_foreign_holder_without_sidecar(self):
         self.foreign_hold()
         self.assertEqual(lease.status(self.lock), {"held": True, "holder": None, "age_s": None})
@@ -266,6 +272,7 @@ class StatusTest(LeaseCase):
         age = lease.status(self.lock)["age_s"]
         self.assertTrue(100 <= age < 105, age)
 
+    @unittest.skipIf(os.name == "nt", "POSIX only: flock and /dev/fd")
     def test_probe_releases_at_once(self):
         self.lock.touch()
         fds = open_fds()
@@ -275,6 +282,7 @@ class StatusTest(LeaseCase):
             fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)  # raises BlockingIOError if the probe kept the lock
 
 
+@unittest.skipIf(os.name == "nt", "POSIX only: leased steps inherit file descriptors")
 class RunTest(LeaseCase):
     def test_step_gets_lease_and_env_and_cleanup_follows(self):
         out = self.tmp / "probe.json"
@@ -371,6 +379,7 @@ class RunTest(LeaseCase):
         self.assertTrue(json.loads(out.read_text())["held"], "stale RH_LEASE_HELD skipped the lease")
 
 
+@unittest.skipIf(os.name == "nt", "POSIX only: signals and lease descriptor inheritance")
 class ProcessTest(LeaseCase):
     """Leased steps in real processes; the kernel, not the test, decides who holds the lock."""
 

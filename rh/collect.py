@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -106,8 +108,12 @@ def collect_local(job, exit_code, cwd, log_tail=(), gate_runner=None):
 
 def run_gate(command, cwd, timeout=1800):
     """The job author's acceptance command, run like CI: exit code is the verdict."""
+    shell = shutil.which("sh") if os.name == "nt" else "sh"
+    if shell is None:
+        print("acceptance gates need sh (Git for Windows)", file=sys.stderr)
+        return 127
     try:
-        return subprocess.run(["sh", "-c", command], cwd=str(cwd), timeout=timeout).returncode
+        return subprocess.run([shell, "-c", command], cwd=str(cwd), timeout=timeout).returncode
     except subprocess.TimeoutExpired:
         return 124
 

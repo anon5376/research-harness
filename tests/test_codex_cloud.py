@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -10,7 +11,7 @@ from unittest import mock
 from rh.adapters.codex_cloud import CodexCloud, RouteUnavailable, classify, map_status
 
 ROOT = Path(__file__).resolve().parents[1]
-FAKE = ROOT / "tests" / "fakes" / "codex"
+FAKE = ROOT / "tests" / "fakes" / ("codex.cmd" if os.name == "nt" else "codex")
 TID = "task_e_" + "0123456789abcdef" * 2
 OLD_TID = "task_e_" + "fedcba9876543210" * 2
 NOT_FOUND = "Error: environment 'x' not found; run `codex cloud` to list available environments\n"
@@ -26,7 +27,8 @@ class FakeCliTest(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = Path(tmp.name)
         self.state, self.log = self.dir / "state.json", self.dir / "log.jsonl"
-        env = mock.patch.dict(os.environ, {"FAKE_CODEX_STATE": str(self.state), "FAKE_CODEX_LOG": str(self.log)})
+        env = mock.patch.dict(os.environ, {"FAKE_CODEX_STATE": str(self.state), "FAKE_CODEX_LOG": str(self.log),
+                                         "RH_TEST_PYTHON": sys.executable})
         env.start()
         self.addCleanup(env.stop)
         self.assertTrue(os.access(FAKE, os.X_OK), "tests/fakes/codex must be executable")

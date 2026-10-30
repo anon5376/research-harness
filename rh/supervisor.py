@@ -2,7 +2,6 @@
 poll, collect, notify, heartbeat. It never writes a stop: launch failures back off; only owners stop work."""
 from __future__ import annotations
 
-import fcntl
 import hashlib
 import json
 import os
@@ -11,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-from rh import collect, contract, gitx, lease, notify, protocol
+from rh import collect, contract, gitx, lease, notify, oslock, protocol
 from rh.adapters import local_shell
 from rh.adapters.codex_cloud import RouteUnavailable
 from rh.config import REPO
@@ -38,11 +37,9 @@ def single_instance(home):
     """Hold this fd for the supervisor's lifetime; a second supervisor gets AlreadyRunning at once."""
     home = Path(home)
     home.mkdir(parents=True, exist_ok=True)
-    fd = os.open(home / "supervisor.lock", os.O_RDWR | os.O_CREAT, 0o644)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        os.close(fd)
+        fd = oslock.try_lock(home / "supervisor.lock")
+    except oslock.Locked:
         hb = home / "supervisor.json"
         who = json.loads(hb.read_text()).get("pid") if hb.is_file() else "unknown"
         raise AlreadyRunning(f"another supervisor holds {home / 'supervisor.lock'} (pid {who})") from None

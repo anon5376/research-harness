@@ -1,3 +1,4 @@
+import os
 import sys
 import tempfile
 import time
@@ -251,6 +252,7 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(len([e for e in self.led.events("c1") if e["kind"] == "unknown-status"]), 1)
 
 
+@unittest.skipIf(os.name == "nt", "POSIX only: detached local-shell jobs")
 class LocalJobTest(unittest.TestCase):
     """Real subprocesses through the detached runner."""
 

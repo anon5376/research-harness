@@ -1,0 +1,34 @@
+[[mutant]]
+name = "token check always passes"
+file = "rh/serve.py"
+find = 'return len(values) == 1 and secrets.compare_digest(values[0].encode(), token.encode())'
+replace = 'return True'
+tests = ["tests.test_serve"]
+
+[[mutant]]
+name = "host check off"
+file = "rh/serve.py"
+find = 'return len(hosts) == 1 and hosts[0] in ('
+replace = 'return True or hosts[0] in ('
+tests = ["tests.test_serve"]
+
+[[mutant]]
+name = "result shown forever"
+file = "rh/serve.py"
+find = "                last_result = None\n            else:"
+replace = "                pass\n            else:"
+tests = ["tests.test_serve"]
+
+[[mutant]]
+name = "stop owner taken from the form"
+file = "rh/serve.py"
+find = 'argv = [path[1:], "--owner=app"]'
+replace = 'argv = [path[1:], "--owner=" + (fields.get("owner") or ["app"])[0]]'
+tests = ["tests.test_serve"]
+
+[[mutant]]
+name = "2,000-character cut removed"
+file = "rh/serve.py"
+find = 'if size + len(escaped) > 2000:'
+replace = 'if False:'
+tests = ["tests.test_serve"]

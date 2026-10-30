@@ -16,11 +16,13 @@ Each brief has a job contract in `jobs/` that the harness runs:
 | [M5h hardening from the v0 review](M5h-hardening.md) | `m5h-hardening` | Sol, extra-high, fast (launched 30 Oct; Astra was blocked) | probe; lands before M6c and M6d |
 | [M6a static dashboard](M6a-dashboard.md) | `m6a-dashboard` | Sol, extra-high, fast (launched 30 Oct) | probe done and imported |
 | [M6b research goals and roles](M6b-goals.md) | `m6b-goals` | Sol, extra-high, fast (launched 30 Oct) | probe |
-| [M6c paced cloud launches](M6c-pacing.md) | `m6c-pacing` | Sol, extra-high, standard; follow-up in the m5h task | probe |
-| [M6d event wake](M6d-wake.md) | `m6d-wake` | Sol, extra-high, standard; follow-up in the m5h task | probe; lands after M5h and M6c (all touch `rh/supervisor.py`) |
-| [M7a Windows portability and three-OS CI](M7a-portability.md) | `m7a-portability` | Sol, extra-high, standard; follow-up in the m5h task | m5h landed |
-| [M7b `rh serve` local web app](M7b-serve.md) | `m7b-serve` | Sol, extra-high, standard; first job of the desktop task | m6a landed; Claude adds the `rh serve` CLI hook first |
-| [M7c desktop app, packaging, release build](M7c-desktop.md) | `m7c-desktop` | Sol, extra-high, standard; follow-up in the desktop task | m7a and m7b landed |
+| [M6c paced cloud launches](M6c-pacing.md) | `m6c-pacing` | backend seat (Sol, max); follow-up after M7a | probe |
+| [M6d event wake](M6d-wake.md) | `m6d-wake` | backend seat (Sol, max); follow-up after M6c | probe; lands after M5h and M6c (all touch `rh/supervisor.py`) |
+| [M7a Windows portability and three-OS CI](M7a-portability.md) | `m7a-portability` | backend seat (Sol, max); follow-up in the m5h task | m5h landed (done) |
+| [M7b `rh serve` local web app](M7b-serve.md) | `m7b-serve` | Sol, extra-high, standard; first job of the desktop task (landed 30 Oct) | m6a landed; Claude adds the `rh serve` CLI hook first |
+| [M7c desktop app, packaging, release build](M7c-desktop.md) | `m7c-desktop` | app seat (Sol, max); follow-up in the desktop task | m7b landed; m7a before the Windows build is trusted |
+| [M8a anchor seats in the harness](M8a-seats.md) | `m8a-seats` | cli seat (Sol, max); new standing task | seats.toml committed |
+| [M8b mutant runner](M8b-mutants.md) | `m8b-mutants` | testing seat (Terra, max); new standing task | mutants/ lists committed |
 
 Desktop builds and the v1.0.0 definition of done are planned in [M7-desktop-plan.md](M7-desktop-plan.md); the founder approved PyInstaller and pywebview on 30 Oct.
 A follow-up job in a long-lived task starts only after the previous job there is harvested, and its Step 0 must first drop that job's staged work (`git reset -q --hard && git clean -qfd`). The harness prompt gains that line before the first follow-up goes out.

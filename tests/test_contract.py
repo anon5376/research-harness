@@ -97,8 +97,10 @@ class PreflightTest(unittest.TestCase):
     def test_model_outside_policy_holds(self):
         s = spec('[model]\nrequested = "some-other-model"\nspeed = "standard"', kind="codex-cloud")
         self.assertEqual(decide(s).verdict, "hold")
-        ok = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "standard"\neffort = "extra-high"', kind="codex-cloud")
+        ok = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "standard"\neffort = "max"', kind="codex-cloud")
         self.assertEqual(decide(ok).verdict, "ready")
+        below = spec('[model]\nrequested = "gpt-6.1-terra"\nspeed = "standard"\neffort = "extra-high"', kind="codex-cloud")
+        self.assertEqual(decide(below).verdict, "hold")
         fast = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "fast"', kind="codex-cloud")
         self.assertEqual(decide(fast).verdict, "hold")
         astra = spec('[model]\nrequested = "gpt-6-astra"\nspeed = "standard"\neffort = "extra-high"', kind="codex-cloud")

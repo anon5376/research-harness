@@ -1,11 +1,11 @@
 # Model policy every launcher reads. Change it only with a new date and the reason.
 dated = "2026-10-30"
-reason = "founder: fast off unless a job is time-critical (that takes a new dated policy); Astra off since a classifier blocked its launch; Sol or Terra at extra-high"
+reason = "founder: fast off unless a job is time-critical (that takes a new dated policy); Astra off since a classifier blocked its launch; anchor seats run Sol or Terra at max reasoning (founder, 30 Oct, relayed by the lead)"
 
 [codex-cloud]
 models = ["gpt-6.1-sol", "gpt-6.1-terra"]
 speeds = ["standard"]
-efforts = ["extra-high"]
+efforts = ["max"]
 
 [local-shell]
 models = []

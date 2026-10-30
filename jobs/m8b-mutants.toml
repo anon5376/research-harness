@@ -1,0 +1,17 @@
+# Codex cloud task for briefs/M8b-mutants.md. First job of the testing seat (seats.toml), a new standing task.
+id = "m8b-mutants"
+seat = "testing"
+kind = "codex-cloud"
+needs = ["python", "git"]
+write_paths = ["tools/mutants.py", "tests/test_mutants.py"]
+timeout_min = 180
+brief = """Implement briefs/M8b-mutants.md exactly. Its interface section is binding: do not rename, re-sign or move
+anything it names, and write only the files it lists plus runs/m8b-mutants/. Follow briefs/README.md for the inherited
+rules (stack line first, the whole suite must pass). Write runs/m8b-mutants/SUMMARY.md with
+the stack line, the exact test command and its real result."""
+accept = "python3 -I tests/run.py"
+
+[model]
+requested = "gpt-6.1-terra"
+speed = "standard"
+effort = "max"

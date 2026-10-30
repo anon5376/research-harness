@@ -1,5 +1,6 @@
 # Codex cloud task for briefs/M7a-portability.md. Follow-up in the m5h task once m5h has landed and is on origin/main.
 id = "m7a-portability"
+seat = "backend"
 kind = "codex-cloud"
 needs = ["python", "git"]
 write_paths = ["rh/oslock.py", "rh/supervisor.py", "rh/lease.py", "rh/adapters/local_shell.py", "rh/collect.py", "tests/", ".github/workflows/ci.yml"]
@@ -13,4 +14,4 @@ accept = "python3 -I tests/run.py"
 [model]
 requested = "gpt-6.1-sol"
 speed = "standard"
-effort = "extra-high"
+effort = "max"

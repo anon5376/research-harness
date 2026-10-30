@@ -21,4 +21,4 @@ accept = "python3 -I -c \"import json; d = json.load(open('runs/probe-env-01/cap
 [model]
 requested = "gpt-6.1-sol"
 speed = "standard"
-effort = "extra-high"
+effort = "max"

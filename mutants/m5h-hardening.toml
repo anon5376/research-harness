@@ -1,0 +1,34 @@
+[[mutant]]
+name = "accept is not scanned"
+file = "rh/contract.py"
+find = 'steps += operator_steps(spec["accept"])'
+replace = 'steps += []'
+tests = ["tests.test_hardening.OperatorTest"]
+
+[[mutant]]
+name = "exit 75 is capacity"
+file = "rh/collect.py"
+find = 'return "capacity" if exit_code == 75 else "failed", receipt('
+replace = 'return "failed", receipt('
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "cancel allows running"
+file = "rh/cli.py"
+find = 'if j["state"] not in ("draft", "waiting", "held", "ready", "handoff"):'
+replace = 'if j["state"] not in ("draft", "waiting", "held", "ready", "handoff", "running"):'
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "heavy gate waits the full lease"
+file = "rh/supervisor.py"
+find = 'max_load=float(lc["max_load"]), max_wait=5)'
+replace = 'max_load=float(lc["max_load"]), max_wait=float(lc["max_wait"]))'
+tests = ["tests.test_hardening.GateTest"]
+
+[[mutant]]
+name = "negation anywhere before the verb"
+file = "rh/contract.py"
+find = 'if not _NEGATION.search(" ".join(words[-3:])):'
+replace = 'if not _NEGATION.search(" ".join(words)):'
+tests = ["tests.test_hardening.OperatorTest"]

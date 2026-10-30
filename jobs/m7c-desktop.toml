@@ -1,5 +1,6 @@
 # Codex cloud task for briefs/M7c-desktop.md. Follow-up in the desktop task once m7a and m7b have landed.
 id = "m7c-desktop"
+seat = "app"
 kind = "codex-cloud"
 needs = ["python", "git", "net"]
 write_paths = ["desktop/", "docs/releases/TEMPLATE.md", ".github/workflows/build.yml", "tests/test_desktop.py"]
@@ -13,4 +14,4 @@ accept = "python3 -I tests/run.py"
 [model]
 requested = "gpt-6.1-sol"
 speed = "standard"
-effort = "extra-high"
+effort = "max"

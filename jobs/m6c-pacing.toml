@@ -1,6 +1,7 @@
 # Codex cloud task for briefs/M6c-pacing.md. Add it only after the probe is imported, and only once the commit
 # you add it from is on origin/main (the harness pins it). m6d-wake goes in after m6c-pacing is merged and pushed.
 id = "m6c-pacing"
+seat = "backend"
 kind = "codex-cloud"
 needs = ["python", "git"]
 write_paths = ["rh/supervisor.py", "rh/ledger.py", "rh/config.py", "tests/test_pacing.py"]
@@ -14,4 +15,4 @@ accept = "python3 -I tests/run.py"
 [model]
 requested = "gpt-6.1-sol"
 speed = "standard"
-effort = "extra-high"
+effort = "max"

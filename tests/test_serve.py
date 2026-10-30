@@ -16,7 +16,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
-from rh import config
+from rh import config, dashboard
 from rh.ledger import Ledger
 from tests.test_bundle import export_in_clone
 
@@ -122,16 +122,38 @@ class ServeTest(unittest.TestCase):
         with response:
             return response.code, response.headers, response.read().decode()
 
-    def test_dashboard_requires_token_and_renders_status_and_refresh(self):
-        self.assertEqual(self.request(token=False)[0], 403)
-        self.assertEqual(self.request("/?t=wrong", token=False)[0], 403)
+    def test_app_requires_token_and_renders_status(self):
+        for path in ("/", "/new", "/job/web-job", "/actions"):
+            self.assertEqual(self.request(path, token=False)[0], 403)
+            self.assertEqual(self.request(path + "?t=wrong", token=False)[0], 403)
         code, _, page = self.request()
         self.assertEqual(code, 200)
-        for heading in ("Supervisor", "Stops", "Routes", "Live", "Not started", "Inbox", "Last 24h", "Recent"):
+        for heading in ("Needs you", "Running", "Queued", "Done", "Today"):
             self.assertIn(f">{heading}</h2>", page)
         self.assertIn('/actions?t=serve-test-key', page)
-        self.assertIn('<meta http-equiv="refresh" content="30">', page)
+        self.assertIn('/new?t=serve-test-key', page)
+        self.assertIn('<noscript><meta http-equiv="refresh" content="30"></noscript>', page)
+        self.assertEqual(page.count("<script"), 1)
+        self.assertIn('<script src="/app.js" defer></script>', page)
         self.assertEqual(page.count("<nav"), 1)
+
+    def test_every_response_carries_the_security_headers_and_app_js_needs_no_token(self):
+        csp = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src data:; img-src data:; "
+               "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+        replies = [self.request(), self.request(token=False), self.request("/not-found"), self.request("/tick", {}),
+                   self.request("/app.js", token=False), self.request("/job/ghost")]
+        self.assertEqual([code for code, _, _ in replies], [200, 403, 404, 303, 200, 404])
+        for code, headers, _ in replies:
+            with self.subTest(code=code):
+                self.assertEqual(headers["Content-Security-Policy"], csp)
+                self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(headers["Referrer-Policy"], "no-referrer")
+                self.assertEqual(headers["Cache-Control"], "no-store")
+        _, headers, script = replies[4]
+        self.assertEqual(headers["Content-Type"], "text/javascript; charset=utf-8")
+        self.assertEqual(script, dashboard.SCRIPT)
+        bad_host = {"Host": f"example.test:{self.server.server_port}"}
+        self.assertEqual(self.request("/app.js", token=False, headers=bad_host)[0], 403)
 
     def test_host_and_origin_checks_prevent_mutation(self):
         for path in ("/", "/actions"):
@@ -259,7 +281,8 @@ class ServeTest(unittest.TestCase):
     def test_actions_have_all_forms_and_pages_have_no_active_or_external_content(self):
         expected = {"/inbox/resolve": {"id", "note"}, "/stop": {"reason", "job", "route", "pause"},
                     "/resume": {"job", "route", "pause"}, "/attach": {"job", "task_id"},
-                    "/harvest": {"job", "text"}, "/land": {"job"}, "/tick": set()}
+                    "/harvest": {"job", "text"}, "/land": {"job"}, "/job/cancel": {"job", "reason"},
+                    "/tick": set()}
         code, _, page = self.request("/actions")
         self.assertEqual(code, 200)
         forms = Forms(page).forms
@@ -272,9 +295,12 @@ class ServeTest(unittest.TestCase):
             self.assertEqual(fields["t"]["value"], self.token)
         self.assertEqual(forms["/stop"][1]["pause"]["type"], "checkbox")
         self.assertIn("<textarea", page)
-        for page in (page, self.request()[2]):
-            for forbidden in ("<script", "http://", "https://", "<img", "<link"):
-                self.assertNotIn(forbidden, page.lower())
+        for forbidden in ("<script", "http://", "https://", "<img", "<link"):
+            self.assertNotIn(forbidden, page.lower())
+        app = self.request()[2].lower()
+        for forbidden in ("http://", "https://", "<img", "<link", "<iframe"):
+            self.assertNotIn(forbidden, app)
+        self.assertEqual(app.count("<script"), 1)
 
     def test_post_media_type_size_and_duplicate_tokens(self):
         self.assertEqual(self.request("/tick", raw=urlencode({"t": self.token}).encode(),
@@ -311,6 +337,107 @@ class ServeTest(unittest.TestCase):
         self.assertIn("rh:", output)
         self.assertNotIn("TAIL-MARKER", page)
         self.assertEqual(os.environ.get("RH_HOME"), previous)
+
+    def local_job(self, jid="scan-local", state="running", log=None):
+        with self.ledger() as led:
+            led.add_job({"id": jid, "kind": "local-shell", "write_root": f"runs/{jid}/", "write_paths": [],
+                         "brief": "Scan the <listings>.", "needs": [], "command": ["python3", "scan.py"]})
+            for step in {"ready": ["ready"], "running": ["ready", "launching", "running"]}[state]:
+                led.set_state(jid, step)
+        if log is not None:
+            run = self.home / "jobs" / jid
+            run.mkdir(parents=True)
+            (run / "out.log").write_bytes(log)
+
+    def test_job_page_shows_the_job_its_output_and_unknown_jobs_404(self):
+        lines = b"".join(b"line %d\n" % i for i in range(400)) + b"last <line> \xff"
+        self.local_job(log=lines)
+        code, _, page = self.request("/job/scan-local")
+        self.assertEqual(code, 200)
+        self.assertIn('data-open="job:scan-local"', page)
+        self.assertIn("Scan the &lt;listings&gt;.", page)
+        self.assertIn("python3 scan.py", page)
+        self.assertIn("last &lt;line&gt; \ufffd", page)  # the tail, escaped, with undecodable bytes replaced
+        self.assertIn("line 399", page)
+        self.assertNotIn("line 199\n", page)  # only the last 200 lines
+        self.assertIn("Added, to run on This machine", page)
+        code, _, page = self.request("/job/ghost")
+        self.assertEqual(code, 404)
+        self.assertIn("No job named ghost", page)
+        self.assertIn('data-key="job:scan-local"', page)
+        for path in ("/job/..%2Fhome", "/job/", "/job/Bad"):
+            self.assertEqual(self.request(path)[0], 404)
+
+    def test_new_job_goes_through_job_add_and_opens_the_job(self):
+        brief = 'Survey "the" papers \\ on <agents>.\r\nLine two with a tab\tand \x7f and é.'
+        fields = {"id": "lit-scan-03", "kind": "codex-cloud", "brief": brief, "accept": "notes.md exists",
+                  "timeout_min": "45", "command": ""}
+        raw = urlencode({**fields, "t": self.token}).encode() + b"&needs=net&needs=git"
+        code, headers, _ = self.request("/job", raw=raw)
+        self.assertEqual(code, 303)
+        self.assertEqual(headers["Location"], "/job/lit-scan-03?t=" + self.token)
+        with self.ledger() as led:
+            job = led.job("lit-scan-03")
+        self.assertEqual(job["spec"]["brief"], brief.replace("\r\n", "\n"))
+        self.assertEqual(job["spec"]["needs"], ["net", "git"])
+        self.assertEqual((job["spec"]["timeout_min"], job["spec"]["accept"]), (45, "notes.md exists"))
+        self.assertEqual(job["pinned_sha"], self.sha)
+        self.assertEqual(len(list((self.home / "uploads").glob("lit-scan-03-*.toml"))), 1)
+        page = self.request("/job/lit-scan-03")[2]
+        self.assertIn("added lit-scan-03 (codex-cloud)", page)
+        self.assertNotIn("added lit-scan-03 (codex-cloud)", self.request("/job/lit-scan-03")[2])
+        # A local job's command is split like a shell line and reaches the contract as argv.
+        local = {"id": "say-hi", "kind": "local-shell", "brief": "Say hi.", "command": "python3 -c \"print('hi there')\"",
+                 "accept": "", "timeout_min": ""}
+        self.assertEqual(self.request("/job", local)[0], 303)
+        with self.ledger() as led:
+            self.assertEqual(led.job("say-hi")["spec"]["command"], ["python3", "-c", "print('hi there')"])
+
+    def test_refused_new_job_returns_to_the_form_with_the_draft(self):
+        cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},
+                 {"id": "no-command", "kind": "local-shell", "brief": "x <b>", "command": ""},
+                 {"id": "bad-quote", "kind": "local-shell", "brief": "x <b>", "command": "echo 'open"},
+                 {"id": "bad-time", "kind": "codex-cloud", "brief": "x <b>", "timeout_min": "-5"},
+                 {"id": "bad-need", "kind": "codex-cloud", "brief": "x <b>", "needs": "teleport"})
+        for fields in cases:
+            with self.subTest(fields=fields):
+                code, headers, _ = self.request("/job", fields)
+                self.assertEqual(code, 303)
+                self.assertEqual(headers["Location"], "/new?t=" + self.token)
+                code, _, page = self.request("/new")
+                self.assertEqual(code, 200)
+                self.assertIn('data-open="new"', page)
+                self.assertIn('data-code="1"', page)
+                self.assertIn("x &lt;b&gt;</textarea>", page)
+                self.assertIn(f'value="{html.escape(fields["id"], quote=True)}"', page)
+        with self.ledger() as led:
+            self.assertEqual(led.jobs(), [])
+        # The draft goes once a job is added.
+        self.request("/job", {"id": "fine-job", "kind": "local-shell", "brief": "ok", "command": "true"})
+        self.assertEqual(self.request()[0], 200)  # the success result is shown and gone
+        page = self.request("/new")[2]
+        self.assertNotIn("x &lt;b&gt;</textarea>", page)
+        self.assertNotIn('value="fine-job"', page)
+
+    def test_cancel_only_stops_a_job_that_has_not_started(self):
+        self.local_job("queued-one", "ready")
+        self.local_job("running-one", "running")
+        self.assertEqual(self.request("/job/cancel", {"job": "queued-one", "reason": "not needed",
+                                                      "next": "/job/queued-one"})[0], 303)
+        self.assertEqual(self.request("/job/cancel", {"job": "running-one", "reason": "stop it"})[0], 303)
+        self.assertIn("only an unstarted job can be cancelled", self.request()[2])
+        with self.ledger() as led:
+            self.assertEqual(led.job("queued-one")["state"], "cancelled")
+            self.assertEqual(led.receipt("queued-one")["detail"], "not needed")
+            self.assertEqual(led.job("running-one")["state"], "running")
+
+    def test_forms_return_to_the_page_they_came_from_and_nowhere_else(self):
+        for target, expected in (("/job/web-job", "/job/web-job?t="), ("/new", "/new?t="), ("/", "/?t="),
+                                 ("https://example.test/", "/?t="), ("//example.test", "/?t="),
+                                 ("/job/../actions", "/?t="), ("/actions", "/?t=")):
+            with self.subTest(target=target):
+                code, headers, _ = self.request("/tick", {"next": target})
+                self.assertEqual((code, headers["Location"]), (303, expected + self.token))
 
     def test_server_starts_without_a_name_lookup(self):
         # The desktop app starts this server; a resolver that never answers for 127.0.0.1 must not stop it.

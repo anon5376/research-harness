@@ -95,15 +95,15 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(decide(shared, View(live_roots={"j2": ["runs/j2/", "rh/ledger.py"]})).verdict, "ready")
 
     def test_model_outside_policy_holds(self):
-        s = spec('[model]\nrequested = "some-other-model"\nspeed = "fast"', kind="codex-cloud")
+        s = spec('[model]\nrequested = "some-other-model"\nspeed = "standard"', kind="codex-cloud")
         self.assertEqual(decide(s).verdict, "hold")
-        ok = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "fast"', kind="codex-cloud")
+        ok = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "standard"\neffort = "extra-high"', kind="codex-cloud")
         self.assertEqual(decide(ok).verdict, "ready")
-        slow = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "standard"', kind="codex-cloud")
-        self.assertEqual(decide(slow).verdict, "hold")
-        hard = spec('[model]\nrequested = "gpt-6-astra"\nspeed = "fast"\neffort = "ultra"', kind="codex-cloud")
-        self.assertEqual(decide(hard).verdict, "ready")
-        lazy = spec('[model]\nrequested = "gpt-6-astra"\nspeed = "fast"\neffort = "light"', kind="codex-cloud")
+        fast = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "fast"', kind="codex-cloud")
+        self.assertEqual(decide(fast).verdict, "hold")
+        astra = spec('[model]\nrequested = "gpt-6-astra"\nspeed = "standard"\neffort = "extra-high"', kind="codex-cloud")
+        self.assertEqual(decide(astra).verdict, "hold")
+        lazy = spec('[model]\nrequested = "gpt-6.1-sol"\nspeed = "standard"\neffort = "light"', kind="codex-cloud")
         self.assertEqual(decide(lazy).verdict, "hold")
 
     def test_cloud_job_waits_for_pinned_commit(self):

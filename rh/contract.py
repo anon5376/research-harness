@@ -10,12 +10,14 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
+from rh import seats
+
 KINDS = ("codex-cloud", "local-shell")
 CAPABILITIES = ("commit", "push", "git", "python", "net", "loopback", "sysctl", "gpu", "browser")
 JOB_ID_RE = re.compile(r"^(?!.*\.\.)(?!.*(?:\.|\.lock)$)[a-z0-9][a-z0-9._-]{0,62}\Z")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-# Operator-only verbs. Only a nearby negation cancels an action in a clause.
+# Operator-only verbs. Leading negations also cover the rest of a comma-separated list.
 _VERBS = [re.compile(p, re.I) for p in (
     r"\bgit\s+push\b",
     r"\bpush(?:es|ed|ing)?\b(?!\s+notifications?\b)",
@@ -32,7 +34,8 @@ _VERBS = [re.compile(p, re.I) for p in (
     r"\b(?:change|toggle|enable|disable)\b.{0,40}\bsettings?\b",
 )]
 _NEGATION = re.compile(r"\b(?:never|not|no|without|forbid(?:den)?|avoid)\b|n['’]t\b", re.I)
-_CLAUSE = re.compile(r"[.,;:!?\n]+|\bthen\b", re.I)
+_CLAUSE = re.compile(r"[.;:!?\n]+|\bthen\b", re.I)
+_LEADING_NEGATION = re.compile(r"^\s*(?:do\s+not|don['’]t|never|not|no|without|forbid(?:den)?|avoid)\b", re.I)
 
 
 class ContractError(ValueError):
@@ -129,6 +132,12 @@ def preflight(spec, caps, policy, view):
         if lacking:
             holds.append(f"operator-facing job needs an acceptance card; missing {', '.join(lacking)}")
     holds += _policy_holds(spec, policy)
+    if "seat" in spec:
+        path = Path(view.input_root) / "seats.toml"
+        try:
+            holds += seats.holds(spec, seats.load(path) if path.is_file() else {})
+        except ValueError as e:
+            holds.append(f"seats.toml: {e}")
     holds += _root_holds(spec, view)
     steps = operator_steps(spec["brief"]) + operator_steps(spec["accept"])  # accept runs here for every kind
     if kind == "local-shell":
@@ -162,12 +171,15 @@ def preflight(spec, caps, policy, view):
 
 def operator_steps(brief):
     out = []
-    for clause in _CLAUSE.split(brief):
-        for m in (m for v in _VERBS for m in v.finditer(clause)):
-            words = re.findall(r"\b\w+(?:['’]\w+)*\b", clause[:m.start()])
-            if not _NEGATION.search(" ".join(words[-3:])):
-                out.append(clause.strip())
-                break
+    for sentence in _CLAUSE.split(brief):
+        negated = False
+        for clause in sentence.split(","):
+            for m in (m for v in _VERBS for m in v.finditer(clause)):
+                words = re.findall(r"\b\w+(?:['’]\w+)*\b", clause[:m.start()])
+                if not negated and not _NEGATION.search(" ".join(words[-3:])):
+                    out.append(clause.strip())
+                    break
+            negated = negated or bool(_LEADING_NEGATION.match(clause))
     return out
 
 

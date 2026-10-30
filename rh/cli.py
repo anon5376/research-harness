@@ -12,7 +12,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from rh import __version__, bundle, collect, config, contract, envspec, gitx, lease, protocol
+from rh import __version__, bundle, collect, config, contract, envspec, gitx, lease, protocol, seats
 from rh.ledger import LIVE, TERMINAL, Ledger, LedgerError
 
 # legacy CLI task ids (task_e_...) and the UUIDs the new environment system shows in its task URLs
@@ -38,6 +38,8 @@ def main(argv=None):
     p = sub.add_parser("status", help="one view over every job, stop, route and the inbox")
     p.add_argument("--json", action="store_true")
     p.add_argument("--html", type=Path, help="also write a static dashboard page to this path")
+
+    sub.add_parser("seats", help="standing seats with their task ids and busy jobs")
 
     p = sub.add_parser("goal", help="a research goal: one acceptance card over a set of role-based jobs")
     gs = p.add_subparsers(dest="goal_cmd", required=True)
@@ -86,7 +88,7 @@ def main(argv=None):
                      help="a saved bundle reply, or a directory of them (read in name order)")
     c = cs.add_parser("attach", help="record the task id of a job launched in the web composer")
     c.add_argument("id")
-    c.add_argument("task_id")
+    c.add_argument("task_id", nargs="?")
 
     p = sub.add_parser("land", help="commit a done cloud job's diff on local branch cloud/<job> (never pushes)")
     p.add_argument("id")
@@ -325,11 +327,21 @@ def cmd_cloud(args, cfg):
         print(bundle.export_prompt(args.id, j["pinned_sha"], [j["spec"]["write_root"], *j["spec"]["write_paths"]]),
               end="")
         return 0
+    seat_task = None
+    if args.cloud_cmd in ("prompt", "attach") and "seat" in j["spec"]:
+        seat_task, busy_job = seats.task_of(led, j["spec"]["seat"])
+        if busy_job:
+            raise ValueError(f"seat {j['spec']['seat']} is busy with job {busy_job}")
     if args.cloud_cmd == "prompt":
         p = Path(cfg["home"]) / "prompts" / f"{args.id}.txt"
-        text = p.read_text() if p.is_file() else protocol.task_prompt(
-            args.id, j["pinned_sha"], j["spec"]["brief"], j["spec"]["write_paths"],
-            network="net" in j["spec"]["needs"])
+        if seat_task:
+            text = protocol.followup_prompt(args.id, j["pinned_sha"], j["spec"]["brief"], j["spec"]["write_paths"],
+                                            network="net" in j["spec"]["needs"])
+            print(f"follow-up in {seat_task}", file=sys.stderr)
+        else:
+            text = p.read_text() if p.is_file() else protocol.task_prompt(
+                args.id, j["pinned_sha"], j["spec"]["brief"], j["spec"]["write_paths"],
+                network="net" in j["spec"]["needs"])
         print(text, end="")
         print(f"sha256 {hashlib.sha256(text.encode()).hexdigest()}  (paste once; compare before sending)",
               file=sys.stderr)
@@ -368,19 +380,32 @@ def cmd_cloud(args, cfg):
                 led.inbox_resolve(i["id"], "patch saved")
         print(f"saved {dest}; the supervisor collects {args.id} on its next tick")
         return 0
-    if not TASK_RE.match(args.task_id):
-        raise ValueError(f"{args.task_id!r} does not look like a cloud task id")
+    task_id = args.task_id or seat_task
+    if not task_id:
+        raise ValueError(f"{args.id} needs a task id; its seat has no attached task")
+    if not TASK_RE.match(task_id):
+        raise ValueError(f"{task_id!r} does not look like a cloud task id")
     if j["state"] != "handoff":
         raise ValueError(f"{args.id} is {j['state']}; only a handoff job can be attached")
     led.set_state(args.id, "launching", "attached from the web composer")
-    led.set_state(args.id, "running", f"attached {args.task_id}", external_id=args.task_id, started=time.time())
+    led.set_state(args.id, "running", f"attached {task_id}", external_id=task_id, started=time.time())
     for i in led.inbox():
         if i["kind"] == "web-launch" and i["job"] == args.id:
-            led.inbox_resolve(i["id"], f"attached {args.task_id}")
+            led.inbox_resolve(i["id"], f"attached {task_id}")
     ttl = float(cfg["cloud"]["changes_ttl_min"])
-    print(f"attached {args.task_id} to {args.id}; harvest it from the Changes view before "
+    print(f"attached {task_id} to {args.id}; harvest it from the Changes view before "
           f"{time.strftime('%H:%M', time.localtime(time.time() + ttl * 60))}, after that with "
           f"rh cloud prompt {args.id} --bundle-export")
+    return 0
+
+
+def cmd_seats(args, cfg):
+    path = Path(cfg["repo"]["path"]) / "seats.toml"
+    cards = seats.load(path) if path.is_file() else {}
+    led = _ledger(cfg)
+    for name, card in cards.items():
+        task_id, busy_job = seats.task_of(led, name)
+        print(f"{name} {card['model']} {card['effort']} {task_id or '-'} {busy_job or '-'}")
     return 0
 
 
@@ -500,4 +525,5 @@ def cmd_config(args, cfg):
 
 COMMANDS = {"job": cmd_job, "goal": cmd_goal, "status": cmd_status, "inbox": cmd_inbox, "stop": cmd_stop, "resume": cmd_resume,
             "supervise": cmd_supervise, "cloud": cmd_cloud, "land": cmd_land, "env": cmd_env, "doctor": cmd_doctor,
-            "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve}
+            "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve,
+            "seats": cmd_seats}

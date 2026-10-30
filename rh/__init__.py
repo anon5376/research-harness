@@ -1,2 +1,2 @@
 """research-harness: typed jobs on agent workers, one ledger, one supervisor."""
-__version__ = "0.7.2"
+__version__ = "0.7.3"

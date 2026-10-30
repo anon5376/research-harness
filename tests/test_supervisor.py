@@ -166,6 +166,7 @@ class SupervisorTest(unittest.TestCase):
         self.led.add_job(cloud_spec("c2", "timeout_min = 10"), pinned_sha=SHA)
         s = self.sup(cloud)
         s.tick()
+        self.clock.sleep(61)  # past the launch gap, so c2 launches too
         s.tick()
         self.led.stop("guard", "timing-sensitive run", scope="job:c1", kind="pause")
         self.clock.sleep(11 * 60)

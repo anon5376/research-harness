@@ -58,7 +58,9 @@ class Supervisor:
         self.probes = self.launch_attempts = 0
         self._faults = set()
 
-    def run(self, once=False, ticks=None, sleep=time.sleep):
+    def run(self, once=False, ticks=None, sleep=time.sleep, wake_poll=1.0):
+        if wake_poll <= 0:
+            raise ValueError("wake_poll must be positive")
         self.recover()
         n = 0
         while True:
@@ -66,7 +68,20 @@ class Supervisor:
             n += 1
             if once or (ticks and n >= ticks):
                 return n
-            sleep(self.cfg["supervisor"]["interval"])
+            version = self.led.version()
+            remaining = float(self.cfg["supervisor"]["interval"])
+            while remaining > 0:
+                try:
+                    (self.home / "wake").unlink()
+                except FileNotFoundError:
+                    pass
+                else:
+                    break
+                if self.led.version() != version:
+                    break
+                step = min(wake_poll, remaining)
+                sleep(step)
+                remaining -= step
 
     def recover(self):
         """Jobs left in `launching` by a supervisor that died mid-launch. Call only while holding single_instance."""
@@ -151,6 +166,12 @@ class Supervisor:
             if self._overlaps_live(j):
                 continue
             if route == CLOUD:
+                now = self.clock()
+                gap = float(self.cfg["cloud"]["min_gap_s"])
+                launches = self.led.launches_since(CLOUD, now - max(3600, gap))
+                if (launches and now - launches[-1] < gap) or sum(
+                        t > now - 3600 for t in launches) >= int(self.cfg["cloud"]["max_per_hour"]):
+                    continue
                 if budget <= 0 or not self._route_open(CLOUD):
                     continue
                 budget -= 1

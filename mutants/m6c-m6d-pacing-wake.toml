@@ -1,0 +1,27 @@
+[[mutant]]
+name = "launch gap ignored"
+file = "rh/supervisor.py"
+find = '(launches and now - launches[-1] < gap) or sum('
+replace = 'False or sum('
+tests = ["tests.test_pacing"]
+
+[[mutant]]
+name = "hourly cap ignored"
+file = "rh/supervisor.py"
+find = 't > now - 3600 for t in launches) >= int(self.cfg["cloud"]["max_per_hour"])'
+replace = 't > now - 3600 for t in launches) >= 10**9'
+tests = ["tests.test_pacing"]
+
+[[mutant]]
+name = "wake file ignored"
+file = "rh/supervisor.py"
+find = '(self.home / "wake").unlink()'
+replace = 'raise FileNotFoundError'
+tests = ["tests.test_wake"]
+
+[[mutant]]
+name = "ledger change does not wake"
+file = "rh/supervisor.py"
+find = 'if self.led.version() != version:'
+replace = 'if False:'
+tests = ["tests.test_wake"]

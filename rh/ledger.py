@@ -65,6 +65,9 @@ class Ledger:
     def close(self):
         self.db.close()
 
+    def version(self) -> int:
+        return self.db.execute("PRAGMA data_version").fetchone()[0]
+
     def _tx(self):
         return _Tx(self.db)
 
@@ -145,6 +148,13 @@ class Ledger:
             q, args = q + " AND job=?", args + [job]
         rows = self.db.execute(q + " ORDER BY seq LIMIT ?", (*args, limit)).fetchall()
         return [{**dict(r), "data": json.loads(r["data"])} for r in rows]
+
+    def launches_since(self, route_prefix: str, since: float) -> list[float]:
+        rows = self.db.execute(
+            "SELECT e.ts, e.data, j.route FROM events e JOIN jobs j ON j.id=e.job "
+            "WHERE e.kind='state' AND e.ts>=? ORDER BY e.ts, e.seq", (since,))
+        return [r["ts"] for r in rows if (r["route"] or "").startswith(route_prefix)
+                and json.loads(r["data"]).get("to") == "running"]
 
     # owned stops and pauses: scope is "*", "job:<id>" or "route:<name>"; only the owner lifts its own entries
     def stop(self, owner, reason, scope="*", kind="stop"):

@@ -1,9 +1,9 @@
 [[mutant]]
 name = "accept is not scanned"
 file = "rh/contract.py"
-find = 'steps += operator_steps(spec["accept"])'
-replace = 'steps += []'
-tests = ["tests.test_hardening.OperatorTest"]
+find = 'operator_steps(spec["brief"]) + operator_steps(spec["accept"])'
+replace = 'operator_steps(spec["brief"])'
+tests = ["tests.test_hardening.OperatorTest", "tests.test_contract.PreflightTest"]
 
 [[mutant]]
 name = "exit 75 is capacity"
@@ -29,6 +29,6 @@ tests = ["tests.test_hardening.GateTest"]
 [[mutant]]
 name = "negation anywhere before the verb"
 file = "rh/contract.py"
-find = 'if not _NEGATION.search(" ".join(words[-3:])):'
-replace = 'if not _NEGATION.search(" ".join(words)):'
+find = 'if not negated and not _NEGATION.search(" ".join(words[-3:])):'
+replace = 'if not negated and not _NEGATION.search(" ".join(words)):'
 tests = ["tests.test_hardening.OperatorTest"]

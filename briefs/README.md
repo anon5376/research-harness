@@ -31,5 +31,4 @@ Rules every brief inherits (the harness prompt states them too):
 - Write only the files the brief lists, plus `runs/<job>/`.
 - Every new test must fail if the behaviour it names is removed.
 - Run `python3 -I tests/run.py`. It prints `TESTS PASSED n=<count>` only when the whole suite passed.
-- Gates: before coding, write `runs/<job>/GATES.md` from `skills/unlazy/templates/gates-leaf.md`, one gate per "Tests that must pass" line. Run `node skills/unlazy/scripts/gate-lint.mjs runs/<job>/GATES.md`. If node is missing, say so in SUMMARY.md and keep GATES.md anyway.
 - Leave the work staged and uncommitted.

@@ -25,4 +25,3 @@ The follow-up's script reads the index (`git diff --cached --raw`, then `git cat
 - Whether the GitHub token in a Full access shell is real or a placeholder the proxy swaps. Treat it as real.
 - The per-task permission modes are not documented.
 - Whether a newer CLI sees new environments.
-- Whether a cloud task should approve its own unlazy gates, and whether the environment's "Start skill" field can preload unlazy. Both untested.

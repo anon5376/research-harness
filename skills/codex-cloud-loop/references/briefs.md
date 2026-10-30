@@ -23,7 +23,7 @@ Never retry and never work around a failure. Print variable names only, never th
 ```
 Follow-up for <job> in this task's container. Every HEADER rule from the first turn still binds. Your earlier output in <out dir> is here, staged or uncommitted. Do not fetch anything: the container already holds <sha>.
 What changed since your last turn: <the one new input: a ruling, a harvest finding, the next build>.
-If the goal changed, update GATES.md first. Deliver as before: VERDICT.md, SUMMARY.md and DONE, only <out dir> staged, nothing committed.
+Deliver as before: VERDICT.md, SUMMARY.md and DONE, only <out dir> staged, nothing committed.
 Job: <text>
 ```
 
@@ -49,7 +49,7 @@ date	job	task link	model, speed, effort	permission	prompt sha256
 ```
 # Verdict: <job>
 Accepted: <model> attempt, because <reason>. Runner-up: <model>, which lost on <reason>.
-Local result: <exact command> -> <real result>. Gates after --approve --reverify: <met>/<unmet>/<abandoned>.
+Local result: <exact command> -> <real result>.
 Mutant check: <the one-line break> -> <the test that went red>.
 Defects: <file:line> <defect>, one per line, or none.
 Export: <files and lines>; dropped: <files and why>.

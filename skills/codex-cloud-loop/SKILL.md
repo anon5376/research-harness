@@ -44,7 +44,7 @@ As of codex-cli 0.165.0 there are two:
 ## 3. Inputs
 
 A task sees only what is committed and pushed to the branch Step 0 fetches. Missing inputs get invented: tasks handed an empty file, or an error page saved as a datasheet, made up the values.
-- Copy each input, and the `skills/unlazy/` folder, into the repo path the jobs read. Scan each file for private strings (names, ids, tokens, local paths) and leave out files that hit.
+- Copy each input into the repo path the jobs read. Scan each file for private strings (names, ids, tokens, local paths) and leave out files that hit.
 - Stage only that path, because the checkout may hold other people's uncommitted work. Commit, push, and record the full 40-character SHA and its subject.
 - Inputs are ready when `git ls-tree -r <sha> -- <input path>` lists every file the jobs read, each non-empty and of its expected type (a datasheet is a PDF, not an HTML page).
 
@@ -60,23 +60,20 @@ git fetch origin <branch> && git checkout --detach <sha>
 If that fails, put the exact error in SUMMARY.md line 1 and stop. This fetch is the only command in this task that may use the network; everything after it runs offline.
 ```
 
-HEADER. Most lines answer a defect a harvest found; the Gates and Portability lines have not yet run in a task:
+HEADER. Most lines answer a defect a harvest found; the Portability line has not yet run in a task:
 
 ```
 Commit: you are on <sha> (git log -1 shows "<subject>"). If it shows another commit, stop and say so in SUMMARY.md line 1.
 First command: <stack line>. Copy its output into SUMMARY.md. If it fails, say so in line 1 and continue.
-Gates: read <unlazy dir>/SKILL.md. Before real work, write GATES.md in <out dir> from <unlazy dir>/templates/gates-leaf.md: one observable outcome per gate, each with CHECK and EXPECT. Run node <unlazy dir>/scripts/gate-lint.mjs GATES.md and fix every error. Run the gates you wrote with node <unlazy dir>/scripts/gate-check.mjs --approve GATES.md; never approve a ledger you did not write in this task. Finish only when every gate is met or carries ABANDON with a reason. If node is missing, say so in SUMMARY.md and keep GATES.md anyway.
 Inputs: <input paths> are read-only. Code from an input that writes files is first copied to <out dir>/runtime/, which gets a .gitignore.
 Write only in <out dir>. Touch nothing else.
 Network: none after Step 0. A value you cannot source is a labelled assumption, swept over a range, never invented.
 Size: every added file stays under 1 MB; regenerate anything bigger at test time. Pytest, TMPDIR and MPLCONFIGDIR temp folders live outside <out dir>. A test run changes no file in <out dir>, and a test fails if it does.
 Portability: tests check generated output by value, floats within a tolerance, never by hash or exact string; paths are relative to <out dir>; outputs name the repository only as <origin>; units are stated wherever Linux and macOS differ.
 Rulings in force: <each ruling quoted, with who made it>.
-Deliver in <out dir>: VERDICT.md first, each statement marked [fact], [inference] or [open]; code; tests that would fail on a real regression; results; SUMMARY.md of at most 10 lines with the stack line, the exact test command and its real result, and the met/unmet/abandoned gate counts; then an empty DONE. Never report a result you did not run.
+Deliver in <out dir>: VERDICT.md first, each statement marked [fact], [inference] or [open]; code; tests that would fail on a real regression; results; SUMMARY.md of at most 10 lines with the stack line, the exact test command and its real result; then an empty DONE. Never report a result you did not run.
 Leave your work uncommitted: at the end, run git add -A <out dir> and nothing else, then unstage and list any file over 1 MB.
 ```
-
-`<unlazy dir>` is the copy of `skills/unlazy/` committed in step 3; a container sees only its checkout. Whether a task should approve its own gates is untested; the harvest re-runs every gate on your machine either way (step 8).
 
 ## 5. Model, effort, permission
 
@@ -109,7 +106,7 @@ In the new system the CLI and "Copy git apply command" both fail. The route that
 1. Send the export follow-up ([references/briefs.md](references/briefs.md)): undo any commit, stage only `<out dir>`, drop big and temp files.
 2. Open Changes → Staged and save the staged diff as a patch. The capture route and its limits (no binaries, one file per view above about 5,000 lines) are in [references/harvest.md](references/harvest.md).
 3. `git apply --check` against `<sha>`, then apply in a detached worktree and run the tests there at low priority: `nice -n 15 <python> -I -B -m pytest -q -p no:cacheprovider <out dir>`.
-4. Re-run the gates. A cloud ledger reads ALL MET under `--status` because its evidence travels with the file, and `--approve` alone skips gates already met. Read every CHECK and the scripts it calls, then run `node <unlazy dir>/scripts/gate-check.mjs --approve --reverify <out dir>/GATES.md`.
+4. Accept on one check plus one independent check (step 9): the local test run in step 3, and a second model's review or a local mutant. Task-written gate files are not evidence. In wave 5, 41 GATES.md files ran no gate tool and only restated pytest, and local acceptance still found defects in 23 of 30 units whose gates read met.
 
 The Changes view expires. In October 2026 it was gone a few hours after a task started (the page's `backend-api/tbo/by-thread/<task>` answered 404), some tasks never showed it, and `codex cloud diff <uuid>` answers 404 "Invalid task ID". Harvest from Changes within 2 hours of the task's start; after that, send the bundle-export follow-up instead. The task writes a deterministic tar.gz of its staged files of 64 KiB or less as base64 parts of 90 kB, with a sha256 for each part and for the whole, and lists bigger files by path, size and sha256 for you to regenerate locally from the code, all into a file under `/tmp`. A task cannot link or attach that file, so the follow-up prints it with `sed -n` in pieces of 700 lines, one command each: a command's output is cut at 65,536 characters, and 700 lines of 77 is 53,900. In research-harness, `rh cloud prompt <job> --bundle-export` prints that follow-up, and `rh cloud harvest <job> --bundle <reply file or dir>` refuses any part whose sha does not match, rebuilds the staged diff at the pinned sha and collects it like a patch. Format: [references/harvest.md](references/harvest.md).
 
@@ -127,7 +124,7 @@ The Changes view expires. In October 2026 it was gone a few hours after a task s
 - **Wrong commit at the gate:** stop all sends (step 6).
 - **Blocked:** a refusal, a denied permission or an owner step. Report it with the exact text and leave it to the owner; never work around it.
 
-Report, verdict first: jobs run, the attempt accepted per job and why, local test and gate results, defects found, open owner steps.
+Report, verdict first: jobs run, the attempt accepted per job and why, local test results, defects found, open owner steps.
 
 ---
 Structure adapted from `sol-loop` in [t3dotgg/tstack](https://github.com/t3dotgg/tstack) (MIT, © 2026 Theo Browne).

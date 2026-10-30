@@ -15,8 +15,8 @@ tests = ["tests.test_serve"]
 [[mutant]]
 name = "result shown forever"
 file = "rh/serve.py"
-find = "                last_result = None\n            else:"
-replace = "                pass\n            else:"
+find = "token=token, result=last_result))\n            last_result = None"
+replace = "token=token, result=last_result))\n            pass"
 tests = ["tests.test_serve"]
 
 [[mutant]]

@@ -12,25 +12,27 @@ from pathlib import Path, PurePosixPath
 
 KINDS = ("codex-cloud", "local-shell")
 CAPABILITIES = ("commit", "push", "git", "python", "net", "loopback", "sysctl", "gpu", "browser")
-JOB_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+JOB_ID_RE = re.compile(r"^(?!.*\.\.)(?!.*(?:\.|\.lock)$)[a-z0-9][a-z0-9._-]{0,62}\Z")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 
-# Operator-only verbs. A clause that names one without a negation before it becomes an operator step.
+# Operator-only verbs. Only a nearby negation cancels an action in a clause.
 _VERBS = [re.compile(p, re.I) for p in (
     r"\bgit\s+push\b",
-    r"\bpush(?:es|ed|ing)?\b.{0,40}\b(?:origin|remote|github|upstream)\b",
-    r"\bopen(?:s|ing)?\s+(?:a\s+)?(?:pr|pull\s+request)\b",
+    r"\bpush(?:es|ed|ing)?\b(?!\s+notifications?\b)",
+    r"\b(?:open(?:s|ing)?|create|submit)\s+(?:(?:a|the|your)\s+)?(?:pr|pull\s+request)\b",
     r"\bpublish(?:es|ed)?\b",  # not "publishing", which is usually a noun
     r"\bdeploy(?:s|ed)?\b",
     r"\b(?:buy|purchase|pay\s+for|subscribe\s+to)\b",
     r"\bsend(?:s|ing)?\b.{0,40}\b(?:e-?mail|message|dm|sms|invite|newsletter)s?\b",
+    r"\b(?:e-?mail|message|dm)\s+(?:a|an|the|this|that|these|those|some|any|each|every|all|both|"
+    r"my|your|his|her|its|our|their|me|you|him|it|us|them|someone|somebody|everyone|everybody)\b",
     r"\bpost(?:s|ed|ing)?\b.{0,40}\b(?:on|to)\b.{0,30}\b(?:x|twitter|slack|discord|linkedin|reddit|forum|blog)\b",
     r"\bannounce(?:s|d|ing)?\b",
-    r"\b(?:sign|log)\s*(?:in|on)\b",
+    r"\b(?:sign|log)\s*(?:in|on|into)\b",
     r"\b(?:change|toggle|enable|disable)\b.{0,40}\bsettings?\b",
 )]
-_NEGATION = re.compile(r"\b(?:never|not|no|without|forbid(?:den)?|avoid)\b|n't\b", re.I)
-_CLAUSE = re.compile(r"[.;:!?\n]+")
+_NEGATION = re.compile(r"\b(?:never|not|no|without|forbid(?:den)?|avoid)\b|n['’]t\b", re.I)
+_CLAUSE = re.compile(r"[.,;:!?\n]+|\bthen\b", re.I)
 
 
 class ContractError(ValueError):
@@ -80,6 +82,8 @@ def normalize(raw):
     spec.setdefault("write_root", f"runs/{jid}/")
     if not spec["write_root"].endswith("/"):
         spec["write_root"] += "/"
+    if spec["kind"] == "codex-cloud" and spec["write_root"] != f"runs/{jid}/":
+        raise ContractError("cloud jobs write to runs/<id>/; put other paths in write_paths")
     spec.setdefault("write_paths", [])
     spec.setdefault("after", [])
     spec.setdefault("inputs", [])
@@ -127,6 +131,9 @@ def preflight(spec, caps, policy, view):
     holds += _policy_holds(spec, policy)
     holds += _root_holds(spec, view)
     steps = operator_steps(spec["brief"])
+    if kind == "local-shell":
+        steps += operator_steps(" ".join(spec["command"]))
+        steps += operator_steps(spec["accept"])
     for up in spec["after"]:
         st = view.states.get(up)
         if st is None:
@@ -157,9 +164,9 @@ def preflight(spec, caps, policy, view):
 def operator_steps(brief):
     out = []
     for clause in _CLAUSE.split(brief):
-        for v in _VERBS:
-            m = v.search(clause)
-            if m and not _NEGATION.search(clause[:m.start()]):
+        for m in (m for v in _VERBS for m in v.finditer(clause)):
+            words = re.findall(r"\b\w+(?:['’]\w+)*\b", clause[:m.start()])
+            if not _NEGATION.search(" ".join(words[-3:])):
                 out.append(clause.strip())
                 break
     return out

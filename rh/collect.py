@@ -59,6 +59,9 @@ def collect_cloud(job, cloud, repo, home, gate_runner=None):
     try:
         res = protocol.parse_result(raw, jid, sha)
     except protocol.ResultError as e:
+        if e.refusals:
+            return "blocked", receipt(job, "codex-cloud", [], detail=_cut("refused: " + "; ".join(e.refusals)),
+                                      refusals=[_cut(r) for r in e.refusals], **base)
         state = "no_result" if e.kind == "missing" else "failed"
         detail = {"missing": "no RESULT.json in the task diff", "stale-input": f"stale input: {e}",
                   "wrong-job": f"RESULT.json names another job: {e}"}.get(e.kind, f"invalid RESULT.json: {e}")
@@ -91,8 +94,8 @@ def collect_local(job, exit_code, cwd, log_tail=(), gate_runner=None):
     spec = job["spec"]
     checks = [{"cmd": " ".join(spec["command"]), "exit": exit_code, "where": "local"}]
     if exit_code != 0:
-        return "failed", receipt(job, "local-shell", checks, detail=_cut(f"command exited {exit_code}"),
-                                 log_tail=list(log_tail))
+        return "capacity" if exit_code == 75 else "failed", receipt(
+            job, "local-shell", checks, detail=_cut(f"command exited {exit_code}"), log_tail=list(log_tail))
     if spec.get("accept"):
         code = (gate_runner or run_gate)(spec["accept"], cwd)
         checks.append({"cmd": spec["accept"], "exit": code, "where": "local"})

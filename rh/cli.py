@@ -7,6 +7,7 @@ import json
 import os
 import re
 import sys
+import tempfile
 import time
 import tomllib
 from pathlib import Path
@@ -29,6 +30,9 @@ def main(argv=None):
     a.add_argument("--sha", help="cloud jobs: commit to pin (default: HEAD of the repo)")
     s = js.add_parser("show", help="one job with its events and receipt")
     s.add_argument("id")
+    c = js.add_parser("cancel", help="cancel a job that has not started")
+    c.add_argument("id")
+    c.add_argument("--reason", required=True)
 
     p = sub.add_parser("status", help="one view over every job, stop, route and the inbox")
     p.add_argument("--json", action="store_true")
@@ -109,10 +113,10 @@ def main(argv=None):
     cfs.add_parser("show")
 
     args = ap.parse_args(argv)
-    cfg = config.load()
     try:
+        cfg = config.load()
         return COMMANDS[args.cmd](args, cfg)
-    except (LedgerError, contract.ContractError, gitx.GitError, ValueError) as e:
+    except (LedgerError, contract.ContractError, gitx.GitError, ValueError, OSError) as e:
         print(f"rh: {e}", file=sys.stderr)
         return 1
 
@@ -130,6 +134,17 @@ def _ledger(cfg):
 
 def cmd_job(args, cfg):
     led = _ledger(cfg)
+    if args.job_cmd == "cancel":
+        j = led.job(args.id)
+        if not j:
+            raise ValueError(f"no job {args.id}")
+        if j["state"] not in ("draft", "waiting", "held", "ready", "handoff"):
+            raise ValueError(f"{args.id} is {j['state']}; only an unstarted job can be cancelled")
+        led.finish(args.id, "cancelled", {"route": "none", "checks": [],
+                   "model_requested": j["spec"].get("model", {}).get("requested"), "model_served": None,
+                   "ended": time.time(), "detail": args.reason})
+        print(f"cancelled {args.id}: {args.reason}")
+        return 0
     if args.job_cmd == "show":
         j = led.job(args.id)
         if not j:
@@ -309,7 +324,14 @@ def cmd_cloud(args, cfg):
             raise ValueError(f"{args.patch} is not a git diff")
         dest = collect.saved_patch(cfg["home"], args.id)
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_text(text)
+        fd, name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
+        tmp = Path(name)
+        try:
+            with os.fdopen(fd, "w") as stream:
+                stream.write(text)
+            tmp.replace(dest)
+        finally:
+            tmp.unlink(missing_ok=True)
         led.set_state(args.id, "collecting", "harvested patch; the supervisor collects it next tick")
         led.event("harvested", args.id, sha256=hashlib.sha256(text.encode()).hexdigest(), lines=text.count("\n"))
         for i in led.inbox():

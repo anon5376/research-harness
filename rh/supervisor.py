@@ -6,6 +6,8 @@ import fcntl
 import hashlib
 import json
 import os
+import re
+import sys
 import time
 from pathlib import Path
 
@@ -26,6 +28,10 @@ NOT_CREATED = {"rate-limited", "cli-missing", "auth"}  # launch errors that cert
 
 class AlreadyRunning(RuntimeError):
     pass
+
+
+class _GateWaiting(Exception):
+    """The heavy lease is busy; collection can resume on the next tick."""
 
 
 def single_instance(home):
@@ -121,8 +127,14 @@ class Supervisor:
         target, detail = _TARGET[d.verdict], "; ".join(d.reasons)
         if (j["state"], j["detail"]) != (target, detail):
             self.led.set_state(j["id"], target, detail)
+        new_steps = []
         for step in d.operator_steps:
-            self._inbox("operator-step", step, j["id"], "split this step out of the brief; the job stays held")
+            _, new = self.led.inbox_add("operator-step", step, job=j["id"],
+                                      detail="split this step out of the brief; the job stays held")
+            if new:
+                new_steps.append(step)
+        if new_steps:
+            self._notify("inbox: operator-step", f"{'; '.join(new_steps)} (job {j['id']})")
 
     def _pin(self, job):
         if job["spec"]["kind"] != CLOUD:
@@ -237,11 +249,15 @@ class Supervisor:
 
     def _poll_cloud(self, j, s):
         jid = j["id"]
+        if not self._same_state(j):
+            return
         if j["state"] != "collecting":
             try:
                 st = self.cloud.status(j["external_id"])
             except RouteUnavailable as e:
                 self.led.route_fail(CLOUD, e.reason, e.retry_after)
+                return
+            if not self._same_state(j):
                 return
             if st["state"] == "running":
                 return self._alive(j)
@@ -260,18 +276,35 @@ class Supervisor:
             return
         try:
             state, rec = collect.collect_cloud(j, self.cloud, self.repo, self.home, self._gate(j))
+        except _GateWaiting:
+            if self._same_state(j):
+                self.led.set_state(jid, "collecting", "gate waiting for the heavy lease")
+            return
         except RouteUnavailable as e:
+            if not self._same_state(j):
+                return
             if e.reason in OUTAGES:
                 self.led.route_fail(CLOUD, e.reason, e.retry_after)
                 return
+            detail = e.detail[:120]
+            if e.reason == "error":
+                prior = re.match(r"diff error ([12])/3:", j["detail"])
+                tries = int(prior.group(1)) + 1 if prior else 1
+                detail = f"diff error {tries}/3: {detail}"
+                if tries < 3:
+                    self.led.set_state(jid, "collecting", detail)
+                    return
             # the CLI cannot export this task's diff (new-system tasks): a browser session saves the staged diff
-            self.led.set_state(jid, "collecting", f"{HARVEST}: {e.detail[:120]}")
+            self.led.set_state(jid, "collecting", f"{HARVEST}: {detail}")
             self._inbox("harvest", f"save the staged diff of {jid} from the web view, then "
                                    f"rh cloud harvest {jid} <patch file>", jid, e.detail[:200])
             return
+        if not self._same_state(j):
+            return
         self._finish(j, state, rec, s)
         for text in rec.get("refusals", []):
-            self._inbox("refusal", text, jid, "the worker stopped at a refusal; it is never retried or reworded")
+            self.led.inbox_add("refusal", text, job=jid,
+                               detail="the worker stopped at a refusal; it is never retried or reworded")
 
     def _poll_local(self, j, s):
         run_dir = self.home / "jobs" / j["id"]
@@ -281,24 +314,52 @@ class Supervisor:
         if p["state"] == "vanished":
             return self._finish(j, "aborted", collect.receipt(
                 j, LOCAL, [], detail="runner ended without an exit record", log_tail=local_shell.tail(run_dir)), s)
-        state, rec = collect.collect_local(j, p["exit"], self.home / j["spec"]["write_root"],
-                                           local_shell.tail(run_dir), self._gate(j))
+        try:
+            state, rec = collect.collect_local(j, p["exit"], self.home / j["spec"]["write_root"],
+                                               local_shell.tail(run_dir), self._gate(j))
+        except _GateWaiting:
+            if self._same_state(j):
+                self.led.set_state(j["id"], "collecting", "gate waiting for the heavy lease")
+            return
         self._finish(j, state, rec, s)
 
     def _gate(self, j):
-        if self.gate_runner or not j["spec"]["heavy"]:
-            return self.gate_runner
-        lc = self.cfg["lease"]
-        return lambda cmd, cwd: lease.run(["sh", "-c", f"cd \"$1\" && {cmd}", "gate", str(cwd)], f"gate {j['id']}",
-                                          lock_path=Path(lc["lock"]), max_load=float(lc["max_load"]),
-                                          max_wait=float(lc["max_wait"]))
+        timeout = j["spec"]["timeout_min"] * 60
+
+        def run(cmd, cwd):
+            if self.gate_runner:
+                code = self.gate_runner(cmd, cwd)
+            elif not j["spec"]["heavy"]:
+                code = collect.run_gate(cmd, cwd, timeout=timeout)
+            else:
+                lc = self.cfg["lease"]
+                # Keep the existing gate runner's timeout inside the leased child. lease.run itself
+                # only bounds admission, and must not wait indefinitely for another heavy job.
+                script = ("import sys; sys.path.insert(0, sys.argv[1]); from rh.collect import run_gate; "
+                          "sys.exit(run_gate(sys.argv[2], sys.argv[3], timeout=float(sys.argv[4])))")
+                code = lease.run([sys.executable, "-I", "-c", script, str(REPO), cmd, str(cwd), str(timeout)],
+                                 f"gate {j['id']}", lock_path=Path(lc["lock"]),
+                                 max_load=float(lc["max_load"]), max_wait=5)
+            if j["spec"]["heavy"] and code == 75:
+                raise _GateWaiting()
+            return code
+
+        return run
+
+    def _same_state(self, j):
+        current = self.led.job(j["id"])
+        return current is not None and current["state"] == j["state"]
 
     def _alive(self, j):
+        if not self._same_state(j):
+            return
         self.led.heartbeat(j["id"])
         if self.led.blocking("pause", job=j["id"], route=j["spec"]["kind"]):
             return  # a paused job is paused, not stalled
         started = j.get("started") or j["created"]
         if j["state"] == "running" and self.clock() - started > j["spec"]["timeout_min"] * 60:
+            if not self._same_state(j):
+                return
             self.led.set_state(j["id"], "stalled", f"no finish after {j['spec']['timeout_min']} min")
             self._notify(f"{j['id']} stalled", f"{j['id']} has run past its {j['spec']['timeout_min']} min timeout")
 

@@ -168,7 +168,7 @@ class ReadHostTest(LeaseCase):
 
     def test_darwin_reads_pressure_oid(self):
         args = self.tmp / "args"
-        fake = self.fake_sysctl(f'echo "$@" > "{args}"; echo 2')
+        fake = self.fake_sysctl(f'printf "%s\\n" "$@" > "{args}"; echo 2')  # dash's echo eats -n
         before = time.time()
         with mock.patch("sys.platform", "darwin"):
             r = lease.read_host(sysctl=fake)

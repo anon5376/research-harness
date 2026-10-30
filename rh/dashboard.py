@@ -1728,7 +1728,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         next_line = ("It starts once Codex cloud is set up." if entry.setup
                      else _NEXT.get(state, "").replace("{place}", _PLACES.get(kind, "on its platform")))
         if loop and loop.get("mode") == "paused":
-            next_line = (next_line + " Automatic checks are paused, so nothing moves until you resume them.").strip()
+            next_line = (next_line + " Automatic checks are paused: the app won't launch or collect it until you resume them or press Check once.").strip()
         detail = _plain(job.get("detail")) if state not in ("held", "handoff") else ""
         now_body = (f'<p class="now">{_dot(tone, state == "running")}<span class="what">{_text(doing)}</span>'
                     + (f'<span class="soft">{_text(detail)}</span>' if detail and detail != doing else "")

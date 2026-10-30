@@ -13,7 +13,7 @@ For a headless check, run the executable with `--smoke`.
 
 Record the exact `TESTS PASSED n=<count>` line from `python -I tests/run.py`.
 
-These builds are unsigned.
+These builds are not signed with a developer certificate (ad-hoc on macOS, unsigned on Windows).
 
 - macOS: System Settings → Privacy & Security → "Open Anyway", or
   `xattr -dr com.apple.quarantine "/Applications/Research Harness.app"`.

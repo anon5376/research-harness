@@ -59,6 +59,10 @@ def main(argv=None):
         g.add_argument("--route")
         p.add_argument("--pause", action="store_true", help="pause (running work continues; never counted stalled)")
 
+    p = sub.add_parser("serve", help="the dashboard and everyday actions as a local web page (127.0.0.1 only)")
+    p.add_argument("--port", type=int, default=0, help="0 picks a free port")
+    p.add_argument("--no-open", action="store_true", help="print the URL without opening a browser")
+
     p = sub.add_parser("supervise", help="run the supervisor (one instance per RH_HOME)")
     p.add_argument("--once", action="store_true")
     p.add_argument("--ticks", type=int)
@@ -207,6 +211,10 @@ def _optional(module, milestone):
         if e.name != f"rh.{module}":
             raise
         raise ValueError(f"rh/{module}.py is not built yet (milestone {milestone}, briefs/)") from None
+
+
+def cmd_serve(args, cfg):
+    return _optional("serve", "M7b").main(cfg, args.port, not args.no_open)
 
 
 def cmd_goal(args, cfg):
@@ -470,4 +478,4 @@ def cmd_config(args, cfg):
 
 COMMANDS = {"job": cmd_job, "goal": cmd_goal, "status": cmd_status, "inbox": cmd_inbox, "stop": cmd_stop, "resume": cmd_resume,
             "supervise": cmd_supervise, "cloud": cmd_cloud, "land": cmd_land, "env": cmd_env, "doctor": cmd_doctor,
-            "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config}
+            "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve}

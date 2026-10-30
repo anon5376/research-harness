@@ -26,7 +26,7 @@ owns = ["rh/cli.py", "rh/contract.py", "rh/protocol.py", "rh/goals.py", "rh/bund
 done = "the job's brief is met and python3 -I tests/run.py passes on the lead's machine"
 
 [seat.app]
-role = "Desktop and release: rh serve, the desktop app, packaging and the release build"
+role = "Desktop and release: the desktop app shell, packaging and the release build"
 route = "codex-cloud"
 model = "gpt-6.1-sol"
 effort = "max"
@@ -43,12 +43,12 @@ owns = ["tests/run.py", "tests/__init__.py", "tools/", "tests/test_mutants.py"]
 done = "the job's brief is met and python3 -I tests/run.py passes on the lead's machine"
 
 [seat.design]
-role = "Design: the look of every page and the app icon (Claude)"
+role = "Design: the app, its pages, their server routes and the app icon (Claude)"
 route = "claude"
 model = "claude-opus-5-5"
 effort = "default"
 owns = ["rh/dashboard.py", "rh/serve.py", "tests/test_dashboard.py", "tests/test_serve.py", "desktop/icons/"]
-done = "existing tests stay green; no scripts, no external URLs; light and dark; no horizontal scroll at 375 px"
+done = "existing tests stay green; the rh serve security checks hold; no external URLs; light and dark; no horizontal scroll at 375 px"
 
 [seat.lead]
 role = "Lead: plans, briefs, interfaces, harvest, one local check, land, release (Claude, this repo's lead session)"

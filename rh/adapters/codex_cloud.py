@@ -125,6 +125,8 @@ class CodexCloud:
         except subprocess.TimeoutExpired:
             raise RouteUnavailable("timeout", f"{' '.join(args[:2])}: no answer in {t:g}s") from None
         except OSError as e:
+            if getattr(e, "winerror", None) == 267 and self.cwd is not None:
+                raise RouteUnavailable("error", f"invalid working directory {self.cwd}") from None
             raise RouteUnavailable("error", f"{self.codex}: {e.strerror or e}") from None
         return subprocess.CompletedProcess(cp.args, cp.returncode, _decode(cp.stdout), _decode(cp.stderr))
 

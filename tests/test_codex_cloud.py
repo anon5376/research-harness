@@ -11,7 +11,7 @@ from unittest import mock
 from rh.adapters.codex_cloud import CodexCloud, RouteUnavailable, classify, map_status
 
 ROOT = Path(__file__).resolve().parents[1]
-FAKE = ROOT / "tests" / "fakes" / ("codex.cmd" if os.name == "nt" else "codex")
+FAKE = ROOT / "tests" / "fakes" / "codex"
 TID = "task_e_" + "0123456789abcdef" * 2
 OLD_TID = "task_e_" + "fedcba9876543210" * 2
 NOT_FOUND = "Error: environment 'x' not found; run `codex cloud` to list available environments\n"
@@ -19,6 +19,13 @@ NOT_FOUND = "Error: environment 'x' not found; run `codex cloud` to list availab
 
 def resp(stdout="", stderr="", exit=0, **extra):
     return {"exit": exit, "stdout": stdout, "stderr": stderr, **extra}
+
+
+def run_fake(argv, **kwargs):
+    return subprocess.run([sys.executable, str(FAKE), *argv[1:]], **kwargs)
+
+
+RUN = run_fake if os.name == "nt" else subprocess.run  # POSIX keeps testing the adapter's own exec of the CLI
 
 
 class FakeCliTest(unittest.TestCase):
@@ -32,7 +39,7 @@ class FakeCliTest(unittest.TestCase):
         env.start()
         self.addCleanup(env.stop)
         self.assertTrue(os.access(FAKE, os.X_OK), "tests/fakes/codex must be executable")
-        self.cli = CodexCloud(codex=str(FAKE), timeout=30)
+        self.cli = CodexCloud(codex=str(FAKE), run=RUN, timeout=30)
 
     def given(self, **state):
         self.state.write_text(json.dumps(state))
@@ -126,7 +133,7 @@ class LaunchTest(FakeCliTest):
     def test_hung_cli_times_out(self):
         self.given(exec=resp(stdout=TID, sleep=30))
         t0 = time.monotonic()
-        e = self.reason(CodexCloud(codex=str(FAKE), timeout=0.5).launch, "env_x", "p")
+        e = self.reason(CodexCloud(codex=str(FAKE), run=RUN, timeout=0.5).launch, "env_x", "p")
         self.assertEqual(e.reason, "timeout")
         self.assertLess(time.monotonic() - t0, 10)
 
@@ -149,14 +156,14 @@ class LaunchTest(FakeCliTest):
         home.mkdir()
         self.given(exec=resp(stdout=TID), status={TID: resp("[READY] t\n")}, diff={TID: resp("")},
                    list=resp(json.dumps({"tasks": []})))
-        cli = CodexCloud(codex=str(FAKE), timeout=30, cwd=home)
+        cli = CodexCloud(codex=str(FAKE), run=RUN, timeout=30, cwd=home)
         cli.launch("env_x", "p"), cli.status(TID), cli.diff(TID), cli.list(), cli.health()
         cwds = [json.loads(line)["cwd"] for line in self.log.read_text().splitlines()]
         self.assertEqual(len(cwds), 6)
         self.assertEqual({os.path.realpath(c) for c in cwds}, {os.path.realpath(home)})
 
     def test_missing_cwd_is_not_reported_as_missing_cli(self):
-        e = self.reason(CodexCloud(codex=str(FAKE), cwd=self.dir / "gone").launch, "env_x", "p")
+        e = self.reason(CodexCloud(codex=str(FAKE), run=RUN, cwd=self.dir / "gone").launch, "env_x", "p")
         self.assertEqual(e.reason, "error")
         self.assertIn("working directory", e.detail)
 

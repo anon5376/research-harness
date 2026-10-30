@@ -57,7 +57,7 @@ def read_host(sysctl="sysctl"):
             raise HostReadError(f"{PRESSURE_OID}: unreadable output {out!r}") from None
     try:
         load1 = os.getloadavg()[0]
-    except OSError as e:
+    except (AttributeError, OSError) as e:
         raise HostReadError(f"load average: {e}") from e
     return Reading(level=level, load1=load1, taken=time.time())
 

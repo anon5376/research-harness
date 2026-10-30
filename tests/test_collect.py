@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import tempfile
 import unittest
@@ -87,6 +88,7 @@ class CollectTest(unittest.TestCase):
         self.assertIn("custody", rec["detail"])
         self.assertIn("README.md", rec["detail"])
 
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation may require developer mode or privileges")
     def test_symlink_inside_root_fails_custody(self):
         git(self.repo, "checkout", "-q", "-b", "scratch")
         (self.repo / "runs/j1").mkdir(parents=True)

@@ -9,6 +9,8 @@ import time
 import unittest
 from pathlib import Path
 
+from tests import python_path
+
 ROOT = Path(__file__).resolve().parents[1]
 RH = [sys.executable, "-I", str(ROOT / "bin/rh")]
 FAKE = ROOT / "tests/fakes" / ("codex.cmd" if os.name == "nt" else "codex")
@@ -24,8 +26,9 @@ class CliTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         base = Path(self.tmp.name)
         self.home, self.repo, origin = base / "home", base / "repo", base / "origin.git"
-        self.env = {**os.environ, "RH_HOME": str(self.home), "FAKE_CODEX_STATE": str(base / "codex.json"),
-                    "FAKE_CODEX_LOG": str(base / "codex.log"), "RH_TEST_PYTHON": sys.executable}
+        self.env = python_path(base, {**os.environ, "RH_HOME": str(self.home),
+                                      "FAKE_CODEX_STATE": str(base / "codex.json"),
+                                      "FAKE_CODEX_LOG": str(base / "codex.log"), "RH_TEST_PYTHON": sys.executable})
         self.repo.mkdir()
         git(self.repo, "init", "-q", "-b", "main")
         git(self.repo, "config", "core.autocrlf", "false")

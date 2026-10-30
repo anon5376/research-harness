@@ -1,4 +1,5 @@
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -6,6 +7,7 @@ import unittest
 from pathlib import Path
 
 from rh.envspec import env_spec, repo_slug
+from tests import python_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SETUP = ROOT / "cloud" / "setup.sh"
@@ -58,45 +60,59 @@ class SpecTest(unittest.TestCase):
 
 
 class SetupScriptTest(unittest.TestCase):
-    def run_setup(self, path):
-        return subprocess.run(["/bin/sh", str(SETUP)], env={"PATH": path, "HOME": self.tmp}, capture_output=True,
-                              text=True, timeout=60, cwd=self.tmp)
+    def run_setup(self, isolated=False):
+        if isolated:
+            if os.name == "nt":
+                shell_command = 'PATH="$(cygpath -u "$1")"; export PATH; . "$2"'
+            else:
+                shell_command = 'PATH="$1"; export PATH; . "$2"'
+            args = [self.sh, "-c", shell_command, "sh",
+                    (Path(self.tmp) / "bin").as_posix(), SETUP.as_posix()]
+        else:
+            args = [self.sh, str(SETUP)]
+        return subprocess.run(args, env=self.env, capture_output=True, text=True, timeout=60, cwd=self.tmp)
 
     def setUp(self):
         d = tempfile.TemporaryDirectory()
         self.addCleanup(d.cleanup)
         self.tmp = d.name
+        self.sh = shutil.which("sh")
+        if self.sh is None:
+            if os.name == "nt":
+                self.skipTest("Git for Windows sh is not available")
+            self.fail("sh is not available")
+        self.env = python_path(self.tmp, {**os.environ, "HOME": self.tmp})
 
     def stub(self, name, body):
         p = Path(self.tmp, "bin", name)
         p.parent.mkdir(exist_ok=True)
-        p.write_text("#!/bin/sh\n" + body + "\n")
+        p.write_text("#!/bin/sh\n" + body + "\n", encoding="utf-8", newline="\n")
         p.chmod(0o755)
 
     def test_prints_versions_and_calls_no_installer(self):
         called = Path(self.tmp, "called")
         for tool in ("pip", "pip3", "apt", "apt-get", "brew", "curl", "wget", "npm", "uv", "conda", "sudo"):
-            self.stub(tool, f'echo "$0" >> "{called}"')
-        r = self.run_setup(f"{self.tmp}/bin:{os.environ.get('PATH', os.defpath)}")
+            self.stub(tool, f'echo "$0" >> "{called.as_posix()}"')
+        r = self.run_setup()
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertRegex(r.stdout, r"Python 3\.\d+")
         self.assertIn("git version", r.stdout)
         self.assertFalse(called.exists(), "setup.sh must install nothing")
 
     def test_missing_git_fails(self):
-        self.stub("python3", f'exec "{sys.executable}" "$@"')
-        r = self.run_setup(f"{self.tmp}/bin")
+        self.stub("python3", f'exec "{Path(sys.executable).as_posix()}" "$@"')
+        r = self.run_setup(isolated=True)
         self.assertNotEqual(r.returncode, 0)
         self.assertRegex(r.stdout, r"Python 3\.\d+")
         self.assertNotIn("git version", r.stdout)
 
     def test_old_python_fails_before_git(self):
         self.stub("python3", f'''if [ "$1" = "-c" ]; then
-  exec "{sys.executable}" -c 'import sys; sys.version_info = (3, 9, 1); exec(sys.argv[1])' "$2"
+  exec "{Path(sys.executable).as_posix()}" -c 'import sys; sys.version_info = (3, 9, 1); exec(sys.argv[1])' "$2"
 fi
 echo "Python 3.9.1"''')
         self.stub("git", 'echo "git version 2.0.0"')
-        r = self.run_setup(f"{self.tmp}/bin")
+        r = self.run_setup(isolated=True)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("3.11", r.stderr)
         self.assertNotIn("git version", r.stdout)

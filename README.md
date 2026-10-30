@@ -1,6 +1,6 @@
 # research-harness
 
-research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and every job ends in exactly one typed state with a receipt. A job counts as done only when its acceptance check passes on your machine.
+research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and a job that ends gets exactly one typed state with a receipt. A job counts as done when it finishes and, if it names an acceptance check, that check passes on your machine.
 
 Status: [in progress] v0.5.0. Python 3.11+, standard library only. 262 tests pass: `python3 -I tests/run.py`. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
 
@@ -9,14 +9,14 @@ Status: [in progress] v0.5.0. Python 3.11+, standard library only. 262 tests pas
 - **Contracts.** A job is a TOML file: a brief, the capabilities it needs, the model and speed, and one acceptance command. Before launch the supervisor checks `needs` against `caps.toml` and the model against `policy.toml`.
 - **One supervisor.** `rh supervise` is the only launcher, one per `$RH_HOME`. It owns launch, stop and pause. A stop belongs to whoever set it, and only that owner lifts it.
 - **One ledger.** Every job, event and receipt is in one SQLite file. `rh status` shows all of it in one view.
-- **Typed endings.** Each job ends as `done`, `failed`, `blocked`, `capacity`, `truncated`, `aborted`, `no_result` or `cancelled`, with a receipt.
+- **Typed endings.** Each job ends as `done`, `failed`, `blocked`, `capacity`, `truncated`, `aborted`, `no_result` or `cancelled`, with a receipt. A job that runs past its timeout is marked `stalled`, without a receipt, until it is harvested or stopped.
 - **Local acceptance.** A cloud job's output comes back as a patch or a checksummed bundle. Its acceptance command runs on your machine, and `rh land` commits an accepted result on the local branch `cloud/<job>`.
 - **Heavy-step lease.** `rh lease run` makes heavy local steps take turns and starts each one only after host admission.
 - **Operator inbox.** A step only a person may take goes to `rh inbox` with the exact action.
 
 ## What it never does
 
-The rh CLI never pushes, publishes, deploys, signs in or spends money by itself; steps that need a person go to `rh inbox`. Cloud jobs send their brief and the repository content to Codex cloud and run on that account's capacity.
+The rh CLI never pushes, publishes, deploys, signs in or spends money by itself. Preflight holds a job whose brief, command or acceptance check names one of those actions and puts the step in `rh inbox`. It matches phrases, so it is a guard, not a guarantee. Cloud jobs send their brief and the repository content to Codex cloud and run on that account's capacity.
 
 ## Use
 
@@ -28,7 +28,7 @@ bin/rh job cancel <job> --reason TEXT   # end a job that has not started, with a
 bin/rh supervise                 # the only launcher; one per $RH_HOME
 bin/rh status                    # every job, stop, down route and inbox item
 bin/rh inbox                     # operator steps, refusals, web launches
-bin/rh serve                     # dashboard and everyday actions in the browser, on 127.0.0.1
+bin/rh serve                     # dashboard and everyday actions in the browser, on 127.0.0.1, token-protected
 bin/rh land <job>                # commit a done cloud job's diff on branch cloud/<job>; never pushes
 bin/rh lease run --what build -- make   # heavy local step under the shared lease
 bin/rh doctor                    # codex CLI, git origin, cloud env, host load, ledger, supervisor, notify

@@ -121,7 +121,7 @@ Every prompt is saved with its sha256, so the browser session can check that it 
 
 **Permission.** "Approve for me" leaves the task shell without network, so the pinned fetch fails. "Full access" routes through the environment allowlist but gives the shell a GitHub token. Allowing it for harness tasks is an operator step. Only harness-written prompts run there.
 
-**Model.** `policy.toml` is dated and lists the allowed cloud models, currently GPT-6.1 Terra or Sol at fast speed. The CLI cannot be shown to set the cloud model, so receipts record `served: unknown` unless the task reports it.
+**Model.** `policy.toml` is dated and lists the allowed cloud models, currently GPT-6.1 Terra or Sol at standard speed and max effort. The CLI cannot be shown to set the cloud model, so receipts record `served: unknown` unless the task reports it.
 
 ## v0 scope
 

@@ -3,7 +3,10 @@ id = "m7a-portability"
 seat = "backend"
 kind = "codex-cloud"
 needs = ["python", "git"]
-write_paths = ["rh/oslock.py", "rh/supervisor.py", "rh/lease.py", "rh/adapters/local_shell.py", "rh/collect.py", "tests/", ".github/workflows/ci.yml"]
+write_paths = ["rh/oslock.py", "rh/supervisor.py", "rh/lease.py", "rh/adapters/local_shell.py", "rh/collect.py",
+               ".github/workflows/ci.yml", "tests/test_oslock.py", "tests/fakes/", "tests/test_bundle.py", "tests/test_cli.py",
+               "tests/test_codex_cloud.py", "tests/test_contract.py", "tests/test_hardening.py", "tests/test_lease.py",
+               "tests/test_supervisor.py"]
 timeout_min = 180
 brief = """Implement briefs/M7a-portability.md exactly. Its interface section is binding: do not rename, re-sign or move
 anything it names, and write only the files it lists plus runs/m7a-portability/. Follow briefs/README.md for the inherited

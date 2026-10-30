@@ -2,7 +2,7 @@
 
 research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and a job that ends gets exactly one typed state with a receipt. A job counts as done when it finishes and, if it names an acceptance check, that check passes on your machine.
 
-Status: [in progress] v0.9.0. Python 3.11+, standard library only. 327 tests pass on macOS: `python3 -I tests/run.py`. Windows support is new: local-shell jobs and the heavy-step lease run there, and one local-job test still skips on Windows. Desktop app: on a version tag, GitHub runners build an Apple-silicon .dmg, an Intel .dmg and a Windows .exe, ad-hoc signed on macOS and unsigned on Windows, each with a .sha256. The Apple-silicon app has been built, installed and opened on a macOS VM; the Intel and Windows builds have not run yet.
+Status: [in progress] v0.9.0. Python 3.11+. The harness is standard library only; the desktop app adds pywebview and is built with PyInstaller (`desktop/requirements.txt`). 327 tests pass on macOS: `python3 -I tests/run.py`. Windows support is new: local-shell jobs and the heavy-step lease run there, and one local-job test still skips on Windows. Desktop app: on a version tag, GitHub runners build an Apple-silicon .dmg, an Intel .dmg and a Windows .exe, ad-hoc signed on macOS and unsigned on Windows, each with a .sha256. The Apple-silicon app has been built, installed and opened on a macOS VM; the Intel and Windows builds have not run yet.
 
 ## What it does
 

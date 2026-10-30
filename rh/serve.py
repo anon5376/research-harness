@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import socket
 import threading
 import time
 import urllib.parse
@@ -162,6 +163,33 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0,
             self.end_headers()
             self.wfile.write(data)
             self.close_connection = True
+            if self.command == "POST" and not self.body_read:
+                self.drain_body()
+
+        def drain_body(self):
+            timeout = self.connection.gettimeout()
+            deadline = time.monotonic() + 1
+            try:
+                self.connection.shutdown(socket.SHUT_WR)
+                lengths = self.headers.get_all("Content-Length", [])
+                if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
+                    return
+                decimal = lengths[0].lstrip("0") or "0"
+                remaining = (_MAX_BODY if len(decimal) > len(str(_MAX_BODY))
+                             else min(int(decimal), _MAX_BODY))
+                while remaining:
+                    budget = deadline - time.monotonic()
+                    if budget <= 0:
+                        break
+                    self.connection.settimeout(budget)
+                    data = self.rfile.read1(min(remaining, 65536))
+                    if not data:
+                        break
+                    remaining -= len(data)
+            except OSError:
+                pass
+            finally:
+                self.connection.settimeout(timeout)
 
         def valid_host(self):
             hosts = self.headers.get_all("Host", [])
@@ -200,6 +228,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0,
 
         def do_POST(self):
             nonlocal last_result
+            self.body_read = False
             if not self.valid_host():
                 self.reply(403)
                 return
@@ -227,6 +256,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0,
                 return
             try:
                 raw = self.rfile.read(length)
+                self.body_read = True
                 if len(raw) != length:
                     self.reply(400)
                     return

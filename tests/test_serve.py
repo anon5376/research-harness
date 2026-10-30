@@ -146,6 +146,23 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(self.request("/stop", {"reason": "yes"},
                                      headers={"Host": local, "Origin": "http://" + local})[0], 303)
 
+    def test_rejected_post_drains_delayed_body_without_reset(self):
+        body = b"x" * 65536
+        with socket.create_connection(self.server.server_address, timeout=5) as client:
+            client.sendall((
+                f"POST /stop HTTP/1.1\r\nHost: 127.0.0.1:{self.server.server_port}\r\n"
+                "Origin: https://example.test\r\n"
+                f"Content-Length: {len(body)}\r\n\r\n"
+            ).encode("ascii"))
+            response = b""
+            while b"\r\n\r\n" not in response:
+                chunk = client.recv(4096)
+                self.assertTrue(chunk, "EOF before response headers")
+                response += chunk
+            self.assertTrue(response.startswith(b"HTTP/1.0 403 Forbidden\r\n"))
+            client.sendall(body)
+            self.assertEqual(client.recv(4096), b"")
+
     def test_inbox_resolve_requires_form_token_and_keeps_note(self):
         with self.ledger() as led:
             item, _ = led.inbox_add("decision", "Review notes")

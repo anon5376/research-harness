@@ -140,6 +140,12 @@ class LeaseCase(unittest.TestCase):
 
 
 class AdmitTest(unittest.TestCase):
+    def test_missing_getloadavg_fails_closed(self):
+        with mock.patch("sys.platform", "win32"), mock.patch.object(lease, "os") as host_os:
+            del host_os.getloadavg
+            with self.assertRaisesRegex(lease.HostReadError, "load average"):
+                lease.read_host()
+
     def test_pressure_limit(self):
         self.assertTrue(lease.admit(reading(level=1), max_load=10)[0])
         self.assertTrue(lease.admit(reading(level=None), max_load=10)[0])

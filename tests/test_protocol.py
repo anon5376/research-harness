@@ -125,6 +125,7 @@ def git(cwd, *args):
 
 
 class DiffPathsTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "Windows filenames cannot contain tabs")
     def test_real_git_diff_with_renames_quoting_binary_and_tricky_content(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

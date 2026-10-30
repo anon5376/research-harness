@@ -13,6 +13,7 @@ from pathlib import Path
 from unittest import mock
 
 from rh import privacy
+from tests import python_path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "rh" / "privacy.py"
@@ -235,6 +236,7 @@ class ScanRepoTest(GitCase):
         self.git("rm", "-q", "--cached", "moved.txt")
         self.assertEqual(privacy.scan_repo(self.repo, staged=True), [])
 
+    @unittest.skipIf(os.name == "nt", "Windows filenames cannot contain all tested characters")
     def test_odd_file_names(self):
         names = ["dir with space/file one.txt", "\u00fcn\u00ef c\u00f6d\u00e9.txt", "*.txt", ":(glob)x",
                  "-dash.txt", "line\nbreak.txt", "tab\there.txt"]
@@ -257,6 +259,7 @@ class ScanRepoTest(GitCase):
         self.stage("edge.txt", b"a" * privacy.MAX_BYTES)
         self.assertEqual(self.both(), ([("big.bin", 0, "too-large"), ("big.txt", 0, "too-large")],) * 2)
 
+    @unittest.skipIf(os.name == "nt", "Windows symlink creation may require developer mode or privileges")
     def test_symlink_target_scanned(self):
         os.symlink(MAC + "alice/secret", self.repo / "link")
         self.git("add", "-A")
@@ -363,7 +366,10 @@ class HookTest(GitCase):
         self.git("config", "core.hooksPath", str(HOOKS))
 
     def commit(self, *args, env=None):
-        return self.git("commit", "-q", *args, check=False, env=env)
+        run_env = dict(os.environ)
+        if env is not None:
+            run_env.update(env)
+        return self.git("commit", "-q", *args, check=False, env=python_path(self.tmp, run_env))
 
     def commits(self):
         return int(self.git("rev-list", "--count", "--all").stdout)

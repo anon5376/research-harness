@@ -356,8 +356,11 @@ def _scan_paths(paths, terms):
 def _scan_message(file, name, terms):
     """All of a commit message file: git keeps text below a scissors line unless -v, which a hook cannot see."""
     try:
-        with open(file, "rb") as f:
-            data = f.read()
+        if file in ("/dev/stdin", "/proc/self/fd/0"):
+            data = sys.stdin.buffer.read()
+        else:
+            with open(file, "rb") as f:
+                data = f.read()
     except OSError as e:
         raise UsageError(f"cannot read {file}: {e.strerror}") from e
     run = _Run(terms)

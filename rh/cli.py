@@ -125,12 +125,17 @@ def main(argv=None):
     cfs.add_parser("show")
 
     args = ap.parse_args(argv)
+    cfg = None
     try:
         cfg = config.load()
         return COMMANDS[args.cmd](args, cfg)
     except (LedgerError, contract.ContractError, gitx.GitError, ValueError, OSError) as e:
         print(f"rh: {e}", file=sys.stderr)
         return 1
+    finally:
+        if cfg is not None:
+            for led in cfg.pop("_ledgers", []):
+                led.close()
 
 
 def _codex_cwd(cfg):
@@ -141,7 +146,9 @@ def _codex_cwd(cfg):
 
 
 def _ledger(cfg):
-    return Ledger(Path(cfg["home"]) / "ledger.db")
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    cfg.setdefault("_ledgers", []).append(led)
+    return led
 
 
 def cmd_job(args, cfg):

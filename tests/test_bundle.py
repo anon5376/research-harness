@@ -10,6 +10,7 @@ from pathlib import Path
 
 from rh import bundle, gitx
 from rh.bundle import BundleError
+from tests import python_path
 
 
 def git(repo, *a):
@@ -73,6 +74,7 @@ class BundleTest(unittest.TestCase):
                  "runs/j1/b.bin": os.urandom(60_000)}
         return export_in_clone(self.repo, "j1", files, self.base)
 
+    @unittest.skipIf(os.name == "nt", "Windows does not preserve POSIX executable bits")
     def test_export_rebuilds_the_task_s_exact_staged_diff(self):
         files = {"runs/j1/RESULT.json": json.dumps({"job": "j1", "state": "done"}), "runs/j1/run.sh": "#!/bin/sh\n",
                  "runs/j1/a.bin": os.urandom(60_000), "runs/j1/b.bin": os.urandom(60_000), "README.md": "changed\n"}
@@ -145,7 +147,8 @@ class BundleTest(unittest.TestCase):
         out, n = self.base / "bundle.txt", bundle.PIECE_LINES
         prompt = bundle.export_prompt("j1", self.sha, ["runs/j1/"]).replace(bundle.bundle_file("j1"), str(out))
         self.assertIn(f"sed -n '1,{n}p' {out}", prompt)
-        subprocess.run(["sh", "-c", prompt[prompt.index("python3 - >"):]], cwd=self.base / "task-j1", check=True)
+        subprocess.run(["sh", "-c", prompt[prompt.index("python3 - >"):]], cwd=self.base / "task-j1",
+                       env=python_path(self.base), check=True)
         total = len(out.read_text().splitlines())
         pieces = self.base / "pieces"
         pieces.mkdir()

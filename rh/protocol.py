@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-JOB_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,62}$")
+JOB_ID_RE = re.compile(r"^(?!.*\.\.)(?!.*(?:\.|\.lock)$)[a-z0-9][a-z0-9._-]{0,62}\Z")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 RESULT_STATES = ("done", "failed", "blocked")
 RESULT_KINDS = frozenset({"missing", "invalid", "stale-input", "wrong-job"})

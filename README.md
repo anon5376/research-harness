@@ -2,7 +2,7 @@
 
 research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and every job ends in exactly one typed state with a receipt. A job counts as done only when its acceptance check passes on your machine.
 
-Status: [in progress] v0.4.0. Python 3.11+, standard library only. 237 tests pass: `python3 -I tests/run.py`. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
+Status: [in progress] v0.5.0. Python 3.11+, standard library only. 262 tests pass: `python3 -I tests/run.py`. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
 
 ## What it does
 
@@ -24,6 +24,7 @@ The rh CLI never pushes, publishes, deploys, signs in or spends money by itself;
 bin/rh env spec                  # what the operator enters to create the cloud environment
 bin/rh config set cloud.env_id <ID>
 bin/rh job add jobs/probe.toml   # a TOML contract; preflight runs on the next tick
+bin/rh job cancel <job> --reason TEXT   # end a job that has not started, with a receipt
 bin/rh supervise                 # the only launcher; one per $RH_HOME
 bin/rh status                    # every job, stop, down route and inbox item
 bin/rh inbox                     # operator steps, refusals, web launches

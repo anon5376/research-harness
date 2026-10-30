@@ -12,7 +12,7 @@ _KEYS = frozenset({"role", "route", "model", "effort", "owns", "done"})
 
 def load(path) -> dict[str, dict]:
     """Read strict seat cards and reject ownership shared by different seats."""
-    raw = tomllib.loads(Path(path).read_text())
+    raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
     if set(raw) != {"seat"}:
         raise ValueError(f"seats.toml: missing keys {sorted({'seat'} - set(raw))}; "
                          f"unknown keys {sorted(set(raw) - {'seat'})}")

@@ -278,7 +278,8 @@ def _write_sidecar(lock_path, what):
     side = _sidecar(lock_path)
     tmp = side.with_name(f".{side.name}.{os.getpid()}.tmp")
     try:
-        tmp.write_text(json.dumps({"pid": os.getpid(), "what": what, "since": time.time(), "by": BY}) + "\n")
+        tmp.write_text(json.dumps({"pid": os.getpid(), "what": what, "since": time.time(), "by": BY}) + "\n",
+                       encoding="utf-8")
         os.replace(tmp, side)
     except BaseException:
         tmp.unlink(missing_ok=True)
@@ -287,7 +288,7 @@ def _write_sidecar(lock_path, what):
 
 def _read_sidecar(lock_path):
     try:
-        data = json.loads(_sidecar(lock_path).read_text())
+        data = json.loads(_sidecar(lock_path).read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
     return data if isinstance(data, dict) else None

@@ -32,7 +32,7 @@ def start(run_dir, cwd, command, heavy=False, lease_cfg=None, python=sys.executa
     with open(run_dir / "out.log", "ab") as log:
         p = subprocess.Popen(argv, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
                              **detached)
-    (run_dir / "runner.json").write_text(json.dumps({"pid": p.pid, "argv": command}))
+    (run_dir / "runner.json").write_text(json.dumps({"pid": p.pid, "argv": command}), encoding="utf-8")
     return p.pid
 
 
@@ -40,15 +40,17 @@ def poll(run_dir, pid):
     """{'state': 'exited', 'exit': n} | {'state': 'running'} | {'state': 'vanished'} (dead, no exit record)."""
     f = Path(run_dir) / "exit"
     if f.is_file():
-        return {"state": "exited", "exit": int(f.read_text().strip())}
+        return {"state": "exited", "exit": int(f.read_text(encoding="utf-8").strip())}
     if _alive(pid):
         return {"state": "running"}
-    return {"state": "exited", "exit": int(f.read_text().strip())} if f.is_file() else {"state": "vanished"}
+    if not f.is_file():
+        return {"state": "vanished"}
+    return {"state": "exited", "exit": int(f.read_text(encoding="utf-8").strip())}
 
 
 def tail(run_dir, lines=5):
     p = Path(run_dir) / "out.log"
-    return p.read_text(errors="replace").splitlines()[-lines:] if p.is_file() else []
+    return p.read_text(errors="replace", encoding="utf-8").splitlines()[-lines:] if p.is_file() else []
 
 
 def _alive(pid):
@@ -119,7 +121,7 @@ def _exec(argv):
     else:
         code = _run_in(a.cwd, lambda: subprocess.run(cmd).returncode)
     tmp = Path(a.dir) / "exit.tmp"
-    tmp.write_text(str(code))
+    tmp.write_text(str(code), encoding="utf-8")
     tmp.replace(Path(a.dir) / "exit")
     return 0
 

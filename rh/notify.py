@@ -11,7 +11,7 @@ def send(template, subject, body, run=subprocess.run, timeout=30, clock=time.tim
         return {"ok": False, "exit": None, "out": "no notify command configured", "ts": clock()}
     argv = [a.replace("{subject}", subject).replace("{body}", body) for a in template]
     try:
-        r = run(argv, capture_output=True, text=True, timeout=timeout)
+        r = run(argv, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout)
     except FileNotFoundError as e:
         return {"ok": False, "exit": None, "out": f"notify command not found: {e.filename}", "ts": clock()}
     except subprocess.TimeoutExpired:

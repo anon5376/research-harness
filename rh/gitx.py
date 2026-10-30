@@ -9,7 +9,8 @@ class GitError(RuntimeError):
 
 
 def git(repo, *args, input=None, check=True):
-    r = subprocess.run(["git", "-C", str(repo), *args], input=input, capture_output=True, text=True, timeout=120)
+    r = subprocess.run(["git", "-C", str(repo), *args], input=input, capture_output=True, text=True,
+                       encoding="utf-8", timeout=120)
     if check and r.returncode != 0:
         raise GitError(f"git {' '.join(args[:3])}: {(r.stderr or r.stdout).strip()[:300]}")
     return r

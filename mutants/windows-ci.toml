@@ -1,0 +1,22 @@
+# The Windows CI failures on 15cdb94: each mutant brings one back and a test must go red.
+
+[[mutant]]
+name = "app loop leaves ledger.db open"
+file = "rh/serve.py"
+find = 'led.close()  # Windows cannot remove a home whose ledger.db is still open'
+replace = 'pass'
+tests = ["tests.test_serve.ServeTest.test_closing_the_app_closes_its_loops_ledger"]
+
+[[mutant]]
+name = "job file read in the platform encoding"
+file = "rh/contract.py"
+find = 'text = Path(source).read_text(encoding="utf-8")'
+replace = 'text = Path(source).read_text()'
+tests = ["tests.test_encoding"]
+
+[[mutant]]
+name = "git output decoded in the platform encoding"
+file = "rh/gitx.py"
+find = 'encoding="utf-8", timeout=120)'
+replace = 'timeout=120)'
+tests = ["tests.test_encoding"]

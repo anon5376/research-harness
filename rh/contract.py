@@ -60,7 +60,7 @@ class View:
 
 def load(source):
     """Parse a job TOML file (path) or string and return a normalized spec dict, or raise ContractError."""
-    text = Path(source).read_text() if isinstance(source, Path) else source
+    text = Path(source).read_text(encoding="utf-8") if isinstance(source, Path) else source
     try:
         raw = tomllib.loads(text)
     except tomllib.TOMLDecodeError as e:
@@ -234,10 +234,10 @@ def load_caps(*paths):
     for p in paths:
         p = Path(p)
         if p.is_file():
-            for kind, table in tomllib.loads(p.read_text()).items():
+            for kind, table in tomllib.loads(p.read_text(encoding="utf-8")).items():
                 out.setdefault(kind, {}).update(table)
     return out
 
 
 def load_policy(path):
-    return tomllib.loads(Path(path).read_text())
+    return tomllib.loads(Path(path).read_text(encoding="utf-8"))

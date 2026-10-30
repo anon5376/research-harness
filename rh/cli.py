@@ -188,7 +188,7 @@ def cmd_status(args, cfg):
     now = time.time()
     jobs = led.jobs()
     hb_path = Path(cfg["home"]) / "supervisor.json"
-    hb = json.loads(hb_path.read_text()) if hb_path.is_file() else None
+    hb = json.loads(hb_path.read_text(encoding="utf-8")) if hb_path.is_file() else None
     view = {
         "supervisor": {"pid": hb["pid"], "age_s": round(now - hb["ts"])} if hb else None,
         "stops": led.active_stops(),
@@ -202,7 +202,7 @@ def cmd_status(args, cfg):
     if args.html:
         page = _optional("dashboard", "M6a").render(view, now)
         tmp = args.html.with_suffix(args.html.suffix + ".tmp")
-        tmp.write_text(page)
+        tmp.write_text(page, encoding="utf-8")
         tmp.replace(args.html)
     if args.json:
         print(json.dumps(view, indent=2, default=str))
@@ -346,7 +346,7 @@ def cmd_cloud(args, cfg):
                                             network="net" in j["spec"]["needs"])
             print(f"follow-up in {seat_task}", file=sys.stderr)
         else:
-            text = p.read_text() if p.is_file() else protocol.task_prompt(
+            text = p.read_text(encoding="utf-8") if p.is_file() else protocol.task_prompt(
                 args.id, j["pinned_sha"], j["spec"]["brief"], j["spec"]["write_paths"],
                 network="net" in j["spec"]["needs"])
         print(text, end="")
@@ -366,7 +366,7 @@ def cmd_cloud(args, cfg):
                 print(f"not in the bundle (over {bundle.MAX_FILE} bytes): {f.get('path')} {f.get('bytes')} bytes "
                       f"sha256 {f.get('sha256')}; regenerate it locally", file=sys.stderr)
         else:
-            text = args.patch.read_text()
+            text = args.patch.read_text(encoding="utf-8")
             if text.strip() and "diff --git" not in text:
                 raise ValueError(f"{args.patch} is not a git diff")
         dest = collect.saved_patch(cfg["home"], args.id)
@@ -374,7 +374,7 @@ def cmd_cloud(args, cfg):
         fd, name = tempfile.mkstemp(dir=dest.parent, prefix=f".{dest.name}.", suffix=".tmp")
         tmp = Path(name)
         try:
-            with os.fdopen(fd, "w") as stream:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
                 stream.write(text)
             tmp.replace(dest)
         finally:
@@ -455,7 +455,7 @@ def cmd_doctor(args, cfg):
     led = _ledger(cfg)
     print(f"ledger: ok, {len(led.jobs())} jobs, {len(led.inbox())} open inbox items")
     hb = Path(cfg["home"]) / "supervisor.json"
-    print(f"supervisor: {'last tick %ds ago' % (time.time() - json.loads(hb.read_text())['ts']) if hb.is_file() else 'never ran'}")
+    print(f"supervisor: {'last tick %ds ago' % (time.time() - json.loads(hb.read_text(encoding='utf-8'))['ts']) if hb.is_file() else 'never ran'}")
     print(f"notify: {'configured' if cfg['notify']['command'] else 'not configured'}")
     return 0 if ok else 1
 
@@ -507,16 +507,16 @@ def cmd_caps(args, cfg):
     j = _ledger(cfg).job(args.id)
     if not j or not j["spec"]["probe"] or j["state"] != "done":
         raise ValueError(f"{args.id} must be a done probe job")
-    readings = json.loads((home / "work" / args.id / "runs" / args.id / "caps.json").read_text())
+    readings = json.loads((home / "work" / args.id / "runs" / args.id / "caps.json").read_text(encoding="utf-8"))
     bad = [k for k in PROBED if not isinstance(readings.get(k), bool)]
     if bad:
         raise ValueError(f"caps.json lacks boolean readings for {bad}")
     kind = j["spec"]["kind"]
     p = home / "caps.toml"
-    data = tomllib.loads(p.read_text()) if p.is_file() else {}
+    data = tomllib.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     data[kind] = {**data.get(kind, {}), **{k: readings[k] for k in PROBED},
                   "updated": time.strftime("%Y-%m-%d"), "source": f"probe {args.id} at {(j['pinned_sha'] or '')[:12]}"}
-    p.write_text(config.dumps(data))
+    p.write_text(config.dumps(data), encoding="utf-8")
     print(f"{kind}: " + ", ".join(f"{k}={readings[k]}" for k in PROBED) + f" -> {p}")
     return 0
 

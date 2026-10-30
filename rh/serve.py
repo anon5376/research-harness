@@ -420,6 +420,9 @@ class _Checks:
                     self.cv.wait(self._sleep())
         if self.fd is not None:
             self._release()
+        led, self.sup = getattr(self.sup, "led", None), None
+        if led is not None:
+            led.close()  # Windows cannot remove a home whose ledger.db is still open
 
     def _take(self):
         try:

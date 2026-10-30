@@ -98,8 +98,8 @@ def read(source):
         files = sorted(f for f in p.iterdir() if f.is_file() and not f.name.startswith("."))
         if not files:
             raise BundleError(f"{p} holds no saved reply")
-        return "\n".join(f.read_text(errors="replace") for f in files)
-    return p.read_text(errors="replace")
+        return "\n".join(f.read_text(errors="replace", encoding="utf-8") for f in files)
+    return p.read_text(errors="replace", encoding="utf-8")
 
 
 def parse(text, job_id):

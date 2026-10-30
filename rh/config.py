@@ -26,7 +26,7 @@ def load(rh_home=None):
     cfg = {k: dict(v) for k, v in DEFAULTS.items()}
     p = h / "config.toml"
     if p.is_file():
-        for table, values in tomllib.loads(p.read_text()).items():
+        for table, values in tomllib.loads(p.read_text(encoding="utf-8")).items():
             if isinstance(values, dict):
                 cfg.setdefault(table, {}).update(values)
     if not cfg["lease"]["lock"]:
@@ -42,11 +42,11 @@ def set_value(key, raw, rh_home=None):
     if not table or not name:
         raise ValueError("key must look like table.name, for example cloud.env_id")
     p = h / "config.toml"
-    data = tomllib.loads(p.read_text()) if p.is_file() else {}
+    data = tomllib.loads(p.read_text(encoding="utf-8")) if p.is_file() else {}
     data.setdefault(table, {})[name] = _parse(raw, DEFAULTS.get(table, {}).get(name))
     h.mkdir(parents=True, exist_ok=True)
     tmp = p.with_suffix(".tmp")
-    tmp.write_text(dumps(data))
+    tmp.write_text(dumps(data), encoding="utf-8")
     tmp.replace(p)
     return data[table][name]
 

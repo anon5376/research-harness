@@ -31,7 +31,7 @@ def collect_cloud(job, cloud, repo, home, gate_runner=None):
     """Return (state, receipt). Never raises for worker faults; RouteUnavailable from the diff call propagates."""
     spec, sha, jid = job["spec"], job["pinned_sha"], job["id"]
     saved = saved_patch(home, jid)
-    diff = saved.read_text() if saved.is_file() else cloud.diff(job["external_id"])
+    diff = saved.read_text(encoding="utf-8") if saved.is_file() else cloud.diff(job["external_id"])
     paths = protocol.diff_paths(diff)
     base = dict(diff_sha256=hashlib.sha256(diff.encode()).hexdigest(), changed_paths=paths, model_served="unknown",
                 diff_source="saved patch" if saved.is_file() else "codex cloud diff")
@@ -57,7 +57,7 @@ def collect_cloud(job, cloud, repo, home, gate_runner=None):
             f"custody: {'outside the write root: %s' % late if late else ''}"
             f"{'; ' if late and links else ''}{'symlink or submodule: %s' % links if links else ''}"), **base)
     rp = wt / protocol.result_path(jid)
-    raw = rp.read_text() if rp.is_file() else None
+    raw = rp.read_text(encoding="utf-8") if rp.is_file() else None
     try:
         res = protocol.parse_result(raw, jid, sha)
     except protocol.ResultError as e:
@@ -125,8 +125,9 @@ def land(job, home):
         raise gitx.GitError(f"{job['id']} is {job['state']}, only done jobs land")
     if not wt.is_dir():
         raise gitx.GitError(f"no worktree for {job['id']}; collect it first")
-    scan = subprocess.run([sys.executable, "-I", str(_SCANNER), "--staged", "--repo", str(wt)],
-                          capture_output=True, text=True)
+    # -X utf8: the scanner then prints UTF-8 on Windows too, which is what this side decodes
+    scan = subprocess.run([sys.executable, "-I", "-X", "utf8", str(_SCANNER), "--staged", "--repo", str(wt)],
+                          capture_output=True, text=True, encoding="utf-8", errors="replace")
     if scan.returncode != 0:
         raise gitx.GitError(f"privacy scan refused {job['id']}: " + (scan.stdout + scan.stderr).strip()[-300:])
     # no task id in the message: the privacy hook treats task ids as private

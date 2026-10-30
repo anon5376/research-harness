@@ -606,6 +606,16 @@ class ServeTest(unittest.TestCase):
         self.assertIn("Files in runs/say-hi/", page)
         self.assertIn('/job/say-hi/file?p=hi.txt', page)
 
+    def test_closing_the_app_closes_its_loops_ledger(self):
+        # On Windows an open ledger.db cannot be removed, so a loop that keeps it open past close must fail.
+        closed, close = [], Ledger.close
+        with patch.object(Ledger, "close", lambda led: closed.append(led) or close(led)):
+            server, _, stop = self.served()
+            self.assertTrue(until(lambda: server.checks.sup is not None, 10), server.checks.state())
+            led = server.checks.sup.led
+            stop()
+        self.assertTrue(any(c is led for c in closed))
+
     def test_run_again_adds_the_next_revision_and_opens_it(self):
         # A rerun that overwrites the old job, drops what changed, or lets an unfinished job run twice must fail.
         old = self.finished_local("count-words", "failed", "command exited 2")
@@ -653,8 +663,8 @@ class ServeTest(unittest.TestCase):
         self.finished_local("made-notes")
         root = self.home / "runs" / "made-notes"
         (root / "sub").mkdir(parents=True)
-        (root / "notes.md").write_text("hello <b>\n")
-        (root / "sub" / "data.txt").write_text("1,2\n")
+        (root / "notes.md").write_bytes(b"hello <b>\n")  # bytes: Windows text mode writes CRLF
+        (root / "sub" / "data.txt").write_bytes(b"1,2\n")
         (root / "blob.bin").write_bytes(b"\xff\xfe\x00")
         (self.base / "secret.txt").write_text("secret")
         (root / "leak.txt").symlink_to(self.base / "secret.txt")

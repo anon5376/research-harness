@@ -41,7 +41,7 @@ def single_instance(home):
         fd = oslock.try_lock(home / "supervisor.lock")
     except oslock.Locked:
         hb = home / "supervisor.json"
-        who = json.loads(hb.read_text()).get("pid") if hb.is_file() else "unknown"
+        who = json.loads(hb.read_text(encoding="utf-8")).get("pid") if hb.is_file() else "unknown"
         raise AlreadyRunning(f"another supervisor holds {home / 'supervisor.lock'} (pid {who})") from None
     return fd
 
@@ -88,7 +88,7 @@ class Supervisor:
         for j in self.led.jobs(states={"launching"}):
             if j["spec"]["kind"] == LOCAL:
                 runner = self.home / "jobs" / j["id"] / "runner.json"
-                pid = json.loads(runner.read_text())["pid"] if runner.is_file() else None
+                pid = json.loads(runner.read_text(encoding="utf-8"))["pid"] if runner.is_file() else None
                 if pid:
                     self.led.set_state(j["id"], "running", f"recovered after restart: pid {pid}", route=LOCAL,
                                        external_id=str(pid), started=j.get("started") or self.clock())
@@ -208,7 +208,7 @@ class Supervisor:
                                       network="net" in spec["needs"])
         pdir = self.home / "prompts"
         pdir.mkdir(parents=True, exist_ok=True)
-        (pdir / f"{jid}.txt").write_text(prompt)
+        (pdir / f"{jid}.txt").write_text(prompt, encoding="utf-8")
         self.led.event("prompt", jid, sha256=hashlib.sha256(prompt.encode()).hexdigest(), chars=len(prompt))
         self.led.set_state(jid, "launching")
         envroute = self.led.route(f"cli-env:{env}")
@@ -416,6 +416,6 @@ class Supervisor:
         hb = {"pid": os.getpid(), "ts": self.clock(), "tick": s, "probes": self.probes,
               "launch_attempts": self.launch_attempts}
         tmp = self.home / "supervisor.json.tmp"
-        tmp.write_text(json.dumps(hb))
+        tmp.write_text(json.dumps(hb), encoding="utf-8")
         tmp.replace(self.home / "supervisor.json")
 

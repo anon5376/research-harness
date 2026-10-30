@@ -4,7 +4,7 @@ Agent skills for running research work on Codex and Claude workers. Each folder 
 
 - [codex-cloud-loop](codex-cloud-loop/SKILL.md): run Codex cloud tasks as workers, from environment setup to an accepted patch.
 - [claude-worker-loop](claude-worker-loop/SKILL.md): run Claude Code workers (subagents, workflows, background and desktop sessions, cloud runs) from brief to accepted result.
-- [unlazy](unlazy/SKILL.md): acceptance gates written before the work and re-run before any done report; both loops tell their workers to load it.
+- [unlazy](unlazy/SKILL.md): acceptance gates written before the work and re-run before any done report. claude-worker-loop tells its workers to load it; codex-cloud-loop stopped on 30 Oct, because task-written gates proved nothing in wave 5.
 
 ## Attribution
 

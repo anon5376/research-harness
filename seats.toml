@@ -30,8 +30,8 @@ role = "Desktop and release: rh serve, the desktop app, packaging and the releas
 route = "codex-cloud"
 model = "gpt-6.1-sol"
 effort = "max"
-owns = ["rh/serve.py", "desktop/", ".github/workflows/build.yml", "docs/releases/", "tests/test_serve.py",
-        "tests/test_desktop.py"]
+owns = ["rh/serve.py", "desktop/app.py", "desktop/requirements.txt", "desktop/rh-desktop.spec",
+        ".github/workflows/build.yml", "docs/releases/", "tests/test_serve.py", "tests/test_desktop.py"]
 done = "the job's brief is met and python3 -I tests/run.py passes on the lead's machine"
 
 [seat.testing]

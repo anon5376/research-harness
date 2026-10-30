@@ -37,7 +37,7 @@ def main(argv: list[str] | None = None) -> int:
 - macOS: a `BUNDLE` .app, with bundle identifier `io.github.research-harness`.
 - Windows: one-file. If `desktop/icons/rh.icns` and `rh.ico` exist, use them; otherwise no icon. Claude adds the icons later.
 
-**`.github/workflows/build.yml`** follows the readbox shape:
+**`.github/workflows/build.yml`** follows the build.yml shape of a sibling project:
 - Triggers: `workflow_dispatch` and `push: tags: ["v*"]`.
 - Jobs `macos-arm64` (runs-on `macos-latest`), `macos-x64` (`macos-13`) and `windows` (`windows-latest`). Each one:
   1. `git config --global core.autocrlf false`, checkout, and setup-python 3.12.

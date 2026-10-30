@@ -2,7 +2,7 @@
 
 research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and every job ends in exactly one typed state with a receipt. A job counts as done only when its acceptance check passes on your machine.
 
-Status: [in progress] v0.2.0. Python 3.11+, standard library only, no GUI. 195 tests pass: `python3 -I tests/run.py`. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
+Status: [in progress] v0.3.0. Python 3.11+, standard library only, no GUI. 221 tests pass: `python3 -I tests/run.py`. Desktop builds (.dmg and .exe) are planned for v1.0.0 and do not exist yet.
 
 ## What it does
 
@@ -16,7 +16,7 @@ Status: [in progress] v0.2.0. Python 3.11+, standard library only, no GUI. 195 t
 
 ## What it never does
 
-It never pushes, publishes, deploys or sends anything. It never signs in, enters credentials, spends money, or changes account or system settings. Each of those becomes an inbox item for the operator.
+The rh CLI never pushes, publishes, deploys, signs in or spends money by itself; steps that need a person go to `rh inbox`. Cloud jobs send their brief and the repository content to Codex cloud and run on that account's capacity.
 
 ## Use
 
@@ -29,7 +29,7 @@ bin/rh status                    # every job, stop, down route and inbox item
 bin/rh inbox                     # operator steps, refusals, web launches
 bin/rh land <job>                # commit a done cloud job's diff on branch cloud/<job>; never pushes
 bin/rh lease run --what build -- make   # heavy local step under the shared lease
-bin/rh doctor                    # health of every surface the harness depends on
+bin/rh doctor                    # codex CLI, git origin, cloud env, host load, ledger, supervisor, notify
 ```
 
 A job contract:
@@ -45,7 +45,7 @@ requested = "gpt-6.1-sol"       # must be allowed by policy.toml
 speed = "fast"
 ```
 
-A goal (`rh goal add`) expands into a set of role-based jobs with one acceptance card over all of them. For tasks launched in the web view: `rh cloud prompt <job>` prints the exact prompt, `rh cloud attach` records the task id, and `rh cloud harvest` hands the returned patch or bundle to the supervisor.
+A goal (`rh goal add`) expands into a set of role-based jobs; the goal's acceptance card goes on its last job in dependency order. For tasks launched in the web view: `rh cloud prompt <job>` prints the exact prompt, `rh cloud attach` records the task id, and `rh cloud harvest` hands the returned patch or bundle to the supervisor.
 
 ## Skills
 

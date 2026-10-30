@@ -1,6 +1,6 @@
 # M7 plan: desktop builds (.dmg and .exe on every release)
 
-**Answer.** Ship one window app: a frozen Python app that opens `rh serve` in a native web view. Every `v*` tag builds a macOS .dmg (Apple silicon and Intel) and a Windows .exe on GitHub runners and attaches them to the release. The workflow copies readbox's `build.yml` shape: tag or manual trigger, one job per OS, artifacts, then a release job with `gh release create --notes-file docs/releases/<tag>.md`. Tauri is not reused: it would add Rust and Node and would still need a frozen Python sidecar.
+**Answer.** Ship one window app: a frozen Python app that opens `rh serve` in a native web view. Every `v*` tag builds a macOS .dmg (Apple silicon and Intel) and a Windows .exe on GitHub runners and attaches them to the release. The workflow copies the `build.yml` shape of a sibling project: tag or manual trigger, one job per OS, artifacts, then a release job with `gh release create --notes-file docs/releases/<tag>.md`. Tauri is not reused: it would add Rust and Node and would still need a frozen Python sidecar.
 
 **Blocking fact.** `rh` does not run on Windows today. `fcntl` (supervisor lock, heavy-step lease), `start_new_session`, `sysctl` and `os.getloadavg` are POSIX only. `local_shell`'s liveness check `os.kill(pid, 0)` would *terminate* the process on Windows. Acceptance gates run `sh -c`, which on Windows exists only through Git for Windows. So M7 starts with a portability step.
 

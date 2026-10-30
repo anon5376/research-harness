@@ -128,6 +128,12 @@ class PreflightTest(unittest.TestCase):
             with self.subTest(brief=brief):
                 self.assertEqual(decide(spec(brief=brief)).verdict, "ready")
 
+    def test_cloud_job_acceptance_check_is_screened_too(self):
+        d = decide(spec('accept = "git push origin main"', kind="codex-cloud"))
+        self.assertEqual(d.verdict, "operator")
+        self.assertEqual(len(d.operator_steps), 1)
+        self.assertEqual(decide(spec('accept = "python3 -I tests/run.py"', kind="codex-cloud")).verdict, "ready")
+
     def test_hold_outranks_operator_and_wait(self):
         s = spec('needs = ["commit"]\nafter = ["up"]', kind="codex-cloud", brief="Publish it.")
         d = decide(s, View(states={"up": "running"}))

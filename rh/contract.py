@@ -130,10 +130,9 @@ def preflight(spec, caps, policy, view):
             holds.append(f"operator-facing job needs an acceptance card; missing {', '.join(lacking)}")
     holds += _policy_holds(spec, policy)
     holds += _root_holds(spec, view)
-    steps = operator_steps(spec["brief"])
+    steps = operator_steps(spec["brief"]) + operator_steps(spec["accept"])  # accept runs here for every kind
     if kind == "local-shell":
         steps += operator_steps(" ".join(spec["command"]))
-        steps += operator_steps(spec["accept"])
     for up in spec["after"]:
         st = view.states.get(up)
         if st is None:

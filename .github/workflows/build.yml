@@ -1,0 +1,164 @@
+name: Desktop build
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - run: python -I tests/run.py
+      - name: Version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          ACTUAL="$(python -I bin/rh --version)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$ACTUAL" = "rh ${TAG#v}"
+          fi
+          echo "VER=${ACTUAL#rh }" >> "$GITHUB_ENV"
+      - run: pip install --require-hashes -r desktop/requirements.txt
+      - run: pyinstaller desktop/rh-desktop.spec
+        env:
+          PYINSTALLER_TARGET_ARCH: arm64
+      - run: '"dist/Research Harness.app/Contents/MacOS/Research Harness" --smoke'
+      - name: Signing status
+        run: |
+          codesign -dv "dist/Research Harness.app" 2>&1 | tee signing.txt
+          if grep -q 'Signature=adhoc' signing.txt; then
+            echo "Binary: Research Harness — ad-hoc signed"
+          else
+            echo "Unexpected signing status; expected ad-hoc signing" >&2
+            exit 1
+          fi
+      - run: hdiutil create -volname "Research Harness" -srcfolder "dist/Research Harness.app" -format UDZO -ov "ResearchHarness-${VER}-macos-arm64.dmg"
+      - run: shasum -a 256 "ResearchHarness-${VER}-macos-arm64.dmg" > "ResearchHarness-${VER}-macos-arm64.dmg.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: ResearchHarness-*-macos-arm64.dmg*
+          if-no-files-found: error
+  macos-x64:
+    runs-on: macos-15-intel  # macos-13 was retired in Dec 2025; jobs on it queue forever
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - run: python -I tests/run.py
+      - name: Version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          ACTUAL="$(python -I bin/rh --version)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$ACTUAL" = "rh ${TAG#v}"
+          fi
+          echo "VER=${ACTUAL#rh }" >> "$GITHUB_ENV"
+      - run: pip install --require-hashes -r desktop/requirements.txt
+      - run: pyinstaller desktop/rh-desktop.spec
+        env:
+          PYINSTALLER_TARGET_ARCH: x86_64
+      - run: '"dist/Research Harness.app/Contents/MacOS/Research Harness" --smoke'
+      - name: Signing status
+        run: |
+          codesign -dv "dist/Research Harness.app" 2>&1 | tee signing.txt
+          if grep -q 'Signature=adhoc' signing.txt; then
+            echo "Binary: Research Harness — ad-hoc signed"
+          else
+            echo "Unexpected signing status; expected ad-hoc signing" >&2
+            exit 1
+          fi
+      - run: hdiutil create -volname "Research Harness" -srcfolder "dist/Research Harness.app" -format UDZO -ov "ResearchHarness-${VER}-macos-x64.dmg"
+      - run: shasum -a 256 "ResearchHarness-${VER}-macos-x64.dmg" > "ResearchHarness-${VER}-macos-x64.dmg.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x64
+          path: ResearchHarness-*-macos-x64.dmg*
+          if-no-files-found: error
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: x64
+      - run: python -I tests/run.py
+      - name: Version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          ACTUAL="$(python -I bin/rh --version)"
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            test "$ACTUAL" = "rh ${TAG#v}"
+          fi
+          echo "VER=${ACTUAL#rh }" >> "$GITHUB_ENV"
+      - run: pip install --require-hashes -r desktop/requirements.txt
+      - run: pyinstaller desktop/rh-desktop.spec
+      - run: '"dist/Research Harness.exe" --smoke'
+      - run: mv "dist/Research Harness.exe" "ResearchHarness-${VER}-windows-x64.exe"
+      - name: Hash and signing status
+        shell: pwsh
+        run: |
+          $file = "ResearchHarness-$env:VER-windows-x64.exe"
+          $signature = Get-AuthenticodeSignature $file
+          if ($signature.Status -ne 'NotSigned') {
+            throw "Unexpected signing status: $($signature.Status)"
+          }
+          Write-Output "Binary: $file — unsigned"
+          $hash = (Get-FileHash -Algorithm SHA256 $file).Hash.ToLowerInvariant()
+          "$hash  $file" | Set-Content -Encoding ascii "$file.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: ResearchHarness-*-windows-x64.exe*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [macos-arm64, macos-x64, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: packages
+          merge-multiple: true
+      - name: Upload to owner-created release
+        timeout-minutes: 35
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          deadline=$((SECONDS + 1800))
+          while true; do
+            if gh release upload "$TAG" packages/* --clobber; then
+              exit 0
+            fi
+            remaining=$((deadline - SECONDS))
+            if (( remaining <= 0 )); then
+              echo "Upload failed after 30 minutes. The release owner must create release $TAG; check permissions and the errors above." >&2
+              exit 1
+            fi
+            echo "Release upload not ready; retrying (up to 30 minutes)."
+            sleep "$((remaining < 30 ? remaining : 30))"
+          done

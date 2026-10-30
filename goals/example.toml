@@ -1,0 +1,35 @@
+id = "lit-review-example"
+
+[card]
+said = "Review the supplied literature and provide a checked synthesis."
+form = "file"
+done_when = "The synthesis covers the supplied sources and incorporates the critic's review."
+
+[roles.scout]
+kind = "local-shell"
+command = ["true"]
+
+[roles.analyst]
+kind = "local-shell"
+command = ["true"]
+
+[roles.critic]
+kind = "local-shell"
+command = ["true"]
+
+[[jobs]]
+id = "scan"
+role = "scout"
+brief = "Survey the supplied literature and list the relevant sources."
+
+[[jobs]]
+id = "synthesis"
+role = "analyst"
+after = ["scan"]
+brief = "Combine the source findings into a concise synthesis."
+
+[[jobs]]
+id = "review"
+role = "critic"
+after = ["synthesis"]
+brief = "Check the synthesis against the sources and record any corrections."

@@ -1,0 +1,16 @@
+# Codex cloud task for briefs/M7c-desktop.md. Follow-up in the desktop task once m7a and m7b have landed.
+id = "m7c-desktop"
+kind = "codex-cloud"
+needs = ["python", "git", "net"]
+write_paths = ["desktop/", "docs/releases/TEMPLATE.md", ".github/workflows/build.yml", "tests/test_desktop.py"]
+timeout_min = 180
+brief = """Implement briefs/M7c-desktop.md exactly. Its interface section is binding: do not rename, re-sign or move
+anything it names, and write only the files it lists plus runs/m7c-desktop/. Follow briefs/README.md for the inherited
+rules (stack line first, gates in runs/m7c-desktop/GATES.md, the whole suite must pass). Write runs/m7c-desktop/SUMMARY.md with
+the stack line, the exact test command and its real result."""
+accept = "python3 -I tests/run.py"
+
+[model]
+requested = "gpt-6.1-sol"
+speed = "standard"
+effort = "extra-high"

@@ -18,8 +18,12 @@ Each brief has a job contract in `jobs/` that the harness runs:
 | [M6b research goals and roles](M6b-goals.md) | `m6b-goals` | Sol, extra-high, fast (launched 30 Oct) | probe |
 | [M6c paced cloud launches](M6c-pacing.md) | `m6c-pacing` | Sol, extra-high, standard; follow-up in the m5h task | probe |
 | [M6d event wake](M6d-wake.md) | `m6d-wake` | Sol, extra-high, standard; follow-up in the m5h task | probe; lands after M5h and M6c (all touch `rh/supervisor.py`) |
+| [M7a Windows portability and three-OS CI](M7a-portability.md) | `m7a-portability` | Sol, extra-high, standard; follow-up in the m5h task | m5h landed |
+| [M7b `rh serve` local web app](M7b-serve.md) | `m7b-serve` | Sol, extra-high, standard; first job of the desktop task | m6a landed; Claude adds the `rh serve` CLI hook first |
+| [M7c desktop app, packaging, release build](M7c-desktop.md) | `m7c-desktop` | Sol, extra-high, standard; follow-up in the desktop task | m7a and m7b landed |
 
-Next milestone: desktop builds and the v1.0.0 definition of done, planned in [M7-desktop-plan.md](M7-desktop-plan.md); its briefs follow the lead's yes.
+Desktop builds and the v1.0.0 definition of done are planned in [M7-desktop-plan.md](M7-desktop-plan.md); the founder approved PyInstaller and pywebview on 30 Oct.
+A follow-up job in a long-lived task starts only after the previous job there is harvested, and its Step 0 must first drop that job's staged work (`git reset -q --hard && git clean -qfd`). The harness prompt gains that line before the first follow-up goes out.
 
 Rules every brief inherits (the harness prompt states them too):
 - Python 3.11+ standard library only.

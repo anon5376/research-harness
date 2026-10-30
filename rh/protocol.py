@@ -99,6 +99,13 @@ Brief:
 """
 
 
+def followup_prompt(job_id, sha, brief, write_paths, attempt=1, network=False) -> str:
+    """A new job in a standing task starts by dropping the previous job's staged work."""
+    return ("Follow-up turn: this is a new job in the same task. Before step 1, run from the checkout root: "
+            "git reset -q --hard && git clean -qfd\n\n" +
+            task_prompt(job_id, sha, brief, write_paths, attempt=attempt, network=network))
+
+
 def _str_list(value):
     return isinstance(value, list) and all(isinstance(v, str) for v in value)
 

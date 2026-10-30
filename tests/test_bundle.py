@@ -135,6 +135,24 @@ class BundleTest(unittest.TestCase):
         with self.assertRaisesRegex(BundleError, "stale input"):
             bundle.to_patch(dict(header, head="d" * 40), bundle.members(tgz), self.repo, self.sha, self.base / "w")
 
+    def test_follow_up_prints_pieces_under_the_output_cap_that_rejoin(self):
+        files = {"runs/j1/RESULT.json": "{}", "runs/j1/a.bin": os.urandom(60_000), "runs/j1/b.bin": os.urandom(60_000)}
+        _, expected = export_in_clone(self.repo, "j1", files, self.base)
+        out, n = self.base / "bundle.txt", bundle.PIECE_LINES
+        prompt = bundle.export_prompt("j1", self.sha, ["runs/j1/"]).replace(bundle.bundle_file("j1"), str(out))
+        self.assertIn(f"sed -n '1,{n}p' {out}", prompt)
+        subprocess.run(["sh", "-c", prompt[prompt.index("python3 - >"):]], cwd=self.base / "task-j1", check=True)
+        total = len(out.read_text().splitlines())
+        pieces = self.base / "pieces"
+        pieces.mkdir()
+        for k, start in enumerate(range(1, total + 1, n), 1):
+            piece = subprocess.run(["sed", "-n", f"{start},{start + n - 1}p", str(out)], capture_output=True,
+                                   text=True, check=True).stdout
+            self.assertLess(len(piece), 65_536, "one piece must fit a task's command output")
+            (pieces / f"{k:03d}.txt").write_text(piece)
+        self.assertGreater(k, 2)
+        self.assertEqual(self.rebuild(bundle.read(pieces))[1], expected)
+
     def test_replies_saved_in_pieces_with_fences_and_prose_are_read(self):
         text, expected = self.two_part_export()
         cut = text.index('RH-PART {"n": 2')

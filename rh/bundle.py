@@ -19,6 +19,8 @@ from rh import gitx
 
 MAX_FILE = 64 * 1024
 PART_CHARS = 90_000
+# a task's command output is cut at 65,536 characters; 700 lines of at most 77 is 53,900
+PIECE_LINES = 700
 _MARK = re.compile(r"^\s*RH-(BUNDLE|PART|END)\b\s*(.*)$")
 _B64 = re.compile(r"^[A-Za-z0-9+/=]+$")
 
@@ -72,13 +74,21 @@ def export_script(job_id):
 
 
 def export_prompt(job_id, sha, paths):
-    """The follow-up turn that makes a finished task print its staged work as a bundle."""
+    """The follow-up turn that makes a finished task print its staged work as a bundle, in pieces small enough
+    for one command's output."""
+    out, n = bundle_file(job_id), PIECE_LINES
     return (f"Export follow-up for {job_id}. Change no file and run no tests. From the root of the checkout:\n"
             f"1. If `git rev-parse HEAD` is not {sha}, run `git reset --soft {sha}`, which keeps your work staged.\n"
             f"2. Run `git add -A -- {' '.join(paths)}`.\n"
-            "3. Run the command below exactly. Reply with its complete output in one code block, unchanged and "
-            "nothing else; if the reply would be cut off, continue with the next RH-PART in a new reply.\n\n"
-            f"python3 - <<'PY'\n{export_script(job_id)}PY\n")
+            f"3. Run the command below exactly. It writes the bundle to {out}, outside the checkout.\n"
+            f"4. Run `wc -l < {out}`, then print the file in pieces of {n} lines, one command per piece: "
+            f"`sed -n '1,{n}p' {out}`, then `sed -n '{n + 1},{2 * n}p' {out}`, and so on through the last line. "
+            "Show each piece's output complete and unchanged. Do not summarise, link or attach the file.\n\n"
+            f"python3 - > {out} <<'PY'\n{export_script(job_id)}PY\n")
+
+
+def bundle_file(job_id):
+    return f"/tmp/rh-bundle-{job_id}.txt"
 
 
 def read(source):

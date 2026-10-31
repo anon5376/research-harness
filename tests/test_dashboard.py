@@ -456,10 +456,14 @@ class DashboardTest(unittest.TestCase):
         self.assertRegex(row, r'<a class="btn gbtn" href="/job/queued-job\?t=[^"]*" data-nav data-k="r">.*Set up Codex cloud')
         self.assertIn('action="/setup"', dashboard.render(opened(cloudy, "queued-job"), NOW, token=TOKEN))
         alone = {**view, "inbox": view["inbox"] + [setup]}
-        home = pane(dashboard.render(alone, NOW, token=TOKEN))
-        self.assertRegex(home, r'class="g-note" href="/inbox\?t=[^"]*" data-nav>\+1 more item in the Inbox')
+        home = dashboard.render(alone, NOW, token=TOKEN)
+        self.assertIn('data-key="need:9"', re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0))
+        self.assertRegex(home, r'<li class="row" data-key="need:9"[^>]*><a class="item" href="/inbox/9\?t=')
         self.assertIn('data-key="inbox:9"', inbox(alone))
         self.assertIn('action="/setup"', inbox(alone, 9))
+        # With a waiting cloud job the step rides on that job's row, and its own address still opens it.
+        self.assertNotIn('data-key="need:9"', dashboard.render(cloudy, NOW, token=TOKEN))
+        self.assertIn('action="/setup"', inbox(cloudy, 9))
 
     def test_composer_only_where_the_server_can_add_jobs(self):
         # A New job form the server cannot take, a missing one where it can, a refused draft that comes back
@@ -510,7 +514,7 @@ class DashboardTest(unittest.TestCase):
         view["open"]["peek"] = {"path": "notes.md", "text": "# Notes <draft>", "more": True}
         page = dashboard.render(view, NOW, token=TOKEN)
         right = text(pane(page))
-        for value in ("Write the notes", "Done", "finished-job", "This machine", "finished 10 s ago", "Done in 1 min 20 s.",
+        for value in ("Write the notes", "Done", "finished-job", dashboard.HERE, "finished 10 s ago", "Done in 1 min 20 s.",
                       "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Write the notes.",
                       "Cite each source.", "notes.md exists", "runs/finished-job/",
                       "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",
@@ -738,7 +742,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('action="/again"', row)
         self.assertIn("Run again", text(row))
         self.assertIn('class="st t-red"', row)
-        self.assertIn('class="sub fail"', row)
+        self.assertIn('data-tone="bad"', row)
 
     def test_one_filled_button_per_page_and_destructive_actions_marked(self):
         # A page with no filled button or with two, or a pause or cancel styled like a safe action, must fail.
@@ -850,11 +854,12 @@ class DashboardTest(unittest.TestCase):
             detail = re.search(r'<section class="ib-detail.*?</section>', page, re.S).group(0)
             return order, current, detail
         order, current, detail = shown(None)
-        self.assertEqual(order, ["inbox:8", "inbox:7", "launch:web-job", "settled:5"])
-        self.assertEqual(current, ["inbox:8"])
+        self.assertEqual(order[:2], ["job:web-job", "job:live-job"])  # newest first
+        self.assertEqual(sorted(order[2:]), ["job:broke-job", "job:queued-job", "settled:5"])
+        self.assertEqual(current, ["job:web-job"])
         self.assertIn("Paste the patch from Codex", text(detail))
         _, current, detail = shown(7)
-        self.assertEqual(current, ["inbox:7"])
+        self.assertEqual(current, ["job:live-job"])
         self.assertIn(CHECK, text(detail))
         self.assertIn('action="/inbox/resolve"', detail)
         _, current, detail = shown(5, view["settled"][0])
@@ -865,11 +870,12 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(current, [])
         self.assertIn("No inbox item 99", text(detail))
         tabs = text(inbox(view))
-        for words in ("All 3", "Questions 1", "Launches 1", "Patches 1"):
+        for words in ("All 4", "Questions 1", "Patches 1", "Failed 1", "Other 1"):
             self.assertIn(words, tabs)
         # Two items asked in the same second: the later one is newer.
         tied = {**view, "inbox": [dict(i, created=NOW - 5) for i in view["inbox"]]}
-        self.assertEqual(re.findall(r'<li class="ib-li" data-key="(inbox:\d+)"', inbox(tied)), ["inbox:8", "inbox:7"])
+        self.assertEqual(re.findall(r'<li class="ib-li" data-key="(job:[a-z-]+)"', inbox(tied))[:2],
+                         ["job:web-job", "job:live-job"])
 
     def test_this_mac_says_whether_a_heavy_step_may_start(self):
         # A load or pressure the panel drops, heavy work offered over the limit, or a failed reading shown as a
@@ -889,6 +895,123 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Load and memorynot read", broken)
         self.assertIn("HostReadError: sysctl failed", broken)
         self.assertNotIn("This Mac", text(dashboard.render(full_view(), NOW)))
+
+    def test_one_count_of_what_needs_you_everywhere(self):
+        # The band, the Needs you header, the Inbox badge and the Inbox title disagreeing, or any of them counting
+        # something other than the rows under Needs you and in the Inbox, must fail.
+        view = live_view()
+        setup = {"id": 9, "kind": "operator-step", "job": None, "action": SETUP, "detail": "", "created": NOW - 9}
+        stop = {"id": 3, "scope": "route:codex-cloud", "kind": "pause", "owner": "app", "reason": "cooling down",
+                "created": NOW - 50, "lifted": None, "lifted_by": None}
+        stray = {"id": 11, "kind": "decision", "job": "gone-job", "action": "pick a source", "detail": "",
+                 "created": NOW - 40, "resolved": None, "resolution": None}
+        views = {4: view, 5: {**view, "inbox": view["inbox"] + [setup]},
+                 7: {**view, "inbox": view["inbox"] + [setup, stray], "stops": view["stops"] + [stop]}}
+        views[4.0] = {**view, "inbox": view["inbox"] + [setup], "meta": {"queued-job": {"kind": "codex-cloud"}}}
+        for expected, v in views.items():
+            with self.subTest(expected=expected):
+                home, box = dashboard.render(v, NOW, token=TOKEN), inbox(v)
+                needs = re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0)
+                waiting = re.search(r'<section class="s-ib-wait".*?</section>', box, re.S).group(0)
+                counts = {"band": re.search(r'<p class="tally".*?data-need="(\d+)"', home, re.S).group(1),
+                          "header": re.search(r'<h3 id="g-needs">Needs you</h3><span class="n num">(\d+)<', needs).group(1),
+                          "badge": re.search(r'<b class="count num" data-need="(\d+)"', home).group(1),
+                          "inbox title": re.search(r'<span class="top-meta mono"><span data-need="(\d+)"', box).group(1),
+                          "rows": str(needs.count('<li class="row"')), "inbox rows": str(waiting.count('<li class="ib-li"'))}
+                self.assertEqual(set(counts.values()), {str(int(expected))}, counts)
+                self.assertIn(f"{int(expected)} need you", text(home))
+                self.assertIn(f"{int(expected)} need you", text(box))
+        empty = {**view, "live": [], "not_started": [], "recent": [], "inbox": [], "stops": []}
+        home, box = dashboard.render(empty, NOW, token=TOKEN), inbox(empty)
+        self.assertNotIn("data-need=", home + box.split('<main', 1)[1].split('</main>')[0].replace(
+            '<span data-need="0">', ""))
+        self.assertIn("nothing needs you", text(home))
+        self.assertIn("nothing needs you", text(box))
+
+    def test_rows_say_why_under_the_title(self):
+        # A Needs you row whose reason sits beside the control instead of under the title, a reason coloured like an
+        # alarm, or a phone layout that hides it, must fail.
+        row = item(dashboard.render(live_view(), NOW, token=TOKEN), "live-job")
+        link = re.search(r'<a class="item".*?</a>', row, re.S).group(0)
+        self.assertRegex(link, rf'<span class="name">live-job</span><span class="sub">{re.escape(ASK.capitalize())}</span>')
+        self.assertNotIn('class="sub', row.split("</a>", 1)[1])  # the control stands alone
+        rules = dict(re.findall(r"\.row \.(\w+) \{([^}]*)\}", dashboard.STYLE))
+        self.assertIn("grid-row: 2", rules["sub"])
+        self.assertIn("color: var(--muted)", rules["sub"])
+        phone = dashboard.STYLE.split("@media (max-width: 860px)", 1)[1].split("\n}\n", 1)[0]
+        self.assertNotRegex(phone, r"\.sub[^{]*\{[^}]*display: none")
+        self.assertIn(".row .do { grid-column: 2 / 4; grid-row: 3;", phone)
+
+    def test_phone_controls_are_a_thumb_tall(self):
+        # A control under 44 px tall at 480 px wide or less, or one left out of the rule, must fail.
+        phone = dashboard.STYLE.split("@media (max-width: 480px) {", 1)[1].split("\n}\n", 1)[0]
+        tall = {}
+        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", phone):
+            height = re.search(r"min-height: (\d+)px", body)
+            for selector in selectors.split(","):
+                if height:
+                    tall[selector.strip()] = int(height.group(1))
+        for control in (".btn", ".gbtn", ".chip", ".seg", ".compose .name", ".nav a", 'input[type="text"]',
+                        '.tabs [role="tab"]', ".icon-btn", ".send", ".k-pill", ".toast .x", "details.fold summary"):
+            with self.subTest(control=control):
+                self.assertGreaterEqual(tall.get(control, 0), 44)
+
+    def test_finished_pages_lead_with_the_result_and_fold_the_log(self):
+        # A done page that leads with its log, a log left open, a failed page whose fix box is not right under where
+        # it stopped, or a box pinned below the work, must fail.
+        log = "\n".join(f"line {n}" for n in range(1, 31))
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"].update(log=log, peek={"path": "notes.md", "text": "# Notes", "more": False})
+        body = pane(dashboard.render(done, NOW, token=TOKEN)).split('<div class="jd-body">', 1)[1].split("<aside", 1)[0]
+        order = re.findall(r'data-region="(j-peek|j-output|j-reply|j-error)"', body)
+        self.assertEqual(order, ["j-peek", "j-output", "j-reply"])
+        self.assertRegex(body, r'<details class="fold"><summary>.*Output.*last 30 lines.*</summary><pre class="log ended"')
+        broke = opened(live_view(), "broke-job", kind="local-shell")
+        broke["open"].update(log=log, receipt={"route": "local-shell", "checks": [{"cmd": "sh run.sh", "exit": 2}],
+                                               "ended": NOW - 10, "detail": "command exited 2"})
+        body = pane(dashboard.render(broke, NOW, token=TOKEN)).split('<div class="jd-body">', 1)[1].split("<aside", 1)[0]
+        order = re.findall(r'data-region="(j-peek|j-output|j-reply|j-error)"', body)
+        self.assertEqual(order, ["j-error", "j-reply", "j-output"])
+        error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
+        self.assertIn("exit 2", error)
+        self.assertIn("line 30", error)
+        self.assertNotIn("line 18\n", error)  # only where it stopped: the last lines
+        short = opened(live_view(), "broke-job", kind="local-shell")
+        short["open"]["log"] = "ls: docs/: No such file or directory"
+        body = pane(dashboard.render(short, NOW, token=TOKEN))
+        self.assertNotIn('data-region="j-output"', body)  # nothing more to unfold
+        self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
+
+    def test_machine_words_are_mono_and_the_machine_has_one_name(self):
+        # A duration, size or path set in the serif inside a sentence, ticking times in the serif, or the machine
+        # called anything but its one name, must fail.
+        view = opened(live_view(), "finished-job", kind="local-shell")
+        view["open"]["files"] = [{"path": "notes.md", "size": 2048}]
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        for machine in ('Done in <span class="mono">1 min 20 s</span>', 'Files in <span class="mono">runs/finished-job/'
+                        '</span>', '<span class="mono">120 min</span>', '<span class="size mono">2.0 KB</span>'):
+            self.assertIn(machine, page)
+        self.assertRegex(dashboard.STYLE, r"\n\.when \{ font-family: var\(--mono\)")
+        pages = [dashboard.render(full_view(), NOW), dashboard.render(live_view(), NOW, token=TOKEN), page,
+                 inbox(live_view()), dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN)]
+        for page in pages:
+            self.assertNotRegex(" ".join(Page(re.sub(r"<style>.*?</style>", "", page, flags=re.S)).text),
+                                r"(?i)this machine")
+        self.assertIn(dashboard.HERE, text(dashboard.render(live_view(), NOW, token=TOKEN)))
+        added = opened(live_view(), "live-job")
+        added["open"]["events"] = [{"seq": 1, "ts": NOW, "job": "live-job", "kind": "job-added",
+                                    "data": {"kind": "local-shell"}}]
+        self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
+
+    def test_jellyfish_stay_inside_their_band(self):
+        # A creature that rises out of the band and wraps round, or whose centre is not held a body's length from
+        # every edge, must fail.
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("  function creature("):]
+        code = code[:code.index("\n  }\n")]
+        self.assertNotIn("% span", code)
+        self.assertRegex(code, r"const cy = clamp\([^;]*, 1 \+ up, rows - 1 - down\);")
+        self.assertRegex(code, r"const cx = clamp\([^;]*, 1 \+ side, cols - 1 - side\);")
+        self.assertIn("const fit = ", code)
 
     def test_render_is_deterministic_and_does_not_mutate_view(self):
         # Mutating the source ledger view or consulting wall-clock time must fail.

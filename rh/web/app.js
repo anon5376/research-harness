@@ -1,7 +1,8 @@
 // The client for the live page, served same-origin at /app.js. It polls the page it shows, swaps only what changed
 // (FLIP for rows that move between groups), follows app links without reloading, posts forms with fetch and says what
 // happened in a toast, and adds the keyboard and the ⌘K palette. It also draws the tank: each seat as an ASCII
-// jellyfish on a faint character grid. Everything that moves stops under prefers-reduced-motion.
+// jellyfish on a faint character grid. Everything that moves stops under prefers-reduced-motion; the tank and the
+// prompt cycle read it when the page loads, so a change while the page is open takes a reload.
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -97,13 +98,15 @@ function Tank(canvas) {
 
   function creature(c, k, t) {
     const sp = c.sp || 1, ph = c.ph || k * 1.7;
-    const L = c.len;
-    const rx = (c.r * (1 + 0.06 * Math.sin(t * 1.05 * sp + ph))), ry = c.r * 0.62 * (1 - 0.05 * Math.sin(t * 1.05 * sp + ph));
-    // rises slowly; once its tentacles clear the top it comes back in from below
-    const span = rows + ry + L + 2;
-    const cy0 = c.fy * rows - t * (c.rise ?? 0.2) * sp;
-    const cy = ((((cy0 + L) % span) + span) % span) - L;
-    const cx = c.fx * cols + Math.sin(t * 0.17 * sp + ph) * 1.6;
+    // The whole body stays in the water with a cell to spare; in a band too short for it, it is drawn smaller.
+    const fit = Math.max(0.3, Math.min(1, (rows - 2) / (c.r * 0.75 + c.len * 1.05 + 4), (cols - 2) / (c.r * 2.2 + 6)));
+    const R = c.r * fit, L = c.len * fit;
+    const rx = (R * (1 + 0.06 * Math.sin(t * 1.05 * sp + ph))), ry = R * 0.62 * (1 - 0.05 * Math.sin(t * 1.05 * sp + ph));
+    const up = ry + 2, down = ry * 0.2 + L * 1.05 + 2, side = Math.max(rx + 3, L * 0.32 + 2);
+    const clamp = (v, lo, hi) => (hi < lo ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
+    // it bobs and drifts about its place, never past the band's edges
+    const cy = clamp(c.fy * rows + Math.sin(t * 0.21 * sp + ph) * 1.4, 1 + up, rows - 1 - down);
+    const cx = clamp(c.fx * cols + Math.sin(t * 0.17 * sp + ph) * 1.6, 1 + side, cols - 1 - side);
     const flick = Math.floor(t * 5);
     const tz = t * 0.7 + k * 9;
     // the bell leans a little as it swims
@@ -135,7 +138,7 @@ function Tank(canvas) {
       for (let s = 1; s <= h; s++) if (hash(i + 50, s, flick + k) > 0.3) put(Math.round(fx + lean(s) + Math.sin(t + i) * 0.4), Math.round(fy + s), (0.42 - s * 0.09) * c.b, k);
     }
     // long tentacles: thin and sparse, swaying
-    const n = c.n || Math.max(5, Math.round(c.r * 0.7));
+    const n = c.n || Math.max(5, Math.round(R * 0.7));
     for (let q = 0; q < n; q++) {
       const [ax, ay] = rim(-0.86 + (1.72 * q) / (n - 1));
       const len = L * (0.75 + 0.5 * hash(q, k, 1));
@@ -146,11 +149,11 @@ function Tank(canvas) {
       }
     }
     // oral arms: three or four thick, frilled, slower strands from the centre
-    const arms = c.r > 6 ? 4 : 3;
+    const arms = R > 6 ? 4 : 3;
     for (let m = 0; m < arms; m++) {
       const [ax, ay] = rim((m - (arms - 1) / 2) * 0.17);
       const len = L * (0.8 + 0.25 * hash(m, k, 2));
-      const wide = Math.max(1, Math.round(c.r / 4.5));
+      const wide = Math.max(1, Math.round(R / 4.5));
       for (let s = 0; s < len; s++) {
         const x = ax + lean(s) + Math.sin(s * 0.2 - t * 0.85 * sp + m * 2.3 + ph) * (0.3 + s * 0.13);
         const taper = 1 - s / len;

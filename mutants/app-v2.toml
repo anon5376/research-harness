@@ -1,11 +1,4 @@
 [[mutant]]
-name = "script selects the v1 class .g-needs"
-file = "rh/dashboard.py"
-find = "e.key === 'i' && $('.s-g-needs a.item')) go($('.s-g-needs a.item').href"
-replace = "e.key === 'i' && $('.g-needs a.item')) go($('.g-needs a.item').href"
-tests = ["tests.test_dashboard"]
-
-[[mutant]]
 name = "pause keeps the lock"
 file = "rh/serve.py"
 find = "                self._release()  # a check asked for while paused lets the lock go again"
@@ -138,38 +131,11 @@ find = "    if not ctx[\"live\"] and not _setup_item(item, ctx[\"ready\"]):"
 replace = "    if False:"
 tests = ["tests.test_dashboard"]
 [[mutant]]
-name = "receipt shows the space-joined command"
-file = "rh/dashboard.py"
-find = "        checks = [dict(c, cmd=shlex.join(argv)) if c.get(\"cmd\") == \" \".join(argv) else c for c in checks]"
-replace = "        pass"
-tests = ["tests.test_dashboard"]
-
-[[mutant]]
 name = "Details shows the space-joined command"
 file = "rh/dashboard.py"
 find = "_text(shlex.join(map(str, spec[\"command\"])))"
 replace = "_text(\" \".join(map(str, spec[\"command\"])))"
 tests = ["tests.test_dashboard"]
-[[mutant]]
-name = "the list's setup row leads back home"
-file = "rh/dashboard.py"
-find = "        target = next((j for j in jobs if j.setup), None) if setup else None\n        link"
-replace = "        target = None\n        link"
-tests = ["tests.test_dashboard.DashboardTest.test_cloud_setup_is_one_tap_from_the_job_list"]
-
-[[mutant]]
-name = "the home setup row is not marked as listed"
-file = "rh/dashboard.py"
-find = ", listed=target and target.id)))"
-replace = ")))"
-tests = ["tests.test_dashboard.DashboardTest.test_cloud_setup_is_one_tap_from_the_job_list"]
-[[mutant]]
-name = "a failure in Needs you keeps the amber of a question"
-file = "rh/dashboard.py"
-find = "        dot = \"bad\" if self.failure else self.tone if self.group != \"needs\" else \"warn\""
-replace = "        dot = self.tone if self.group != \"needs\" else \"warn\""
-tests = ["tests.test_dashboard.DashboardTest.test_a_failure_needs_you_until_it_is_run_again_or_a_day_passes"]
-
 [[mutant]]
 name = "the title cuts an ordinary first sentence at 64 characters again"
 file = "rh/dashboard.py"

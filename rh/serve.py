@@ -287,7 +287,7 @@ def _say(path, fields, ok, made=None):
     """The app's one sentence about an action; the CLI's own output stays available as its details."""
     get = lambda name: (fields.get(name) or [""])[0].strip()  # noqa: E731
     job, route = get("job"), get("route")
-    what = job or ({"codex-cloud": "Codex cloud", "local-shell": "this machine"}.get(route, route)
+    what = job or ({"codex-cloud": "Codex cloud", "local-shell": dashboard.HERE}.get(route, route)
                    if route else "every launch")
     if not ok:
         return {"/job": "The job was not added.", "/again": "The job did not start again.",

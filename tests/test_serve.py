@@ -239,12 +239,15 @@ class ServeTest(unittest.TestCase):
         code, _, page = self.request("/inbox")
         self.assertEqual(code, 200)
         self.assertIn('data-pane="inbox"', page)
-        self.assertRegex(page, rf'data-key="inbox:{launch}"[^>]*><a[^>]*aria-current="true"')
+        # One row for the job, opened on its newest item: the launch, with its prompt.
+        self.assertRegex(page, r'data-key="job:web-job"[^>]*><a[^>]*aria-current="true"')
+        self.assertIn('id="q-h" data-clear>Launch it in Codex, then link the task</h2>', page)
         self.assertIn("research-harness job web-job", page)
         code, _, page = self.request(f"/inbox/{step}")
         self.assertEqual(code, 200)
-        self.assertRegex(page, rf'data-key="inbox:{step}"[^>]*><a[^>]*aria-current="true"')
-        self.assertIn("Publish the notes", page)
+        self.assertRegex(page, r'data-key="job:web-job"[^>]*><a[^>]*aria-current="true"')
+        self.assertIn('id="q-h" data-clear>Publish the notes</h2>', page)
+        self.assertIn(f'href="/inbox/{launch}?t=', page)  # this job also asks for the launch
         self.assertNotIn("research-harness job web-job", page)
         code, _, page = self.request("/inbox/99999")
         self.assertEqual(code, 404)
@@ -481,7 +484,7 @@ class ServeTest(unittest.TestCase):
         self.assertIn("last &lt;line&gt; \ufffd", page)  # the tail, escaped, with undecodable bytes replaced
         self.assertIn("line 399", page)
         self.assertNotIn("line 199\n", page)  # only the last 200 lines
-        self.assertIn("Added to run on this machine", page)
+        self.assertIn(f"Added to run on {dashboard.HERE}", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)
         self.assertIn("No job named ghost", page)
@@ -681,7 +684,7 @@ class ServeTest(unittest.TestCase):
                                  server.checks.thread.is_alive()))
         self.assertEqual((self.home / "runs" / "say-hi" / "hi.txt").read_text(), "hi")
         page = self.request("/job/say-hi")[2]
-        self.assertIn("Files in runs/say-hi/", page)
+        self.assertIn('Files in <span class="mono">runs/say-hi/</span>', page)
         self.assertIn('/job/say-hi/file?p=hi.txt', page)
 
     def test_closing_the_app_closes_its_loops_ledger(self):

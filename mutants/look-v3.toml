@@ -340,8 +340,8 @@ tests = ["tests.test_dashboard.DashboardTest.test_a_jobs_heading_is_its_whole_fi
 [[mutant]]
 name = "v3.2: the brief's later lines are dropped"
 file = "rh/dashboard.py"
-find = "    return head.rstrip(\".\"), \"\\n\".join([*more, *lines[1:]]).strip()"
-replace = "    return head.rstrip(\".\"), \"\\n\".join(more).strip()"
+find = 'head.rstrip(".")), text[end:].strip()'
+replace = 'head.rstrip(".")), text[end:].strip().split("\n")[0]'
 tests = ["tests.test_dashboard.DashboardTest.test_a_jobs_heading_is_its_whole_first_sentence_said_once"]
 
 [[mutant]]
@@ -513,3 +513,17 @@ file = "rh/serve.py"
 find = "    return \"\\n\".join(lines[-_LOG_LINES:]), size > _LOG_TAIL or len(lines) > _LOG_LINES"
 replace = "    return \"\\n\".join(lines[-_LOG_LINES:]), len(lines) > _LOG_LINES"
 tests = ["tests.test_serve.ServeTest.test_job_page_shows_the_job_its_output_and_unknown_jobs_404"]
+
+[[mutant]]
+name = "the heading stops at the brief's first line break again"
+file = "rh/dashboard.py"
+find = 'para = text[:stop.start()] if stop else text'
+replace = 'para = text.splitlines()[0]'
+tests = ["tests.test_dashboard.DashboardTest.test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence"]
+
+[[mutant]]
+name = "a sentence ends on e.g. again"
+file = "rh/dashboard.py"
+find = '_NOT_AN_END = ("e.g.", "i.e.", "etc.", "vs.", "cf.")'
+replace = '_NOT_AN_END = ()'
+tests = ["tests.test_dashboard.DashboardTest.test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence"]

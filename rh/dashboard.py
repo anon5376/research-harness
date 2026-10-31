@@ -305,13 +305,25 @@ def _plain(detail):
     return _sentence(re.sub(r"\s*\(?pid \d+\)?", "", text))
 
 
+_NOT_AN_END = ("e.g.", "i.e.", "etc.", "vs.", "cf.")  # a sentence does not end on these
+
+
 def _lead(meta):
-    """A brief as its job's page shows it: the first sentence, whole, for the heading, and the rest under it."""
-    lines = str((meta or {}).get("brief") or "").strip().splitlines()
-    if not lines:
+    """A brief as its job's page shows it: the first sentence of its first paragraph, whole, for the heading, with the
+    paragraph's line breaks read as spaces (briefs are often hard-wrapped), and the rest under it as written. The
+    paragraph ends at a blank line or a list item."""
+    text = str((meta or {}).get("brief") or "").strip()
+    if not text:
         return "", ""
-    head, *more = re.split(r"(?<=[.!?])\s", lines[0].strip(), maxsplit=1)
-    return head.rstrip("."), "\n".join([*more, *lines[1:]]).strip()
+    stop = re.search(r"\n\s*\n|\n[ \t]*(?:[-*•]|\d+[.)])\s", text)
+    para = text[:stop.start()] if stop else text
+    end = len(para)
+    for found in re.finditer(r"[.!?](?=\s|$)", para):
+        if para[:found.end()].split()[-1].lstrip("(\"'").lower() not in _NOT_AN_END:
+            end = found.end()
+            break
+    head = " ".join(para[:end].split())
+    return (head if head.lower().endswith(_NOT_AN_END) else head.rstrip(".")), text[end:].strip()
 
 
 def _title(meta, jid):

@@ -1106,6 +1106,23 @@ class DashboardTest(unittest.TestCase):
         self.assertTrue(listed.endswith("…") and len(listed) <= 100 and first.startswith(listed[:-1]), listed)
         self.assertIn("text-wrap: pretty", dashboard.STYLE.split(".jd-head h1 {", 1)[1].split("}", 1)[0])
 
+    def test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence(self):
+        # A heading that stops at a brief's first line break or at "e.g.", or a list under it run into one line,
+        # must fail.
+        cases = [("Read every nightly log from the last\nninety days and list each timeout. Write timeouts.md.",
+                  "Read every nightly log from the last ninety days and list each timeout", "Write timeouts.md."),
+                 ("Compare e.g. two runs.", "Compare e.g. two runs", None),
+                 ("Scan these logs:\n- build.log\n- test.log", "Scan these logs:", "- build.log\n- test.log")]
+        for brief, heading, under in cases:
+            with self.subTest(brief=brief):
+                view = opened(live_view(), "live-job")
+                view["open"]["job"]["spec"]["brief"] = brief
+                view["meta"] = {"live-job": {"brief": brief}}
+                page = dashboard.render(view, NOW, token=TOKEN)
+                self.assertIn(f">{html.escape(heading, quote=False)}</h1>", page)
+                bubble = re.search(r'<div class="bubble">(.*?)</div>', page, re.S)
+                self.assertEqual(bubble and html.unescape(bubble.group(1)), under)
+
     def test_the_launch_prompt_shows_whole_lines(self):
         # A prompt box whose height is not a whole number of its lines, a box with no fade or no Show all, or a box
         # the page cannot open in full, must fail.

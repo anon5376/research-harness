@@ -1334,8 +1334,10 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
     log = opened.get("log")
     if isinstance(log, str) and log.strip():
         n = len(log.rstrip("\n").splitlines())
+        # The page holds only the end of a long log (serve's last 200 lines or 64 KB), so a cut one is "last".
+        cut = finished or opened.get("log_cut")
         prog.append(f'<div class="pg"><span class="pg-k">Output</span><b class="num">{n}</b>'
-                    f'<span class="pg-s">{"last lines" if finished else "lines so far"}</span></div>')
+                    f'<span class="pg-s">{"last lines" if cut else "lines so far"}</span></div>')
     checks = _checks_of(opened, spec, finished)
     if checks:
         passed = sum(1 for p, _, _ in checks if p)
@@ -1444,7 +1446,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     failed = finished and state != "done" and state != "cancelled"
     if log and not finished:
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
-        head = f'{tag}<span class="lines mono">{len(lines)} {"line" if len(lines) == 1 else "lines"}</span>'
+        last = "last " if opened.get("log_cut") else ""
+        head = f'{tag}<span class="lines mono">{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}</span>'
         work.append('<div class="out">' + _section("j-output", "Output", f'<pre class="log" tabindex="0">{_text(log)}'
                                                    '</pre>', head) + '</div>')
     if failed and log:
@@ -1714,8 +1717,9 @@ def _sidebar(ctx, view, page, wait):
 def render(view: dict, now: float, token: str | None = None, result=None) -> str:
     """Return one self-contained HTML5 page, escaping all supplied text. Without a token it is the static snapshot:
     no script and no controls. With one it is the live app, with forms and <script src="/app.js">. The view may also
-    carry "open" (the job `rh job show` returned, plus "log", its output tail, "prompt" for a hand launch, and
-    "files" and "peek" for a finished job's folder; or {"id", "job": None} for a job the harness does not know),
+    carry "open" (the job `rh job show` returned, plus "log", its output tail, "log_cut" when that tail is not the
+    whole log, "prompt" for a hand launch, and "files" and "peek" for a finished job's folder; or {"id", "job": None}
+    for a job the harness does not know),
     "inbox" plus "pick" (the Inbox, and the item it shows; "picked" is that item from the ledger, open or settled,
     and "prompt" its hand-launch prompt), "settled" (inbox items resolved lately), "can_add" (the server takes
     POST /job), "new" (the composer on its own page), "compose" (a draft to refill it with), "meta" (each job's brief,

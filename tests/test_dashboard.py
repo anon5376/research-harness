@@ -1015,11 +1015,13 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("% span", code)
         self.assertRegex(code, r"const cy = clamp\([^;]*, y0 \+ 1 \+ up, y1 - 1 - down\);")
         self.assertRegex(code, r"const cx = clamp\([^;]*, x0 \+ 1 \+ side, x1 - 1 - side\);")
-        self.assertIn("const fit = ", code)
+        self.assertIn("const { box: [x0, y0, x1, y1], fit, held, tall, slot } = at;", code)
+        self.assertIn("const fit = Math.max(0.3, scale(c, box));", dashboard.SCRIPT)
 
     def test_jellyfish_swim_beside_the_composer_not_behind_it(self):
         # A composer the water does not know is solid, a creature that may swim behind it, one sized for the whole
-        # band instead of its own water, or a side's seats piled on one spot, must fail.
+        # band instead of its own water, or a side's seats piled on one spot or given equal room whatever their
+        # heights, must fail.
         today = dashboard.render(live_view(), NOW, token=TOKEN)
         self.assertRegex(today, r'<form class="compose composer"[^>]* data-solid>')
         code = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank("):]
@@ -1031,13 +1033,61 @@ class DashboardTest(unittest.TestCase):
         # Each side's water is the lane beside the composer and the strip above it, never the composer itself.
         self.assertIn("const water = s && [[[0, 0, Math.max(0, s[0]), rows], [0, 0, half, top]],\n"
                       "      [[Math.min(cols, s[1]), 0, cols, rows], [half, 0, cols, top]]];", code)
-        self.assertIn("creature(c, k, t, water && water[sides[k]], (i + 0.5) / n);", code)
-        self.assertIn("const [x0, y0, x1, y1] = held ? pick : [0, 0, cols, rows];", code)
-        self.assertIn("const fit = Math.max(0.3, scale([x0, y0, x1, y1]));", code)
+        self.assertIn("const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));\n    stack(at);\n"
+                      "    spec.forEach((c, k) => creature(c, k, t, at[k]));", code)
+        self.assertIn("const box = held ? pick : [0, 0, cols, rows];", code)
+        self.assertIn("const fit = Math.max(0.3, scale(c, box));", code)
+        # Down a lane, each gets room in proportion to its height.
+        self.assertIn("p.slot = p.tall ? (before + p.h / 2) / total : (i + 0.5) / here.length;", code)
         self.assertIn("const ay = held && tall ? y0 + slot * (y1 - y0) - (down - up) / 2 : c.fy * rows;", code)
         # The size it is drawn at leaves room for its bell and its arms' sway, which `side` measures.
         self.assertIn("(x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64)", code)
         self.assertIn("side = Math.max(rx + 2, rx * 0.86 + L * 0.32 + 1)", code)
+
+    def test_side_lanes_hold_a_big_jellyfish_at_1440_and_1100(self):
+        # A composer so wide that the open water beside it is under 18 cells at 1440 or 1100 px, or a lane in which
+        # a waiting seat's jellyfish is drawn under 0.75 of its size at 1440, must fail. The widths are worked out from
+        # the stylesheet: the sidebar, the rail (shown above 1180 px), the pane's right margin and border, and the
+        # composer's clamp.
+        style, script = dashboard.STYLE, dashboard.SCRIPT
+        root = style.split(":root", 1)[1].split("}", 1)[0]
+        var = {k: int(v) for k, v in re.findall(r"--(side|rail|lane): (\d+)px;", root)}
+        pane = style.split("\n.pane {", 1)[1].split("}", 1)[0]
+        right = (int(re.search(r"margin: \d+px (\d+)px", pane).group(1))
+                 + 2 * int(re.search(r"border: (\d+)px", pane).group(1)))
+        clamp = r"\.tank-in \{[^}]*width: clamp\((\d+)px, calc\(100% - 2 \* var\(--lane\)\), (\d+)px\);"
+        lo, hi = map(int, re.search(clamp, style).groups())
+        narrow = style.split("@media (max-width: 1180px) {", 1)[1]
+        self.assertIn(".mc, .jd, .ibx { grid-template-columns: minmax(0, 1fr); }", narrow.split("\n}", 1)[0])
+        cw = int(re.search(r"const CW = (\d+),", script).group(1))
+        self.assertIn("return [Math.floor((b.left - box.left) / CW) - 2,", script)
+        for width, rail in ((1440, var["rail"]), (1100, 0)):
+            with self.subTest(width=width):
+                band = width - var["side"] - rail - right
+                composer = min(max(lo, band - 2 * var["lane"]), hi, band - 48)
+                lane = int((band - composer) / 2 // cw) - 2
+                self.assertGreaterEqual(lane, 18)
+                if width == 1440:
+                    self.assertEqual(band, 810)  # as measured in the browser
+                    seat = dashboard._creature("seat", "amber", 0)  # a seat waiting on you
+                    r, length = seat["r"], seat["len"]
+                    fit = min(1, (lane - 6) / (r * 2.12), (lane - 4) / (r * 1.82 + length * 0.64))
+                    self.assertGreaterEqual(fit, 0.75)
+        self.assertIn("(x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64)", script)
+
+    def test_a_running_jobs_cut_log_says_last_lines(self):
+        # A running job whose page holds only the end of its log, shown as if it were all of it, or a whole log
+        # called the last lines, must fail.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["log"] = "\n".join(f"line {n}" for n in range(200))
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        self.assertIn('<span class="pg-s">lines so far</span>', page)
+        self.assertIn('<span class="lines mono">200 lines</span>', page)
+        view["open"]["log_cut"] = True
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        self.assertIn('<b class="num">200</b><span class="pg-s">last lines</span>', page)
+        self.assertIn('<span class="lines mono">last 200 lines</span>', page)
+        self.assertNotIn("lines so far", page)
 
     def test_a_jobs_heading_is_its_whole_first_sentence_said_once(self):
         # A heading cut short, a brief repeated under its own heading, or a list title left uncut, must fail.

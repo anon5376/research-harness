@@ -325,7 +325,8 @@ def _next(fields):
 
 
 def _log(cfg, job):
-    """The end of a local job's output, decoded leniently, or None."""
+    """The end of a local job's output, decoded leniently, and whether that end is less than the whole: past
+    _LOG_TAIL bytes or _LOG_LINES lines it is cut. (None, False) when there is no output."""
     path = Path(cfg["home"]) / "jobs" / job / "out.log"
     try:
         with path.open("rb") as file:
@@ -334,11 +335,11 @@ def _log(cfg, job):
             file.seek(max(0, size - _LOG_TAIL))
             data = file.read()
     except OSError:
-        return None
+        return None, False
     lines = data.decode("utf-8", errors="replace").splitlines()
     if size > _LOG_TAIL and lines:
         lines = lines[1:]  # the first line is cut
-    return "\n".join(lines[-_LOG_LINES:])
+    return "\n".join(lines[-_LOG_LINES:]), size > _LOG_TAIL or len(lines) > _LOG_LINES
 
 
 def _outputs(cfg, shown):
@@ -732,7 +733,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 if shown is None:
                     self.page({"open": {"id": jid, "job": None}}, 404)
                     return
-                shown["log"] = _log(cfg, jid)
+                shown["log"], shown["log_cut"] = _log(cfg, jid)
                 if shown["job"]["state"] == "handoff":
                     # The prompt a person pastes into the Codex web composer, so the launch needs no terminal.
                     code, prompt, _ = _call(cfg, ["cloud", "prompt", "--", jid], split=True)

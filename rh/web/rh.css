@@ -32,6 +32,7 @@
   --mono: "Geist Mono", ui-monospace, Menlo, monospace;
   --r-panel: 12px; --r-card: 10px; --r-control: 7px;
   --side: 228px; --rail: 392px; --jside: 340px; --row: 34px;
+  --lane: 184px;  /* the water each side of the composer keeps for its jellyfish, while the composer is 420 px or more */
   --ease: cubic-bezier(.2, .7, .2, 1);
 }
 
@@ -235,8 +236,9 @@ a.ws-btn:hover { background: var(--raised); }
 .tank { position: relative; flex: none; min-height: 282px; border-bottom: 1px solid var(--rule); z-index: 2; }
 .tank-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 [data-clear] { width: fit-content; max-width: 100%; }
-.tank-in { position: relative; width: 600px; max-width: calc(100% - 48px); margin: 0 auto; padding: 30px 0 28px;
-  display: flex; flex-direction: column; align-items: center; }
+.tank-in { position: relative; width: clamp(420px, calc(100% - 2 * var(--lane)), 600px); max-width: calc(100% - 48px);
+  margin: 0 auto; padding: 30px 0 28px; display: flex; flex-direction: column; align-items: center;
+  container-type: inline-size; }
 .tally { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; border-radius: 11px;
   background: rgba(11, 14, 14, .72); font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
 .tally a { color: var(--amber); }
@@ -292,6 +294,15 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .how { width: 100%; margin-top: 18px; }
 .how .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .how .steps li { background: rgba(16, 20, 20, .86); }
+/* A composer 400 to 520 px wide sets its controls on two rows (where it runs and its name; Options and send) and its
+   first-run steps in one column. A phone's narrower composer keeps its own wrap, below. */
+@container (min-width: 400px) and (max-width: 520px) {
+  .c-hint { display: none; }
+  .c-row { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .opts { justify-self: start; }
+  .send { justify-self: end; }
+  .how .steps { grid-template-columns: minmax(0, 1fr); }
+}
 
 .jobs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .jobs-head { height: 44px; flex: none; display: flex; align-items: center; gap: 20px; padding: 0 24px;

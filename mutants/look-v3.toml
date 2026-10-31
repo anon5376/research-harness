@@ -438,8 +438,8 @@ tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_comp
 [[mutant]]
 name = "v3.2: the jellyfish ignore the open water beside the composer"
 file = "rh/web/app.js"
-find = "      creature(c, k, t, water && water[sides[k]], (i + 0.5) / n);"
-replace = "      creature(c, k, t, null, (i + 0.5) / n);"
+find = "    const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));"
+replace = "    const at = spec.map(c => place(c, null));"
 tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
 
 [[mutant]]
@@ -459,6 +459,57 @@ tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_comp
 [[mutant]]
 name = "v3.2: a jellyfish is sized for the whole band, not its lane"
 file = "rh/web/app.js"
-find = "    const fit = Math.max(0.3, scale([x0, y0, x1, y1]));"
-replace = "    const fit = Math.max(0.3, scale([0, 0, cols, rows]));"
+find = "    const fit = Math.max(0.3, scale(c, box));"
+replace = "    const fit = Math.max(0.3, scale(c, [0, 0, cols, rows]));"
 tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
+
+# Look v3.3: wide lanes for big jellyfish, and a cut log said to be the last lines.
+
+[[mutant]]
+name = "v3.3: the composer takes the lanes' water back"
+file = "rh/web/rh.css"
+find = "  --lane: 184px;"
+replace = "  --lane: 96px;"
+tests = ["tests.test_dashboard.DashboardTest.test_side_lanes_hold_a_big_jellyfish_at_1440_and_1100"]
+
+[[mutant]]
+name = "v3.3: the composer stays 600 px wide whatever the band"
+file = "rh/web/rh.css"
+find = "width: clamp(420px, calc(100% - 2 * var(--lane)), 600px);"
+replace = "width: clamp(600px, calc(100% - 2 * var(--lane)), 600px);"
+tests = ["tests.test_dashboard.DashboardTest.test_side_lanes_hold_a_big_jellyfish_at_1440_and_1100"]
+
+[[mutant]]
+name = "v3.3: a lane's jellyfish get equal room whatever their heights"
+file = "rh/web/app.js"
+find = "        p.slot = p.tall ? (before + p.h / 2) / total : (i + 0.5) / here.length;"
+replace = "        p.slot = (i + 0.5) / here.length;"
+tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
+
+[[mutant]]
+name = "v3.3: a running job's cut log says lines so far"
+file = "rh/dashboard.py"
+find = "        cut = finished or opened.get(\"log_cut\")"
+replace = "        cut = finished"
+tests = ["tests.test_dashboard.DashboardTest.test_a_running_jobs_cut_log_says_last_lines"]
+
+[[mutant]]
+name = "v3.3: a running job's cut log is headed as if whole"
+file = "rh/dashboard.py"
+find = "        last = \"last \" if opened.get(\"log_cut\") else \"\""
+replace = "        last = \"\""
+tests = ["tests.test_dashboard.DashboardTest.test_a_running_jobs_cut_log_says_last_lines"]
+
+[[mutant]]
+name = "v3.3: serve never says a log was cut"
+file = "rh/serve.py"
+find = "    return \"\\n\".join(lines[-_LOG_LINES:]), size > _LOG_TAIL or len(lines) > _LOG_LINES"
+replace = "    return \"\\n\".join(lines[-_LOG_LINES:]), False"
+tests = ["tests.test_serve.ServeTest.test_job_page_shows_the_job_its_output_and_unknown_jobs_404"]
+
+[[mutant]]
+name = "v3.3: a log cut at 64 KB but under 200 lines passes for whole"
+file = "rh/serve.py"
+find = "    return \"\\n\".join(lines[-_LOG_LINES:]), size > _LOG_TAIL or len(lines) > _LOG_LINES"
+replace = "    return \"\\n\".join(lines[-_LOG_LINES:]), len(lines) > _LOG_LINES"
+tests = ["tests.test_serve.ServeTest.test_job_page_shows_the_job_its_output_and_unknown_jobs_404"]

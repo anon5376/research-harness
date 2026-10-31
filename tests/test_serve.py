@@ -484,6 +484,16 @@ class ServeTest(unittest.TestCase):
         self.assertIn("last &lt;line&gt; \ufffd", page)  # the tail, escaped, with undecodable bytes replaced
         self.assertIn("line 399", page)
         self.assertNotIn("line 199\n", page)  # only the last 200 lines
+        self.assertIn('<span class="lines mono">last 200 lines</span>', page)  # and it says so
+        # Under 200 lines and 64 KB the page has the whole log; past 64 KB it has the end, in fewer than 200 lines.
+        self.local_job("short-local", log=b"one\ntwo\nthree\n")
+        page = self.request("/job/short-local")[2]
+        self.assertIn('<span class="lines mono">3 lines</span>', page)
+        self.assertIn('<span class="pg-s">lines so far</span>', page)
+        self.local_job("wide-local", log=b"".join(b"%04d " % i + b"x" * 995 + b"\n" for i in range(100)))
+        page = self.request("/job/wide-local")[2]
+        self.assertRegex(page, r'<span class="lines mono">last (6\d) lines</span>')
+        self.assertIn('<span class="pg-s">last lines</span>', page)
         self.assertIn(f"Added to run on {dashboard.HERE}", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)

@@ -25,10 +25,10 @@ replace = "min-height: 74px; height: 74px;"
 tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
 
 [[mutant]]
-name = "on a phone the sea sits under the list, not over it"
+name = "below 1180 px the sea goes back over the list"
 file = "rh/web/rh.css"
-find = "  .reef { order: -1; position: relative; height: 112px;"
-replace = "  .reef { position: relative; height: 112px;"
+find = "  .reef { position: relative; height: 112px; border-left: 0; border-top: 1px solid var(--rule); }"
+replace = "  .reef { order: -1; position: relative; height: 112px; border-left: 0; border-top: 1px solid var(--rule); }"
 tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
 
 [[mutant]]
@@ -141,15 +141,15 @@ tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_
 [[mutant]]
 name = "a failed job's page does not lead with the check that failed"
 file = "rh/dashboard.py"
-find = "    if failed and bad:"
+find = "    if failed and (bad or others):"
 replace = "    if False:"
 tests = ["tests.test_dashboard.DashboardTest.test_finished_pages_lead_with_the_result_and_fold_the_log"]
 
 [[mutant]]
 name = "a failed Done when check is called the job's command"
 file = "rh/dashboard.py"
-find = '''        what = "Its Done when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "Its command"'''
-replace = '''        what = "Its command"'''
+find = '''            what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"'''
+replace = '''            what = "The command"'''
 tests = ["tests.test_dashboard.DashboardTest.test_finished_pages_lead_with_the_result_and_fold_the_log"]
 
 [[mutant]]

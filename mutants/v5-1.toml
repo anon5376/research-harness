@@ -1,0 +1,169 @@
+# v5.1: each mutant breaks one claim of look v5.1 (one row per repeated failure, the brief's whole width, the sea under
+# the list below 1180 px, the failed check said in words, Choose environment on the waiting job's page, the Inbox led
+# by the job's title, bigger creatures in the open water, one left edge for the check loop), and the named tests must
+# catch it.
+
+[[mutant]]
+name = "every run of a repeated failure is its own row again"
+file = "rh/dashboard.py"
+find = "        if same in repeats:"
+replace = "        if False:"
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "a repeated failure's row does not say how many times"
+file = "rh/dashboard.py"
+find = '''            word = f"{self.word} {runs} times" if runs > 1 else self.word'''
+replace = '''            word = self.word'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "runs that failed different ways are one row"
+file = "rh/dashboard.py"
+find = '''        same = (job.brief, _plain(job.row.get("detail"))) if job.failure and job.count == 1 and job.brief else None'''
+replace = '''        same = (job.brief,) if job.failure and job.count == 1 and job.brief else None'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "a repeated failure's row is for its oldest run"
+file = "rh/dashboard.py"
+find = '''                          reverse=True)'''
+replace = '''                          reverse=False)'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "running the newest run again leaves the older runs waiting"
+file = "rh/dashboard.py"
+find = '''                        and not (_number(rerun) and _number(made) and made <= rerun)'''
+replace = ''''''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "running an older run again settles the newer runs too"
+file = "rh/dashboard.py"
+find = '''                        and not (_number(rerun) and _number(made) and made <= rerun)'''
+replace = '''                        and not (_number(rerun) and _number(made))'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "a run's page does not name the other runs"
+file = "rh/dashboard.py"
+find = '''    if len(runs) > 1:
+        named'''
+replace = '''    if False:
+        named'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "the Inbox row leads with what it needs, not the job's title"
+file = "rh/dashboard.py"
+find = '''    head = job.title if job else entry["ask"]'''
+replace = '''    head = entry["ask"]'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again"]
+
+[[mutant]]
+name = "a failed file test is not said in words"
+file = "rh/dashboard.py"
+find = '''    if m and str(code) == "1":'''
+replace = '''    if False:'''
+tests = ["tests.test_dashboard.DashboardTest.test_finished_pages_lead_with_the_result_and_fold_the_log"]
+
+[[mutant]]
+name = "a file test that broke another way is said to be missing its file"
+file = "rh/dashboard.py"
+find = '''    if m and str(code) == "1":'''
+replace = '''    if m:'''
+tests = ["tests.test_dashboard.DashboardTest.test_finished_pages_lead_with_the_result_and_fold_the_log"]
+
+[[mutant]]
+name = "the waiting job's page offers only the hand launch"
+file = "rh/dashboard.py"
+find = '''        act = (_acts([choose, _button(ctx, "/handoff"'''
+replace = '''        act = (_acts([_button(ctx, "/handoff"'''
+tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why"]
+
+[[mutant]]
+name = "the brief shares its line with the composer's controls again"
+file = "rh/web/rh.css"
+find = '''.compose.composer { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: "text" "cmd" "row";'''
+replace = '''.compose.composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text row" "cmd cmd";'''
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "the send arrow is lit with nothing to send"
+file = "rh/web/rh.css"
+find = ".composer:has(.c-text:placeholder-shown) .send { background: var(--raised); border-color: var(--control); }"
+replace = ".composer:has(.c-text:placeholder-shown) .send { background: var(--text); border-color: var(--text); }"
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "a long title is cut in the list"
+file = "rh/web/rh.css"
+find = ".row .name { grid-column: 2; grid-row: 1; color: var(--text); line-height: 20px; overflow-wrap: anywhere; }"
+replace = ".row .name { grid-column: 2; grid-row: 1; color: var(--text); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "below 1180 px the sea keeps a column beside the list"
+file = "rh/web/rh.css"
+find = "  .reef-page { grid-template-columns: minmax(0, 1fr); }  /* the sea leaves"
+replace = "  .reef-page { grid-template-columns: minmax(0, 1fr) 248px; }  /* the sea leaves"
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "the phone's composer shows all its controls before it is used"
+file = "rh/web/rh.css"
+find = "  .c-strip .composer:not(:focus-within):not([data-open]):has(.c-text:placeholder-shown) > :is(.c-row, .cmd) { display: none; }"
+replace = ""
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "the phone's composer folds the moment focus leaves it"
+file = "rh/web/app.js"
+find = "  if (form) { clearTimeout(form.shut); form.dataset.open = ''; }"
+replace = "  if (form) clearTimeout(form.shut);"
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "the status dot pushes the check loop's words in"
+file = "rh/web/rh.css"
+find = ".status .line > .dot { position: absolute; left: -13px; top: 6px; }"
+replace = ".status .line > .dot { position: static; }"
+tests = ["tests.test_dashboard.DashboardTest.test_the_check_loop_keeps_one_left_edge"]
+
+[[mutant]]
+name = "the route's Pause starts off the check loop's edge"
+file = "rh/web/rh.css"
+find = ".status .route .act > summary { margin-left: -9px; }"
+replace = ".status .route .act > summary { margin-left: 0; }"
+tests = ["tests.test_dashboard.DashboardTest.test_the_check_loop_keeps_one_left_edge"]
+
+[[mutant]]
+name = "Pause checks is a bare Pause again"
+file = "rh/dashboard.py"
+find = '''[("on", "0")], "Pause checks", "", "quiet small", "Pause checks"),'''
+replace = '''[("on", "0")], "Pause", "", "quiet small", "Pause checks"),'''
+tests = ["tests.test_dashboard.DashboardTest.test_the_check_loop_keeps_one_left_edge"]
+
+[[mutant]]
+name = "the fish are small again"
+file = "rh/web/app.js"
+find = "const FISH = ['##.   .######.  ', ' .##.#########o#', '##.   .######.  '];"
+replace = "const FISH = ['#.  .###.  ', ' #.######o#', '#.  .###.  '];"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "a rod bacterium is specks again"
+file = "rh/web/app.js"
+find = '''        at(along, -0.25, s === 0 ? DIM : BRIGHT, 0.9);
+        at(along, 0.25, DIM, 0.8);'''
+replace = '''        at(along, -0.25, FINE, 0.9);
+        at(along, 0.25, FINE, 0.8);'''
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "the fish, the school and the bacteria swim among the jellyfish"
+file = "rh/web/app.js"
+find = "  const top = below + 4 < rows - OH - 6 ? below + 1 : 1, bottom = rows - OH - 3;"
+replace = "  const top = 1, bottom = rows - OH - 3;"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]

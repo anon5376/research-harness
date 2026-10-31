@@ -517,6 +517,11 @@ class DashboardTest(unittest.TestCase):
         for part in (head, props):
             self.assertIn("Waiting for environment", text(part))
             self.assertNotIn("Ready", text(part))
+        # Its page offers the fix first, the environment step in the Inbox, and the hand launch beside it.
+        acts = re.search(r'<div class="acts">.*?</div>', page.split('class="ask-card"', 1)[1], re.S).group(0)
+        self.assertRegex(acts, r'^<div class="acts"><a class="btn primary" href="/inbox/10\?t=[^"]*" data-nav data-k="r">'
+                               r'<svg[^>]*>.*?</svg>Choose environment</a>')
+        self.assertIn("Launch by hand instead", acts)
         self.assertEqual(dashboard._plain("launch deferred: the codex CLI cannot see the environment"),
                          "Waiting for environment")
         form = re.search(r'<form method="post" action="/setup".*?</form>', inbox(view, 10), re.S).group(0)
@@ -963,12 +968,13 @@ const spec = ['backend', 'cli', 'app', 'testing', 'design', 'lead'].map((name, k
   ({ name, tone: ['faint', 'accent', 'amber'][k % 3], fx: 0.5, fy: 0.5, sp: 1 }));
 const fauna = { fish: 3, school: 5, bacteria: 2, plankton: 2, eel: true, octopus: { tone: 'amber' }, floor: true };
 const out = [];
-for (const [W, H] of [[320, 760], [248, 700], [390, 112]]) {
+for (const [W, H] of [[320, 760], [320, 1100], [860, 112], [390, 112]]) {
   const P = seaPitch(W, H, spec.length, true), cols = Math.floor(W / P), rows = Math.floor(H / (P * LATTICE));
   for (const t of [0, 2.7, 9.4, 31.1, 77.7]) {
     const { dots, parts } = seaDots(spec, fauna, cols, rows, t);
     const outside = dots.filter(d => d[2] !== FINE && (d[0] < 0 || d[1] < 0 || d[0] >= cols || d[1] >= rows)).length;
-    out.push({ W, H, cols, rows, t, parts, outside, first: dots.slice(0, 60) });
+    const red = dots.filter(d => d[3] === 'red' && d[2] !== FINE).length;
+    out.push({ W, H, cols, rows, t, parts, outside, red, first: dots.slice(0, 60) });
   }
 }
 const one = seaDots([spec[0]], null, 40, 20, 3);
@@ -985,12 +991,21 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
             with self.subTest(size=(frame["W"], frame["H"]), t=frame["t"]):
                 self.assertEqual(frame["outside"], 0)
                 self.assertEqual((kinds.count("jelly"), kinds.count("octopus"), kinds.count("plankton")), (6, 1, 2))
-                if frame["rows"] > 30:  # the reef has the whole sea; a phone's strip, the seats and the octopus
+                if frame["rows"] > 30:  # the reef has the whole sea; a strip, the seats and the octopus
                     self.assertEqual([kinds.count(k) for k in ("fish", "minnow", "bacteria", "eel")], [3, 5, 2, 1])
+                    # Big enough to read as animals: a fish 16 cells long, a colony at least 8 lit dots.
+                    self.assertTrue(all(p["box"][2] - p["box"][0] >= 16 for p in frame["parts"] if p["kind"] == "fish"))
+                    self.assertGreaterEqual(frame["red"], 8 * 2)
+                    # They swim in the open water between the lowest jellyfish and the octopus.
+                    floor = min(p["box"][1] for p in frame["parts"] if p["kind"] == "octopus")
+                    ceiling = max(p["box"][3] for p in frame["parts"] if p["kind"] == "jelly")
+                    for part in frame["parts"]:
+                        if part["kind"] in ("fish", "minnow", "bacteria"):
+                            self.assertTrue(ceiling <= part["box"][1] and part["box"][3] <= floor, part)
                 else:
                     self.assertEqual([kinds.count(k) for k in ("fish", "minnow", "bacteria", "eel")], [0, 0, 0, 0])
                 for part in frame["parts"]:
-                    if part["kind"] in ("jelly", "fish", "minnow", "octopus", "eel"):
+                    if part["kind"] in ("jelly", "fish", "minnow", "octopus", "eel", "bacteria"):
                         x0, y0, x1, y1 = part["box"]
                         self.assertTrue(0 <= x0 and 0 <= y0 and x1 <= frame["cols"] and y1 <= frame["rows"], part)
                 boxes = [part["box"] for part in frame["parts"] if part["kind"] == "jelly"]
@@ -1174,11 +1189,18 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
         fail = re.search(r'<section class="s-j-fail".*?</section>', body, re.S).group(0)
         self.assertLess(body.index('class="s-j-fail"'), body.index('class="s-j-brief"'))
         words = lambda h: html.unescape(re.sub(r"<[^>]+>", " ", h)).split()  # noqa: E731
-        self.assertEqual(words(fail), ["Its", "command", "failed", "sh", "run.sh", "exit", "2"])
+        self.assertEqual(words(fail), ["The", "command", "failed:", "it", "exited", "with", "code", "2", "sh", "run.sh",
+                                       "exit", "2"])
         broke["open"]["receipt"]["checks"] = [{"cmd": "sh run.sh", "exit": 0}, {"cmd": "notes.md exists", "exit": 1}]
         fail = re.search(r'<section class="s-j-fail".*?</section>', dashboard.render(broke, NOW, token=TOKEN), re.S)
-        self.assertEqual(words(fail.group(0)), ["Its", "Done", "when", "check", "failed", "notes.md", "exists",
-                                                       "exit", "1"])
+        self.assertEqual(words(fail.group(0))[:4], ["The", "done-when", "check", "failed:"])
+        # A file test says what it found about the file: named, then what it lacked.
+        broke["open"]["job"]["spec"]["accept"] = "test -s flaky.md"
+        broke["open"]["receipt"]["checks"] = [{"cmd": "sh run.sh", "exit": 0}, {"cmd": "test -s flaky.md", "exit": 1}]
+        fail = re.search(r'<p class="fail-k">.*?</p>', dashboard.render(broke, NOW, token=TOKEN), re.S).group(0)
+        self.assertEqual(" ".join(words(fail)), "The done-when check failed: flaky.md is missing or empty")
+        self.assertEqual(dashboard._found("[ -f 'out dir/a.txt' ]", 1), "out dir/a.txt is missing or not a file")
+        self.assertEqual(dashboard._found("test -s flaky.md", 2), "it exited with code 2")
         page = dashboard.render(done, NOW, token=TOKEN)
         self.assertNotIn('class="s-j-fail"', page)
         self.assertNotIn('<span class="pg-k">Output</span>', page)
@@ -1213,10 +1235,12 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
         self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
 
     def test_today_opens_on_what_needs_you(self):
-        # Anything but the one-line composer between the top bar and Needs you (a band, a headline, the sea), a
-        # composer taller than one line before you type, the sea anywhere but beside the list (or over it on a phone),
-        # or a first Needs you row below the middle of a 1440 x 900 window, must fail. The heights come from the
-        # stylesheet.
+        # Anything but the composer between the top bar and Needs you (a band, a headline, the sea), a brief that
+        # shares its line with the composer's controls (so its placeholder is cut), a brief taller than one line
+        # before you type, a send arrow lit while there is nothing to send, the sea anywhere but beside the list (or
+        # under it below 1180 px), a phone composer that shows its controls before it is used, a list title cut
+        # short, or a first Needs you row below the middle of a 1440 x 900 window, must fail. The heights come from
+        # the stylesheet.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
         center = page[page.index('<div class="center">'):page.index('<aside class="reef"')]
         ahead = center[:center.index('<section class="s-g-needs group"')]
@@ -1225,16 +1249,99 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
         self.assertIn('<textarea class="c-text" id="brief" name="brief" rows="1"', ahead)
         self.assertRegex(page, r'</div><aside class="reef" aria-label="Who is working"><canvas class="tank-c"')
         style = dashboard.STYLE
-        rule = lambda sel: style.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        rule = lambda sel, within=style: within.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         px = lambda sel, prop: int(re.search(prop + r": (\d+)px", rule(sel)).group(1))  # noqa: E731
+        media = lambda w: style.split(f"@media (max-width: {w}px) {{", 1)[1].split("\n}", 1)[0]  # noqa: E731
         self.assertIn("height: 30px", rule(".composer textarea.c-text"))
-        self.assertRegex(rule(".compose.composer"), r'grid-template-areas: "text row" "cmd cmd"')
-        line = max(30, px(".send", "height")) + 2 * px(".compose.composer", "padding") + 2
-        top = px(".top", "height") + 1 + 2 * px(".c-strip", "padding") + line + 1
+        self.assertRegex(rule(".compose.composer"), r'grid-template-columns: minmax\(0, 1fr\); grid-template-areas: '
+                                                    r'"text" "cmd" "row";')
+        self.assertNotIn("grid-template-areas", media(860) + style.split("@container (max-width: 640px) {", 1)[1])
+        composer = (2 * px(".compose.composer", "padding") + 2 + px(".composer textarea.c-text", "height")
+                    + px(".compose.composer > .c-row", "margin-top") + max(px(".send", "height"), px(".seg", "height")))
+        top = px(".top", "height") + 1 + 2 * px(".c-strip", "padding") + composer + 1
         self.assertLess(top + px(".group .head", "height"), 450)
+        idle = rule(".composer:has(.c-text:placeholder-shown) .send")
+        self.assertNotIn("var(--text)", idle)
+        self.assertIn("background: var(--raised)", idle)
+        self.assertNotRegex(rule(".row .name"), r"nowrap|ellipsis")
         self.assertIn("--reef: 320px;", style)
-        phone = style.split("@media (max-width: 860px) {", 1)[1].split("\n}", 1)[0]
-        self.assertIn(".reef { order: -1; position: relative; height: 112px;", phone)
+        self.assertIn(".reef { position: relative; height: 112px; border-left: 0; border-top: 1px solid var(--rule); }",
+                      media(1180))
+        self.assertIn(".reef-page { grid-template-columns: minmax(0, 1fr); }", media(1180))
+        self.assertNotRegex(media(1180) + media(860), r"\.reef \{[^}]*\border:")
+        self.assertIn(".c-strip .composer:not(:focus-within):not([data-open]):has(.c-text:placeholder-shown) > "
+                      ":is(.c-row, .cmd) { display: none; }", media(860))
+        self.assertIn("form.dataset.open = ''", dashboard.SCRIPT)
+
+    def test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again(self):
+        # Runs of one brief that failed the same way listed as separate rows or Inbox entries, a row that does not
+        # say how many times, a count of what needs you that counts each run, a run's page that does not lead to the
+        # others, or older runs left waiting once the newest is run again, must fail. A run that failed another way
+        # stays its own row; running an older run again settles only it and those before it.
+        view = live_view()
+        brief = "Run the test suite twenty times and list every test that failed at least once. Keep the seeds."
+        runs = ["sweep", "sweep-2", "sweep-3"]
+        view["recent"] += [{"id": jid, "state": "failed", "paused": False, "detail": "check exited 1",
+                            "external_id": None} for jid in runs]
+        view["recent"].append({"id": "sweep-odd", "state": "failed", "paused": False, "detail": "command exited 2",
+                               "external_id": None})
+        view["meta"] = {jid: {"brief": brief, "kind": "local-shell", "created": NOW - 900 + 100 * k,
+                              "updated": NOW - 800 + 100 * k} for k, jid in enumerate(runs + ["sweep-odd"])}
+        needs = lambda v: re.search(r'<section class="s-g-needs group".*?</section>',  # noqa: E731
+                                    dashboard.render(v, NOW, token=TOKEN), re.S).group(0)
+        listed = lambda v: re.findall(r'data-key="job:(sweep[^"]*)"', needs(v))  # noqa: E731
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertEqual(listed(view), ["sweep-3", "sweep-odd"])
+        self.assertIn("Failed 3 times: ", text(item(page, "sweep-3")))
+        self.assertNotIn("times", re.search(r'<span class="sub">([^<]*)', item(page, "sweep-odd")).group(1))
+        count = lambda p: int(re.search(r'data-need="(\d+)"', p).group(1))  # noqa: E731
+        alone = {**view, "recent": [r for r in view["recent"] if r["id"] not in ("sweep", "sweep-2")]}
+        self.assertEqual(count(page), count(dashboard.render(alone, NOW, token=TOKEN)))
+        # The Inbox: one entry, led by the job's title, with what failed and the newest run's name under it.
+        box = {m.group(1): m.group(0) for m in re.finditer(r'<li class="ib-li" data-key="job:(sweep[^"]*)".*?</li>',
+                                                           inbox(view), re.S)}
+        self.assertEqual(sorted(box), ["sweep-3", "sweep-odd"])
+        self.assertRegex(box["sweep-3"], r'<span class="ib-t">Run the test suite twenty times and list every test '
+                                         r'that failed at least once\.?</span>')
+        self.assertRegex(box["sweep-3"], r'<span class="ib-s">Failed 3 times: [^<]+ · <span class="mono">sweep-3'
+                                         r'</span></span>')
+        # Each run's page names every run that failed the same way, newest first, and links the others.
+        for jid in ("sweep-3", "sweep"):
+            body = pane(dashboard.render(opened(view, jid, kind="local-shell"), NOW, token=TOKEN))
+            said = re.search(r'<p class="fail-runs">.*?</p>', body, re.S).group(0)
+            self.assertTrue(text(said).startswith("Failed the same way 3 times: sweep-3 · sweep-2 · sweep"), said)
+            self.assertEqual(re.findall(r'href="/job/([^"?]+)', said), [r for r in ("sweep-3", "sweep-2", "sweep")
+                                                                       if r != jid])
+        self.assertNotIn('class="fail-runs"', pane(dashboard.render(opened(view, "sweep-odd", kind="local-shell"),
+                                                                    NOW, token=TOKEN)))
+        # Run again on the row runs the newest; that settles every run of the brief added up to it.
+        again = copy.deepcopy(view)
+        again["live"].append({"id": "sweep-4", "state": "running", "paused": False, "detail": "",
+                              "external_id": None})
+        again["meta"]["sweep-4"] = {"brief": brief, "prior": "sweep-3", "created": NOW - 10}
+        self.assertEqual(listed(again), ["sweep-odd"])
+        once = copy.deepcopy(view)
+        once["live"].append({"id": "sweep-r", "state": "running", "paused": False, "detail": "", "external_id": None})
+        once["meta"]["sweep-r"] = {"brief": brief, "prior": "sweep", "created": NOW - 10}
+        self.assertEqual(listed(once), ["sweep-3", "sweep-odd"])
+        self.assertIn("Failed 2 times: ", text(item(dashboard.render(once, NOW, token=TOKEN), "sweep-3")))
+
+    def test_the_check_loop_keeps_one_left_edge(self):
+        # A status dot that pushes its words in past the sidebar's edge, a Pause whose words start elsewhere than
+        # the others', or two buttons both called Pause, must fail.
+        style = dashboard.STYLE
+        rule = lambda sel: style.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertRegex(rule(".status .line > .dot"), r"position: absolute; left: -\d+px")
+        pad = re.search(r"padding: 0 (\d+)px", rule(".btn.small")).group(1)
+        self.assertIn(f"margin-left: -{pad}px", rule(".status .btns"))
+        self.assertIn(f"margin-left: -{pad}px", rule(".status .route .act > summary"))
+        side = dashboard.render(live_view(), NOW, token=TOKEN)
+        side = side[side.index('<div class="status"'):]
+        side = side[:side.index("</div>", side.index('<div class="btns">'))]
+        labels = re.findall(r">(Pause[^<]*)<", side)
+        self.assertIn("Pause checks", labels)
+        self.assertIn("Pause Codex cloud…", labels)
+        self.assertNotIn("Pause", labels)
 
     def test_a_running_jobs_cut_log_says_last_lines(self):
         # A running job whose page holds only the end of its log, shown as if it were all of it, or a whole log

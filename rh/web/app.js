@@ -44,11 +44,12 @@ const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' 
 // ───────── the sea: dot creatures on one lattice of tall cells ─────────
 // Drawn the way 0xSero's ascii-art skill draws dot art: every creature is dots on one fixed grid of cells about 1.9
 // times as tall as wide, in two tones (a big bright dot, and a small dim one nudged down), lit from the upper left, and
-// red only on what moves. Plankton and bacteria are a finer grain, a different substance from the creatures.
+// red only on what moves. Plankton are a finer grain, a different substance from the creatures.
 // Each creature stands for something the page shows: a jellyfish per seat (teal while it works, amber while it waits
 // on you, dim while idle), a fish per job running, a school of small fish for the jobs done today, a colony of
 // bacteria per job that failed today, plankton for the jobs up next, the eel while the harness is being checked, and
-// the octopus on the sea floor, amber while anything needs you.
+// the octopus on the sea floor, amber while anything needs you. The fish, the school and the bacteria swim in the open
+// water between the jellyfish and the octopus.
 // <sea> From here to </sea> the code touches no page, so a test runs it in node.
 const FRAME = 46;  // ms between frames: about 20 a second on a 60 or 120 Hz screen
 const LATTICE = 1.887;  // a cell's height over its width, the skill's 19 x 36 lattice
@@ -57,13 +58,14 @@ const TONES = { accent: [95, 207, 185], amber: [226, 166, 84], faint: [159, 176,
   sand: [150, 160, 150], weed: [95, 160, 140] };
 // Dot maps: '#' a bright dot, '.' a dim one, 'o' an eye, anything else water. Fish face right; a map is mirrored to
 // swim left.
-const FISH = ['#.  .###.  ', ' #.######o#', '#.  .###.  '];
-const MINNOW = ['#. .##.', ' .####o', '#. .##.'];
+const FISH = ['##.   .######.  ', ' .##.#########o#', '##.   .######.  '];  // a forked tail and a whole body
+const MINNOW = ['#. .###. ', '.#.####o#', '#. .###. '];
 const OCTOPUS = ['  .#####.  ', ' ##.....## ', ' #.o...o.# ', ' .#######. '];
 const JW = 15, JH = 12;  // a jellyfish's box in cells: its bell, its tentacles and its seat's name under them
 const OW = 14, OH = 8;  // the octopus's box: head and arms
 const EEL = 14;  // the eel's length in cells
-const SCHOOL = [[0, 0], [-9, -3], [-9, 3], [-18, 0], [-18, -6], [-18, 6], [-27, -3], [-27, 3], [-36, 0]];
+// the school: [dx, dy] of each small fish from the leader; fish on one row are a whole fish apart
+const SCHOOL = [[0, 0], [-6, -3], [-6, 3], [-12, -6], [-12, 0], [-12, 6], [-18, -3], [-18, 3], [-24, 0]];
 const hash = (a, b, c) => {
   let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1274126177);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -209,7 +211,8 @@ function seaDots(spec, fauna, cols, rows, t) {
   if (!f.floor) return { dots, labels, parts };
   // A strip (a phone's sea) has room for the seats and the octopus only; the rest swims in the reef.
   if (rows <= 30) return seaFloor(dots, cols, rows, t, labels, parts);
-  // Where the fish swim: under the jellyfish and above the octopus when there is room, else the whole water.
+  // The open water under the jellyfish and above the octopus, when there is room, else the whole water: the fish, the
+  // school and the bacteria all swim there, so the middle of the reef is never empty while there is anything to show.
   const top = below + 4 < rows - OH - 6 ? below + 1 : 1, bottom = rows - OH - 3;
   const depth = (n, h) => Math.max(1, Math.min(rows - h - 2, Math.round(top + hash(n, 9, 5) * Math.max(0, bottom - top - h))));
   for (let n = 0; n < Math.min(9, f.fish || 0); n++) {  // a fish for each job running
@@ -219,25 +222,39 @@ function seaDots(spec, fauna, cols, rows, t) {
   }
   const school = Math.min(SCHOOL.length, f.school || 0);
   if (school) {  // the jobs done today swim together, the first one leading
-    const back = Math.max(...SCHOOL.slice(0, school).map(([dx]) => -dx)), w = back + MINNOW[0].length;
-    const { x, dir } = lap(31, t, cols, w, 1.1), y = depth(31, 9) + 4 + Math.round(Math.sin(t * 0.3) * 0.6);
-    SCHOOL.slice(0, school).forEach(([dx, dy], i) => {
-      const mx = dir > 0 ? x + back + dx : x - dx, my = Math.max(0, Math.min(rows - 3, y + dy - 1));
-      map(dir > 0 ? MINNOW : flip(MINNOW), mx, my, 'accent', 0.5, { kind: 'minnow' });
+    const crew = SCHOOL.slice(0, school), lo = Math.min(...crew.map(([, dy]) => dy));
+    const high = Math.max(...crew.map(([, dy]) => dy)) - lo + 3;
+    const back = Math.max(...crew.map(([dx]) => -dx)), w = back + MINNOW[0].length;
+    const { x, dir } = lap(31, t, cols, w, 1.1), y = Math.min(depth(31, high), Math.max(1, bottom - high)) - lo;
+    crew.forEach(([dx, dy]) => {
+      const mx = dir > 0 ? x + back + dx : x - dx;
+      map(dir > 0 ? MINNOW : flip(MINNOW), mx, Math.max(0, Math.min(rows - 3, y + dy)), 'accent', 0.75, { kind: 'minnow' });
     });
   }
-  for (let n = 0; n < Math.min(7, f.bacteria || 0); n++) {  // a colony for each job that failed today: red, moving
-    const cx = Math.max(2, Math.min(cols - 3, (0.18 + 0.7 * hash(n, 12, 7)) * cols + Math.sin(t * 0.13 + n) * 3));
-    const cy = Math.max(2, Math.min(rows - 4, rows * (0.5 + 0.3 * hash(n, 13, 8)) + Math.sin(t * 0.11 + n * 2) * 1.5));
+  // a colony for each job that failed today: red, the one thing that moves on its own here. Rods (a lit capsule of
+  // dots, with a flagellum) and cocci (pairs of round cells) on half a row's pitch; every 8 s each one divides.
+  for (let n = 0; n < Math.min(7, f.bacteria || 0); n++) {
+    const cx = Math.max(5, Math.min(cols - 5, (0.12 + 0.76 * hash(n, 12, 7)) * cols + Math.sin(t * 0.13 + n) * 3));
+    const band = Math.max(0, bottom - top - 4);
+    const cy = Math.max(2, Math.min(rows - 3, top + 2 + (0.1 + 0.8 * hash(n, 13, 8)) * band + Math.sin(t * 0.11 + n * 2) * 1.2));
     const phase = (t / 8 + hash(n, 3, 3)) % 1, split = phase > 0.72 ? (phase - 0.72) / 0.28 : 0;  // it divides
-    const ang = t * 0.2 + n, ux = Math.cos(ang), uy = Math.sin(ang) * 0.5;
-    const rod = n % 2 === 0, count = rod ? 4 : 2, gap = split * 1.1;
-    for (let s = 0; s < count; s++) {
-      const half = s < count / 2 ? -1 : 1, along = (s - (count - 1) / 2) * 0.42 + half * gap / 2;
-      put(cx + ux * along, cy + uy * along, FINE, 'red', 0.9);
-      if (!rod) put(cx + ux * along + 0.18, cy + uy * along + 0.35, FINE, 'red', 0.65);
+    const ang = Math.sin(t * 0.2 + n) * 0.5, ux = Math.cos(ang), uy = Math.sin(ang) * 0.5, gap = split * 1.6;
+    const at = (along, v, kind, a) => put(cx + ux * along, cy + uy * along + v, kind, 'red', a);
+    if (n % 2 === 0) {
+      for (let s = 0; s < 6; s++) {
+        const along = (s - 2.5) * 0.85 + (s < 3 ? -gap / 2 : gap / 2);
+        at(along, -0.25, s === 0 ? DIM : BRIGHT, 0.9);
+        at(along, 0.25, DIM, 0.8);
+      }
+      for (let s = 1; s <= 3; s++) at(-2.6 - gap / 2 - s * 0.6, Math.sin(t * 3 + s + n) * 0.3, FINE, 0.7);
+    } else {
+      [-1, 1].forEach(side => {
+        const c = side * (0.75 + gap / 2);
+        at(c - 0.35, -0.25, side < 0 ? BRIGHT : DIM, 0.9); at(c + 0.35, -0.25, BRIGHT, 0.9);
+        at(c - 0.35, 0.25, DIM, 0.8); at(c + 0.35, 0.25, DIM, 0.8);
+      });
     }
-    parts.push({ kind: 'bacteria', box: [cx - 2, cy - 1, cx + 2, cy + 1] });
+    parts.push({ kind: 'bacteria', box: [cx - 5, cy - 2, cx + 5, cy + 2] });
   }
   if (f.eel) {  // the eel weaves back and forth just above the sand while the harness is being checked
     const lane = lap(47, t, cols - OW, EEL, 2.6), x = lane.x + OW, dir = lane.dir, base = rows - 3;
@@ -844,6 +861,16 @@ document.addEventListener('focusin', e => {
   if (t instanceof HTMLInputElement && t.matches('form.compose input[name="id"]')) { t.select(); picked = t; }
 });
 document.addEventListener('mouseup', e => { if (picked && e.target === picked) e.preventDefault(); picked = null; });
+// On a phone, Today's composer is its one line until it is used. It stays open while focus is in it, and for a moment
+// after focus leaves it empty, so a tap on Codex cloud (which takes no focus) lands before the controls fold away.
+document.addEventListener('focusin', e => {
+  const form = e.target.closest && e.target.closest('.c-strip form.compose');
+  if (form) { clearTimeout(form.shut); form.dataset.open = ''; }
+});
+document.addEventListener('focusout', e => {
+  const form = e.target.closest && e.target.closest('.c-strip form.compose');
+  if (form) form.shut = setTimeout(() => { if (!form.contains(document.activeElement)) delete form.dataset.open; }, 400);
+});
 document.addEventListener('change', e => {
   const form = e.target.closest && e.target.closest('form.compose');
   if (!form) return;

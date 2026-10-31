@@ -541,7 +541,11 @@ class _Job:
         self.handoff = self.state == "handoff" and not any(i.get("kind") == "web-launch" for i in self.items)
         self.mine = [s for s in self.stops if s.get("owner") == "app"]
         ended = self.meta.get("updated")
+        self.brief = str(self.meta.get("brief") or "").strip()
+        made = self.meta.get("created")
+        rerun = ctx["rerun"].get(self.brief) if self.brief else None
         self.failure = (self.state in _FAILED and where == "recent" and self.id not in ctx["followed"]
+                        and not (_number(rerun) and _number(made) and made <= rerun)
                         and (not _number(ended) or ctx["now"] - ended < _FAILURE_WINDOW))
         self.held = self.state == "held" and not self.items
         self.setup = bool(ctx["setup"]) and self.kind == "codex-cloud" and self.state in _PRE
@@ -564,8 +568,9 @@ class _Job:
         self.title = _title(self.meta, self.id)
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
-    def headline(self):
-        """The one line the list shows beside the title: what it needs when it needs you, else its state."""
+    def headline(self, runs=1):
+        """The one line the list shows beside the title: what it needs when it needs you, else its state; for a
+        failure repeated by `runs` runs of its brief, how many times."""
         if self.items:
             return _ask_line(self.items[0])[0]
         if self.handoff:
@@ -580,7 +585,8 @@ class _Job:
         elif self.row.get("paused"):
             parts.append("Paused")
         if self.failure or self.held:
-            return " · ".join(parts + [f"{self.word}: {detail}" if detail else self.word])
+            word = f"{self.word} {runs} times" if runs > 1 else self.word
+            return " · ".join(parts + [f"{word}: {detail}" if detail else word])
         if self.setup:
             return " · ".join(parts + ["Waits for Codex cloud to be set up"])
         if self.native:
@@ -636,15 +642,16 @@ class _Job:
             return go(page, "Set up Codex cloud", "cloud", "r")
         return ""
 
-    def item(self):
+    def item(self, runs=1):
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
-        and the one control it offers. In Needs you the ring is amber, or red for a failure."""
+        and the one control it offers. In Needs you the ring is amber, or red for a failure; a failure repeated by
+        `runs` runs of its brief is one row, for its newest run."""
         ctx = self.ctx
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
         cells = (f'{_ring("env" if self.native else self.state, hue)}<span class="name">{_text(self.title)}</span>'
-                 f'<span class="sub">{_text(self.headline())}</span>{_where(self.kind)}'
+                 f'<span class="sub">{_text(self.headline(runs))}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
                 else f'<div class="item">{cells}</div>')
@@ -697,8 +704,12 @@ def _native_card(ctx, item, jid=None, lead=True):
            f'Each waiting job starts by itself once it is (checked every 10 minutes).</p>'
            + (f'<p class="said mono">{_text(said)}</p>' if said else ""))
     if jid:
-        act = (_acts([_button(ctx, "/handoff", [("job", jid)], "Launch by hand instead", "a", "", "Launch by hand")])
-               if ctx["live"] else f'<p class="cli"><code>rh cloud handoff {_text(jid)}</code></p>')
+        choose = (f'<a class="btn primary" href="{_url(ctx, "/inbox/" + str(item["id"]))}" data-nav data-k="r">'
+                  f'{_ic("cloud", True)}Choose environment</a>')
+        act = (_acts([choose, _button(ctx, "/handoff", [("job", jid)], "Launch by hand instead", "a", "",
+                                      "Launch by hand")])
+               if ctx["live"] else f'<p class="cli"><code>rh config set cloud.env_id &lt;name or ID&gt;</code> · '
+               f'<code>rh cloud handoff {_text(jid)}</code></p>')
         return (f'<div class="ask-card"><p class="label">{_ring("env")}{_STATES["env"][0]}</p>'
                 f'<h3>The codex CLI does not list environment {env}</h3>{why}{act}</div>')
     if not ctx["live"]:
@@ -840,7 +851,7 @@ def _checks(view, ctx):
     inline = (' <span class="soft mono">' + _when(now - age, now, "tick", "") + '</span>') if counted else ""
     if mode == "on":
         word, dot = ("Checking, but not lately", "warn") if quiet else ("Checking automatically", "live")
-        btns = [_button(ctx, "/checks", [("on", "0")], "Pause", "", "quiet small", "Pause checks"),
+        btns = [_button(ctx, "/checks", [("on", "0")], "Pause checks", "", "quiet small", "Pause checks"),
                 _button(ctx, "/tick", [], "Check now", "t", "quiet small", "Check now")]
     elif mode == "paused":
         word, dot, more = "Checks paused", "warn", "The app starts and collects nothing until you resume or press Check once."
@@ -873,7 +884,7 @@ def _checks(view, ctx):
         retry = _when(route["next_try"], now, f"route:{name}:next", "retrying ", "retrying on the next check")
         pause = ""
         if live and not any(s.get("owner") == "app" for s in ctx["scopes"].get(f"route:{name}", [])):
-            pause = _popover(ctx, "/stop", [("route", name), ("pause", "on")], "Pause it", "",
+            pause = _popover(ctx, "/stop", [("route", name), ("pause", "on")], f"Pause {_text(_platform(name))}", "",
                              _field("Why? (optional)", "reason", placeholder="Paused from the app"),
                              f"Pause {_text(_platform(name))}", "quiet small danger",
                              f"No new job starts on {_text(_platform(name))} until you resume it.", "up left")
@@ -976,13 +987,30 @@ def _top(ctx, left, right=""):
     return f'<header class="top" data-region="top" data-still data-sig="{_sig(_still(body))}">{body}</header>'
 
 
+def _reruns(meta):
+    """For each brief that was run again, when the newest run that was run again was added: an older failed run of the
+    same brief is settled by it too, so Run again on a repeated failure's row settles every run in it."""
+    out = {}
+    for m in meta.values():
+        prior = meta.get(str(m.get("prior"))) if isinstance(m, dict) and m.get("prior") else None
+        brief = str(prior.get("brief") or "").strip() if isinstance(prior, dict) else ""
+        if brief and _number(prior.get("created")):
+            out[brief] = max(out.get(brief, prior["created"]), prior["created"])
+    return out
+
+
 def _needs(jobs, inbox, stops, ctx):
     """Everything that waits on you, once each and oldest first: a job that needs you (with its open items), the
-    app's own pause on no listed job, and an open item for no listed job. Today's Needs you, the band, the Inbox
-    badge and the Inbox all show this one list and its length, so they cannot disagree."""
-    out = []
+    app's own pause on no listed job, and an open item for no listed job. Runs of one brief that failed the same way
+    and need nothing else are one entry, its runs newest first. Today's Needs you, the top bar, the Inbox badge and
+    the Inbox all show this one list and its length, so they cannot disagree."""
+    out, repeats = [], {}
     for job in jobs:
         if job.group != "needs":
+            continue
+        same = (job.brief, _plain(job.row.get("detail"))) if job.failure and job.count == 1 and job.brief else None
+        if same in repeats:
+            repeats[same]["runs"].append(job)
             continue
         item = job.items[0] if job.items else None
         tab, icon = (_ask_kind(item) if item else ("launch", "launch") if job.handoff
@@ -990,7 +1018,16 @@ def _needs(jobs, inbox, stops, ctx):
         since = job.first if job.first != float("inf") else job.since()
         latest = max((i["created"] for i in job.items if _number(i.get("created"))), default=since)
         out.append({"key": f"job:{job.id}", "job": job, "item": item, "stop": None, "ask": job.headline(), "tab": tab,
-                    "icon": icon, "jid": job.id, "first": since, "created": latest})
+                    "icon": icon, "jid": job.id, "first": since, "created": latest, "runs": [job]})
+        if same:
+            repeats[same] = out[-1]
+    for entry in repeats.values():
+        if len(entry["runs"]) > 1:
+            runs = sorted(entry["runs"], key=lambda j: j.meta.get("updated") if _number(j.meta.get("updated")) else 0,
+                          reverse=True)
+            stamps = [j.since() for j in runs if _number(j.since())]
+            entry.update(runs=runs, job=runs[0], jid=runs[0].id, key=f"job:{runs[0].id}", ask=runs[0].headline(len(runs)),
+                         first=min(stamps, default=entry["first"]), created=max(stamps, default=entry["created"]))
     known = {j.id for j in jobs}
     attached = any(j.setup and j.group == "needs" for j in jobs)
     for item in inbox:
@@ -1040,7 +1077,7 @@ def _job_list(jobs, stop_rows, ctx):
         if job.group != "needs":
             groups[job.group].append(job.item())
     for entry in ctx["needs"]:
-        groups["needs"].append(entry["job"].item() if entry["job"] else stop_rows[entry["key"]] if entry["stop"]
+        groups["needs"].append(entry["job"].item(len(entry["runs"])) if entry["job"] else stop_rows[entry["key"]] if entry["stop"]
                                else _item_row(ctx, entry["item"]))
     out = []
     for key, heading in (("needs", "Needs you"), ("live", "Live"), ("next", "Up next"), ("ended", "Ended today"),
@@ -1263,6 +1300,20 @@ def _event(ev, now, kind):
     when = f'<span class="when-c mono">{_clock(ev["ts"], now)}</span>' if _number(ev.get("ts")) else "<span></span>"
     inner = f'{_dot(tone)}<p>{_text(text)}</p>{when}'
     return text, _row(f"ev:{ev.get('seq', '')}", inner, attrs=f' data-tone="{tone}"')
+
+
+_TEST = re.compile(r"""\s*(?:test|\[)\s+-([sfdex])\s+(?:'([^']+)'|"([^"]+)"|([^\s'"\]]+))\s*\]?\s*""")
+_LACKS = {"s": "is missing or empty", "f": "is missing or not a file", "d": "is missing or not a folder",
+          "e": "is missing", "x": "is missing or not executable"}
+
+
+def _found(cmd, code):
+    """What a failed check found, in words: a file test (test -s notes.md) names the file and what it lacked, and
+    anything else its exit code."""
+    m = _TEST.fullmatch(str(cmd))
+    if m and str(code) == "1":
+        return f"{m.group(2) or m.group(3) or m.group(4)} {_LACKS[m.group(1)]}"
+    return f"it exited with code {code}"
 
 
 def _checks_of(opened, spec, finished):
@@ -1491,11 +1542,20 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     failed = finished and state != "done" and state != "cancelled"
     # A failed job leads with the check that failed: what it ran and its exit code, before anything else.
     bad = next(((cmd, code) for passed, cmd, code in _checks_of(opened, spec, True) if passed is False), None)
-    if failed and bad:
-        what = "Its Done when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "Its command"
-        work.append(_region("j-fail", f'<p class="fail-k">{_ring(state)}{what} failed</p><p class="fail-c"><code>'
-                            f'{_text(bad[0])}</code><span class="exit mono">exit {_text(bad[1])}</span></p>', "section",
-                            "s-j-fail", ' aria-label="What failed"'))
+    runs = next((e["runs"] for e in ctx["needs"] if e.get("job") and jid in [j.id for j in e["runs"]]), [])
+    others = ""
+    if len(runs) > 1:
+        named = [f'<b class="mono">{_text(j.id)}</b>' if j.id == jid else
+                 f'<a class="mono" href="{_url(ctx, "/job/" + j.id)}" data-nav>{_text(j.id)}</a>' for j in runs]
+        others = f'<p class="fail-runs">Failed the same way {len(runs)} times: {" · ".join(named)}</p>'
+    if failed and (bad or others):
+        said_fail = ""
+        if bad:
+            what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"
+            said_fail = (f'<p class="fail-k">{_ring(state)}{what} failed: {_text(_found(bad[0], bad[1]))}</p>'
+                         f'<p class="fail-c"><code>{_text(bad[0])}</code><span class="exit mono">exit '
+                         f'{_text(bad[1])}</span></p>')
+        work.append(_region("j-fail", said_fail + others, "section", "s-j-fail", ' aria-label="What failed"'))
     said = _lead(spec)[1]
     if said:
         work.append(_region("j-brief", f'<div class="bubble">{_text(_reflow(said))}</div>', "section", "s-j-brief",
@@ -1612,12 +1672,14 @@ def _ib_row(ctx, entry, picked):
             else _url(ctx, "/"))
     created = entry["created"]
     age = _when(created, ctx["now"], f"age:{entry['key']}", short=True) if _number(created) else ""
-    sub = (f'<span class="mono">{_text(jid)}</span> · {_text(job.title) if job else "a job not listed here"}' if jid
+    head = job.title if job else entry["ask"]
+    sub = (f'{_text(entry["ask"])} · <span class="mono">{_text(jid)}</span>' if job else
+           f'<span class="mono">{_text(jid)}</span> · a job not listed here' if jid
            else "The app's own pause" if entry["stop"] else "The harness")
     current = ' aria-current="true"' if picked else ""
     # a job's entry wears the ring it wears on Today, so a state has one mark in both places
     mark = _ring(job.state, "red" if job.state in _FAILED else "amber") if job else _ic(entry["icon"])
-    inner = (f'<span class="ib-ic">{mark}</span><span class="ib-t">{_text(entry["ask"])}</span>'
+    inner = (f'<span class="ib-ic">{mark}</span><span class="ib-t">{_text(head)}</span>'
              f'<span class="ib-age mono num">{age}</span><span class="ib-s">{sub}</span>')
     link = (f'<a class="ib" href="{href}" data-nav{current}>{inner}</a>' if ctx["live"]
             else f'<div class="ib">{inner}</div>')
@@ -1863,6 +1925,7 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
            "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),
            "followed": {str(m.get("prior")) for m in meta.values() if isinstance(m, dict) and m.get("prior")},
+           "rerun": _reruns(meta),
            "others": [s for s in view.get("stops", []) if s.get("owner") != "app"
                       and not str(s["scope"]).startswith("job:")]}
     jobs = [_Job(row, where, ctx) for row, where in rows]

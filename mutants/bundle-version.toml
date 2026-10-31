@@ -1,0 +1,30 @@
+# The Mac app's version: each mutant brings back an Info.plist that does not say the harness's version, or drops the
+# build's check of it, and the named tests must catch it.
+
+[[mutant]]
+name = "the bundle gets no version, so PyInstaller writes 0.0.0"
+file = "desktop/rh-desktop.spec"
+find = '                 info_plist={"CFBundleShortVersionString": version, "CFBundleVersion": version})'
+replace = '                 info_plist={})'
+tests = ["tests.test_desktop.DesktopTest.test_the_mac_bundle_carries_the_harness_version"]
+
+[[mutant]]
+name = "the build number is a constant"
+file = "desktop/rh-desktop.spec"
+find = '"CFBundleVersion": version}'
+replace = '"CFBundleVersion": "1"}'
+tests = ["tests.test_desktop.DesktopTest.test_the_mac_bundle_carries_the_harness_version"]
+
+[[mutant]]
+name = "the Apple-silicon build does not check its Info.plist"
+file = ".github/workflows/build.yml"
+find = 'test "$GOT" = "$VER" || { echo "macos-arm64: Info.plist'
+replace = 'true || { echo "macos-arm64: Info.plist'
+tests = ["tests.test_desktop.DesktopTest.test_workflow_contract"]
+
+[[mutant]]
+name = "the Intel build does not check its Info.plist"
+file = ".github/workflows/build.yml"
+find = 'test "$GOT" = "$VER" || { echo "macos-x64: Info.plist'
+replace = 'true || { echo "macos-x64: Info.plist'
+tests = ["tests.test_desktop.DesktopTest.test_workflow_contract"]

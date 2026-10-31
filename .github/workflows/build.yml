@@ -41,6 +41,12 @@ jobs:
             echo "Unexpected signing status; expected ad-hoc signing" >&2
             exit 1
           fi
+      - name: Bundle version
+        run: |
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            GOT="$(plutil -extract "$key" raw -o - "dist/Research Harness.app/Contents/Info.plist" || true)"
+            test "$GOT" = "$VER" || { echo "macos-arm64: Info.plist $key is '$GOT', expected '$VER'" >&2; exit 1; }
+          done
       - run: hdiutil create -volname "Research Harness" -srcfolder "dist/Research Harness.app" -format UDZO -ov "ResearchHarness-${VER}-macos-arm64.dmg"
       - run: shasum -a 256 "ResearchHarness-${VER}-macos-arm64.dmg" > "ResearchHarness-${VER}-macos-arm64.dmg.sha256"
       - uses: actions/upload-artifact@v4
@@ -81,6 +87,12 @@ jobs:
             echo "Unexpected signing status; expected ad-hoc signing" >&2
             exit 1
           fi
+      - name: Bundle version
+        run: |
+          for key in CFBundleShortVersionString CFBundleVersion; do
+            GOT="$(plutil -extract "$key" raw -o - "dist/Research Harness.app/Contents/Info.plist" || true)"
+            test "$GOT" = "$VER" || { echo "macos-x64: Info.plist $key is '$GOT', expected '$VER'" >&2; exit 1; }
+          done
       - run: hdiutil create -volname "Research Harness" -srcfolder "dist/Research Harness.app" -format UDZO -ov "ResearchHarness-${VER}-macos-x64.dmg"
       - run: shasum -a 256 "ResearchHarness-${VER}-macos-x64.dmg" > "ResearchHarness-${VER}-macos-x64.dmg.sha256"
       - uses: actions/upload-artifact@v4

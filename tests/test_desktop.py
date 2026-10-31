@@ -73,6 +73,22 @@ class DesktopTest(unittest.TestCase):
                     continue
                 self.assertFalse(forbidden.intersection(m.split(".")[0] for m in modules), str(path))
 
+    def test_the_mac_bundle_carries_the_harness_version(self):
+        # v0.13.0's app said 0.0.0 in Finder and About: BUNDLE() got no version, so PyInstaller wrote its default.
+        # The spec runs here with PyInstaller's builders replaced by recorders.
+        from rh import __version__
+        bundles = []
+        built = lambda *args, **kwargs: types.SimpleNamespace(pure=[], scripts=[], binaries=[], datas=[])
+        names = {"SPECPATH": str(ROOT / "desktop"), "Analysis": built, "PYZ": built, "EXE": built,
+                 "COLLECT": built, "BUNDLE": lambda *args, **kwargs: bundles.append(kwargs)}
+        source = (ROOT / "desktop/rh-desktop.spec").read_text(encoding="utf-8")
+        with patch.object(sys, "platform", "darwin"):
+            exec(compile(source, "rh-desktop.spec", "exec"), names)
+        self.assertEqual(len(bundles), 1)
+        plist = bundles[0].get("info_plist") or {}
+        self.assertEqual((plist.get("CFBundleShortVersionString"), plist.get("CFBundleVersion")),
+                         (__version__, __version__))
+
     def test_workflow_contract(self):
         workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
         spec = (ROOT / "desktop/rh-desktop.spec").read_text(encoding="utf-8")
@@ -89,6 +105,10 @@ class DesktopTest(unittest.TestCase):
                      "shasum -a 256", "Get-FileHash -Algorithm SHA256",
                      ".sha256", "codesign -dv", "Signature=adhoc", "NotSigned"):
             self.assertIn(text, workflow)
+        # the built app's Info.plist is checked against the version, on both Macs
+        for arch in ("arm64", "x64"):
+            self.assertIn(f"""test "$GOT" = "$VER" || {{ echo "macos-{arch}: Info.plist""", workflow)
+        self.assertEqual(workflow.count("for key in CFBundleShortVersionString CFBundleVersion; do"), 2)
 
 
 if __name__ == "__main__":

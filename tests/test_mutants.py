@@ -25,7 +25,8 @@ class MutantsTest(unittest.TestCase):
             "import pathlib, sys, time\n"
             "scope = {}\n"
             "exec(pathlib.Path('value.py').read_text(), scope)\n"
-            "if sys.argv[1:] == ['slow']: time.sleep(10)\n"
+            "if sys.argv[1:] == ['fails']: sys.exit(1)\n"
+            "if sys.argv[1:] == ['stuck'] or sys.argv[1:] == ['slow'] and scope['IGNORED'] != 1: time.sleep(10)\n"
             "sys.exit(0 if scope['VALUE'] == 1 else 1)\n")
         subprocess.run(["git", "add", "value.py", "tests/run.py"], cwd=self.repo, check=True)
 
@@ -68,6 +69,15 @@ class MutantsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertEqual(result.stdout.splitlines(),
                          ["ERROR  missing", "ERROR  twice", "MUTANTS KILLED n=0/2"])
+
+    def test_tests_that_fail_or_hang_without_the_mutant_are_errors(self):
+        # A renamed or missing test fails on the clean tree; counting that as a kill gave a false 21/21.
+        result = self.run_mutants([self.entry(name="no test", tests=["fails"]),
+                                   self.entry(name="hangs", tests=["stuck"])], timeout=0.1)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.splitlines(), ["ERROR  no test", "ERROR  hangs", "MUTANTS KILLED n=0/2"])
+        self.assertIn("fail without the mutant", result.stderr)
+        self.assertIn("time out without the mutant", result.stderr)
 
     def test_timeout_is_killed(self):
         result = self.run_mutants([self.entry("IGNORED = 1", "IGNORED = 2", tests=["slow"])], timeout=0.1)

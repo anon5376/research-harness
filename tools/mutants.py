@@ -10,7 +10,14 @@ import tempfile
 import tomllib
 
 
-def run_mutant(repo, files, mutant, timeout):
+def _run_tests(copy, tests, timeout):
+    return subprocess.run([sys.executable, "-I", "-B", "tests/run.py", *tests], cwd=copy, timeout=timeout,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode
+
+
+def run_mutant(repo, files, mutant, timeout, passed=None):
+    """KILLED, SURVIVED, or ValueError. The named tests must pass on the unmutated copy first (once per list, cached
+    in `passed`): a renamed or missing test fails on its own, and that failure is not a kill."""
     relative = Path(mutant["file"])
     if relative.is_absolute() or ".." in relative.parts or relative not in files:
         raise ValueError("mutant file must be a tracked repository path")
@@ -28,6 +35,15 @@ def run_mutant(repo, files, mutant, timeout):
             destination = copy / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(source, destination)
+        if passed is None or tuple(tests) not in passed:
+            try:
+                clean = _run_tests(copy, tests, timeout)
+            except subprocess.TimeoutExpired:
+                raise ValueError("the named tests time out without the mutant") from None
+            if clean:
+                raise ValueError("the named tests fail without the mutant")
+            if passed is not None:
+                passed.add(tuple(tests))
         target = copy / relative
         original = target.read_bytes()
         needle = find.encode("utf-8")
@@ -35,12 +51,9 @@ def run_mutant(repo, files, mutant, timeout):
             raise ValueError("find must occur exactly once")
         target.write_bytes(original.replace(needle, replacement.encode("utf-8"), 1))
         try:
-            result = subprocess.run([sys.executable, "-I", "-B", "tests/run.py", *tests],
-                                    cwd=copy, timeout=timeout, stdout=subprocess.DEVNULL,
-                                    stderr=subprocess.DEVNULL)
+            return "KILLED" if _run_tests(copy, tests, timeout) else "SURVIVED"
         except subprocess.TimeoutExpired:
             return "KILLED"
-        return "KILLED" if result.returncode else "SURVIVED"
 
 
 def main(argv=None):
@@ -59,11 +72,11 @@ def main(argv=None):
             raise ValueError("list must contain at least one mutant")
         tracked = subprocess.run(["git", "ls-files", "-z"], cwd=repo, check=True, capture_output=True)
         files = [Path(os.fsdecode(p)) for p in tracked.stdout.split(b"\0") if p]
-        killed = 0
+        killed, passed = 0, set()
         for mutant in mutants:
             name = mutant.get("name", "<unnamed>") if isinstance(mutant, dict) else "<invalid>"
             try:
-                status = run_mutant(repo, files, mutant, args.timeout)
+                status = run_mutant(repo, files, mutant, args.timeout, passed)
             except (OSError, ValueError, KeyError, TypeError) as error:
                 status = "ERROR"
                 print(f"{name}: {error}", file=sys.stderr)

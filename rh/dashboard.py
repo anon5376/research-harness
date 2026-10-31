@@ -305,13 +305,14 @@ def _plain(detail):
     return _sentence(re.sub(r"\s*\(?pid \d+\)?", "", text))
 
 
-_NOT_AN_END = ("e.g.", "i.e.", "etc.", "vs.", "cf.")  # a sentence does not end on these
+_NOT_AN_END = ("e.g.", "i.e.", "etc.", "vs.", "cf.")  # a sentence does not end on these; "etc." does before a capital
 
 
 def _lead(meta):
     """A brief as its job's page shows it: the first sentence of its first paragraph, whole, for the heading, with the
     paragraph's line breaks read as spaces (briefs are often hard-wrapped), and the rest under it as written. The
-    paragraph ends at a blank line or a list item."""
+    paragraph ends at a blank line or a list item, and a number such as the "1." of a first list item ends no
+    sentence."""
     text = str((meta or {}).get("brief") or "").strip()
     if not text:
         return "", ""
@@ -319,7 +320,10 @@ def _lead(meta):
     para = text[:stop.start()] if stop else text
     end = len(para)
     for found in re.finditer(r"[.!?](?=\s|$)", para):
-        if para[:found.end()].split()[-1].lstrip("(\"'").lower() not in _NOT_AN_END:
+        word = para[:found.end()].split()[-1].lstrip("(\"'").lower()
+        if word[:-1].isdigit():
+            continue
+        if word not in _NOT_AN_END or word == "etc." and para[found.end():].lstrip()[:1].isupper():
             end = found.end()
             break
     head = " ".join(para[:end].split())

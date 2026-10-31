@@ -527,3 +527,17 @@ file = "rh/dashboard.py"
 find = '_NOT_AN_END = ("e.g.", "i.e.", "etc.", "vs.", "cf.")'
 replace = '_NOT_AN_END = ()'
 tests = ["tests.test_dashboard.DashboardTest.test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence"]
+
+[[mutant]]
+name = "a first list item's number ends the heading again"
+file = "rh/dashboard.py"
+find = 'if word[:-1].isdigit():'
+replace = 'if False:'
+tests = ["tests.test_dashboard.DashboardTest.test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence"]
+
+[[mutant]]
+name = "etc. before a capital ends no sentence again"
+file = "rh/dashboard.py"
+find = ' or word == "etc." and para[found.end():].lstrip()[:1].isupper()'
+replace = ''
+tests = ["tests.test_dashboard.DashboardTest.test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence"]

@@ -500,13 +500,29 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(re.findall(r'<div class="route"><p>([^:<]*):', home), ["Codex cloud"])
         needs = re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0)
         self.assertIn('data-key="need:10"', needs)
-        self.assertIn("Make environment research-harness visible to the codex CLI", needs)
+        self.assertIn("Choose an environment the codex CLI lists", needs)
+        self.assertIn("It does not list research-harness, so cloud jobs wait", text(needs))
+        self.assertIn("rh doctor", text(needs))
+        self.assertRegex(needs, r'<a class="btn gbtn" href="/inbox/10\?t=[^"]*" data-nav data-k="r">')
         self.assertNotIn("cloud-job", needs)
         self.assertEqual(group(home, "cloud-job"), ["next"])
-        self.assertIn("Waits for the codex CLI to see its environment", item(home, "cloud-job"))
+        # One name for a job held for its environment, wherever it shows.
+        self.assertIn("Waiting for environment", item(home, "cloud-job"))
+        self.assertNotIn("Ready", item(home, "cloud-job"))
         page = dashboard.render(opened(view, "cloud-job"), NOW, token=TOKEN)
         self.assertEqual([f["fields"]["job"] for f in Forms(page).forms if f["action"] == "/handoff"], ["cloud-job"])
         self.assertIn("Error: environment 'research-harness' not found", text(page))
+        head = re.search(r'<p class="jd-state".*?</p>', page, re.S).group(0)
+        props = re.search(r'<section class="j-props".*?</section>', page, re.S).group(0)
+        for part in (head, props):
+            self.assertIn("Waiting for environment", text(part))
+            self.assertNotIn("Ready", text(part))
+        self.assertEqual(dashboard._plain("launch deferred: the codex CLI cannot see the environment"),
+                         "Waiting for environment")
+        form = re.search(r'<form method="post" action="/setup".*?</form>', inbox(view, 10), re.S).group(0)
+        self.assertIn('placeholder="e.g. research-harness-cli"', form)
+        self.assertIn("letters, digits and", text(form))
+        self.assertIn(">Use environment</button>", form)
         self.assertNotIn('data-region="j-receipt"', page)
         self.assertNotIn('data-region="j-now"', page)
         self.assertIn('action="/setup"', inbox(view, 10))
@@ -739,7 +755,7 @@ class DashboardTest(unittest.TestCase):
                                    (".s-g-live", 'class="s-g-live group"'), (".no-jobs", 'class="empty no-jobs"'),
                                    ("dataset.say", " data-say="), ("#pal", 'id="pal"'), ("[data-pal]", " data-pal"),
                                    ("dataset.press", " data-press="), ("[data-tank]", " data-tank"),
-                                   ("dataset.creatures", " data-creatures="), ("[data-cycle]", " data-cycle"),
+                                   ("dataset.creatures", " data-creatures="),
                                    ("[data-clock]", " data-clock"), ("'data-still'", " data-still"),
                                    ("'.ibx'", 'class="page ibx"'), ("dataset.where", " data-where="),
                                    ("dataset.kind", " data-kind="), ("'.n'", 'class="n num"')):
@@ -862,27 +878,24 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(rings["done"], item(page, "finished-job"))
 
     def test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing(self):
-        # A seat drawn teal while its job waits on you or amber while it works, an idle seat drawn lit, a seat left
-        # out of the water, a tank in the snapshot (which runs no script), or a tank that ignores reduced motion, must
-        # fail.
+        # A seat drawn teal while its job waits on you or amber while it works, a seat left out of the sea or out of
+        # the list a screen reader gets, a role still wearing its label ("Testing: ..."), a tank in the snapshot (which
+        # runs no script), or a tank that ignores reduced motion, must fail.
         view = live_view()
-        view["seats"] = [{"name": name, "role": f"The {name} seat", "route": "codex-cloud", "model": "m-1"}
+        view["seats"] = [{"name": name, "role": f"Seat: the {name} seat", "route": "codex-cloud", "model": "m-1"}
                          for name in ("asks", "works", "rests")]
         view["live"].append({"id": "busy-job", "state": "running", "paused": False, "detail": "", "external_id": None})
-        view["meta"] = {"live-job": {"seat": "asks"}, "busy-job": {"seat": "works"}}
+        view["meta"] = {"live-job": {"seat": "asks", "brief": "Tally the slow tests."}, "busy-job": {"seat": "works"}}
         page = dashboard.render(view, NOW, token=TOKEN)
         found = re.search(r'<canvas class="tank-c" data-tank data-creatures="([^"]*)"', page)
         tank = {c["name"]: c for c in json.loads(html.unescape(found.group(1)))}
         self.assertEqual({name: c["tone"] for name, c in tank.items()},
                          {"asks": "amber", "works": "accent", "rests": "faint"})
-        self.assertLess(tank["rests"]["alpha"], tank["works"]["alpha"])
-        self.assertLess(tank["rests"]["r"], tank["asks"]["r"])
-        self.assertLess(tank["asks"]["r"], tank["works"]["r"])
-        rail = text(re.search(r'<section class="s-r-seats".*?</section>', page, re.S).group(0))
-        for words in ("waiting on you", "working", "idle"):
-            self.assertIn(words, rail)
-        self.assertNotIn("The rests seat", rail)
-        self.assertIn('title="The rests seat"', page)
+        reef = re.search(r'<aside class="reef".*?</aside>', page, re.S).group(0)
+        said = re.findall(r"<li>(.*?)</li>", re.search(r'<ul class="sr">.*?</ul>', reef, re.S).group(0))
+        self.assertEqual(said, ["asks, waiting on you on live-job: The asks seat", "works, working on busy-job: The works "
+                                "seat", "rests, idle: The rests seat"])
+        self.assertNotIn("Tally the slow tests", reef)
         self.assertNotIn("<canvas", dashboard.render(view, NOW))
         self.assertIn("no seats.toml", text(dashboard.render(live_view(), NOW, token=TOKEN)))
         # Under reduced motion the tank draws one still frame and never starts its animation loop.
@@ -891,33 +904,38 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("if (calm.matches) { draw(", tank_code)
         self.assertLess(tank_code.index("if (calm.matches) { draw("), tank_code.index("requestAnimationFrame("))
 
-    def test_the_band_sea_life_counts_what_the_page_shows(self):
-        # A fish, germ or plankton count that drifts from the jobs it stands for, an eel that swims while checks are
-        # paused or stale, an octopus that stays calm while something needs you, a harness item without its octopus,
-        # or a tank that keeps drawing in a hidden tab or past about 20 frames a second, must fail.
+    def test_the_sea_life_counts_what_the_page_shows(self):
+        # A fish, school, bacteria or plankton count that drifts from the jobs it stands for, an eel that swims while
+        # checks are paused or stale, an octopus that stays calm while something needs you, a harness item without
+        # its octopus, or a tank that keeps drawing in a hidden tab or past about 20 frames a second, must fail.
         def life(view):
             page = dashboard.render(view, NOW, token=TOKEN)
             found = re.search(r'<canvas class="tank-c" data-tank data-creatures="[^"]*" data-fauna="([^"]*)" '
                               r'data-region="water"', page)
-            return json.loads(html.unescape(found.group(1)))
+            return json.loads(html.unescape(found.group(1))), page
         view = live_view()
         view["recent"] += [{"id": f"ok-{n}", "state": "done", "paused": False, "detail": "", "external_id": None}
                            for n in range(3)]
         view["not_started"].append({"id": "next-job", "state": "ready", "paused": False, "detail": "waiting",
                                     "external_id": None})
-        got = life(view)
-        self.assertEqual((got["fish"], got["germs"], got["plankton"]), (4, 1, 1))  # finished-job + 3; broke-job
+        view["live"].append({"id": "swim-job", "state": "running", "paused": False, "detail": "", "external_id": None})
+        got, page = life(view)
+        live = re.search(r'<section class="s-g-live group".*?</section>', page, re.S).group(0)
+        self.assertEqual(got["fish"], live.count('<li class="row"'))
+        self.assertGreater(got["fish"], 0)
+        self.assertEqual((got["school"], got["bacteria"], got["plankton"]), (4, 1, 1))  # finished-job + 3; broke-job
         self.assertTrue(got["eel"])
         self.assertEqual(got["octopus"]["tone"], "amber")
         self.assertTrue(got["floor"])
-        self.assertFalse(life({**view, "checks": {"mode": "paused", "pid": None, "failed": None}})["eel"])
-        self.assertFalse(life({**view, "supervisor": {"pid": 1, "age_s": dashboard._STALE + 1}})["eel"])
-        calm = {**full_view(), "can_add": True, "inbox": [], "stops": [], "recent": [], "not_started": []}
-        quiet = life(calm)
-        self.assertEqual((quiet["fish"], quiet["germs"], quiet["octopus"]["tone"]), (0, 0, "faint"))
+        self.assertFalse(life({**view, "checks": {"mode": "paused", "pid": None, "failed": None}})[0]["eel"])
+        self.assertFalse(life({**view, "supervisor": {"pid": 1, "age_s": dashboard._STALE + 1}})[0]["eel"])
+        calm = {**full_view(), "can_add": True, "inbox": [], "stops": [], "recent": [], "not_started": [], "live": []}
+        quiet = life(calm)[0]
+        self.assertEqual((quiet["fish"], quiet["school"], quiet["bacteria"], quiet["octopus"]["tone"]),
+                         (0, 0, 0, "faint"))
         crowd = {**view, "recent": [{"id": f"d-{n}", "state": "done", "paused": False, "detail": "",
                                      "external_id": None} for n in range(40)]}
-        self.assertEqual(life(crowd)["fish"], dashboard._SCHOOL)
+        self.assertEqual(life(crowd)[0]["school"], dashboard._SCHOOL)
         # The harness's own Inbox item is the octopus's; an item on a job keeps its jellyfish.
         alone = {**view, "inbox": view["inbox"] + [UNSEEN]}
         mine = re.search(r'<div class="q-head"><canvas[^>]*>', inbox(alone, 10)).group(0)
@@ -931,8 +949,55 @@ class DashboardTest(unittest.TestCase):
         self.assertLess(loop.index("if (document.hidden || !seen) return;"), loop.index("requestAnimationFrame(loop)"))
         self.assertIn("document.addEventListener('visibilitychange', go)", tank_code)
         self.assertIn("new IntersectionObserver", tank_code)
-        self.assertNotIn("ctx.stroke()", tank_code, "the grid is the canvas's CSS background, not drawn each frame")
-        self.assertIn("background-size: 8px 11px", dashboard.STYLE.split(".tank-c {", 1)[1].split("}", 1)[0])
+        # The water is plain: no grid behind the creatures.
+        self.assertNotIn("background", dashboard.STYLE.split(".tank-c {", 1)[1].split("}", 1)[0])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_sea_draws_each_creature_whole(self):
+        # A creature missing from the sea it is counted in, a dot or sprite cut by the tank's edge, two seats'
+        # jellyfish on top of each other, a dot map whose rows differ in length, or a sea that draws the same dots at
+        # every moment, must fail. The sea's drawing code touches no page, so node runs it as the browser would.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <sea>"):dashboard.SCRIPT.index("// </sea>")]
+        probe = block + """
+const spec = ['backend', 'cli', 'app', 'testing', 'design', 'lead'].map((name, k) =>
+  ({ name, tone: ['faint', 'accent', 'amber'][k % 3], fx: 0.5, fy: 0.5, sp: 1 }));
+const fauna = { fish: 3, school: 5, bacteria: 2, plankton: 2, eel: true, octopus: { tone: 'amber' }, floor: true };
+const out = [];
+for (const [W, H] of [[320, 760], [248, 700], [390, 112]]) {
+  const P = seaPitch(W, H, spec.length, true), cols = Math.floor(W / P), rows = Math.floor(H / (P * LATTICE));
+  for (const t of [0, 2.7, 9.4, 31.1, 77.7]) {
+    const { dots, parts } = seaDots(spec, fauna, cols, rows, t);
+    const outside = dots.filter(d => d[2] !== FINE && (d[0] < 0 || d[1] < 0 || d[0] >= cols || d[1] >= rows)).length;
+    out.push({ W, H, cols, rows, t, parts, outside, first: dots.slice(0, 60) });
+  }
+}
+const one = seaDots([spec[0]], null, 40, 20, 3);
+console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.parts }));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        for name, rows in got["maps"].items():
+            self.assertEqual(len({len(row) for row in rows}), 1, name)
+        self.assertEqual([p["kind"] for p in got["alone"]], ["jelly"])  # a job's head: its seat, nothing else
+        for frame in got["out"]:
+            kinds = [p["kind"] for p in frame["parts"]]
+            with self.subTest(size=(frame["W"], frame["H"]), t=frame["t"]):
+                self.assertEqual(frame["outside"], 0)
+                self.assertEqual((kinds.count("jelly"), kinds.count("octopus"), kinds.count("plankton")), (6, 1, 2))
+                if frame["rows"] > 30:  # the reef has the whole sea; a phone's strip, the seats and the octopus
+                    self.assertEqual([kinds.count(k) for k in ("fish", "minnow", "bacteria", "eel")], [3, 5, 2, 1])
+                else:
+                    self.assertEqual([kinds.count(k) for k in ("fish", "minnow", "bacteria", "eel")], [0, 0, 0, 0])
+                for part in frame["parts"]:
+                    if part["kind"] in ("jelly", "fish", "minnow", "octopus", "eel"):
+                        x0, y0, x1, y1 = part["box"]
+                        self.assertTrue(0 <= x0 and 0 <= y0 and x1 <= frame["cols"] and y1 <= frame["rows"], part)
+                boxes = [part["box"] for part in frame["parts"] if part["kind"] == "jelly"]
+                for i, a in enumerate(boxes):
+                    for b in boxes[i + 1:]:
+                        self.assertFalse(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3], (a, b))
+        self.assertGreater(len({json.dumps(f["first"]) for f in got["out"] if f["W"] == 320}), 1)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):
@@ -1104,6 +1169,22 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("exit 2", error)
         self.assertIn("line 30", error)
         self.assertNotIn("line 18\n", error)  # only where it stopped: the last lines
+        # A failed job's page leads with the check that failed, its command and its exit code, before its brief; a
+        # done one has no such block, and a finished head drops the Output count (the fold below says it).
+        fail = re.search(r'<section class="s-j-fail".*?</section>', body, re.S).group(0)
+        self.assertLess(body.index('class="s-j-fail"'), body.index('class="s-j-brief"'))
+        words = lambda h: html.unescape(re.sub(r"<[^>]+>", " ", h)).split()  # noqa: E731
+        self.assertEqual(words(fail), ["Its", "command", "failed", "sh", "run.sh", "exit", "2"])
+        broke["open"]["receipt"]["checks"] = [{"cmd": "sh run.sh", "exit": 0}, {"cmd": "notes.md exists", "exit": 1}]
+        fail = re.search(r'<section class="s-j-fail".*?</section>', dashboard.render(broke, NOW, token=TOKEN), re.S)
+        self.assertEqual(words(fail.group(0)), ["Its", "Done", "when", "check", "failed", "notes.md", "exists",
+                                                       "exit", "1"])
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertNotIn('class="s-j-fail"', page)
+        self.assertNotIn('<span class="pg-k">Output</span>', page)
+        # In the Inbox a failed job wears the red ring it wears on Today.
+        row = re.search(r'<li class="ib-li" data-key="job:broke-job".*?</li>', inbox(live_view()), re.S).group(0)
+        self.assertIn('<svg class="st t-red"', row)
         short = opened(live_view(), "broke-job", kind="local-shell")
         short["open"]["log"] = "ls: docs/: No such file or directory"
         body = pane(dashboard.render(short, NOW, token=TOKEN))
@@ -1131,73 +1212,29 @@ class DashboardTest(unittest.TestCase):
                                     "data": {"kind": "local-shell"}}]
         self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
 
-    def test_jellyfish_stay_inside_their_band(self):
-        # A creature that rises out of the band and wraps round, or whose centre is not held a body's length from
-        # every edge, must fail.
-        code = dashboard.SCRIPT[dashboard.SCRIPT.index("  function creature("):]
-        code = code[:code.index("\n  }\n")]
-        self.assertNotIn("% span", code)
-        self.assertRegex(code, r"const cy = clamp\([^;]*, y0 \+ 1 \+ up, y1 - 1 - down\);")
-        self.assertRegex(code, r"const cx = clamp\([^;]*, x0 \+ 1 \+ side, x1 - 1 - side\);")
-        self.assertIn("const { box: [x0, y0, x1, y1], fit, held, tall, slot } = at;", code)
-        self.assertIn("const fit = Math.max(0.3, scale(c, box));", dashboard.SCRIPT)
-
-    def test_jellyfish_swim_beside_the_composer_not_behind_it(self):
-        # A composer the water does not know is solid, a creature that may swim behind it, one sized for the whole
-        # band instead of its own water, or a side's seats piled on one spot or given equal room whatever their
-        # heights, must fail.
-        today = dashboard.render(live_view(), NOW, token=TOKEN)
-        self.assertRegex(today, r'<form class="compose composer"[^>]* data-solid>')
-        code = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank("):]
-        code = code[:code.index("\n}\n")]
-        self.assertIn("const el = $('[data-solid]', host);", code)
-        # The water beside the composer and above it ends two cells short of it.
-        self.assertIn("return [Math.floor((b.left - box.left) / CW) - 2, Math.ceil((b.right - box.left) / CW) + 2,\n"
-                      "      Math.floor((b.top - box.top) / CH) - 2];", code)
-        # Each side's water is the lane beside the composer and the strip above it, never the composer itself.
-        self.assertIn("const water = s && [[[0, 0, Math.max(0, s[0]), rows - floor], [0, 0, half, top]],\n"
-                      "      [[Math.min(cols, s[1]), 0, cols, rows - floor], [half, 0, cols, top]]];", code)
-        self.assertIn("const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));\n    stack(at);\n"
-                      "    spec.forEach((c, k) => creature(c, k, t, at[k]));", code)
-        self.assertIn("const box = held ? pick : [0, 0, cols, rows - floor];", code)
-        self.assertIn("const fit = Math.max(0.3, scale(c, box));", code)
-        # Down a lane, each gets room in proportion to its height.
-        self.assertIn("p.slot = p.tall ? (before + p.h / 2) / total : (i + 0.5) / here.length;", code)
-        self.assertIn("const ay = held && tall ? y0 + slot * (y1 - y0) - (down - up) / 2 : c.fy * rows;", code)
-        # The size it is drawn at leaves room for its bell and its arms' sway, which `side` measures.
-        self.assertIn("(x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64)", code)
-        self.assertIn("side = Math.max(rx + 2, rx * 0.86 + L * 0.32 + 1)", code)
-
-    def test_side_lanes_hold_a_big_jellyfish_at_1440_and_1100(self):
-        # A composer so wide that the open water beside it is under 18 cells at 1440 or 1100 px, or a lane in which
-        # a waiting seat's jellyfish is drawn under 0.75 of its size at 1440, must fail. The widths are worked out from
-        # the stylesheet: the sidebar, the rail (shown above 1180 px), the pane's right margin and border, and the
-        # composer's clamp.
-        style, script = dashboard.STYLE, dashboard.SCRIPT
-        root = style.split(":root", 1)[1].split("}", 1)[0]
-        var = {k: int(v) for k, v in re.findall(r"--(side|rail|lane): (\d+)px;", root)}
-        pane = style.split("\n.pane {", 1)[1].split("}", 1)[0]
-        right = (int(re.search(r"margin: \d+px (\d+)px", pane).group(1))
-                 + 2 * int(re.search(r"border: (\d+)px", pane).group(1)))
-        clamp = r"\.tank-in \{[^}]*width: clamp\((\d+)px, calc\(100% - 2 \* var\(--lane\)\), (\d+)px\);"
-        lo, hi = map(int, re.search(clamp, style).groups())
-        narrow = style.split("@media (max-width: 1180px) {", 1)[1]
-        self.assertIn(".mc, .jd, .ibx { grid-template-columns: minmax(0, 1fr); }", narrow.split("\n}", 1)[0])
-        cw = int(re.search(r"const CW = (\d+),", script).group(1))
-        self.assertIn("return [Math.floor((b.left - box.left) / CW) - 2,", script)
-        for width, rail in ((1440, var["rail"]), (1100, 0)):
-            with self.subTest(width=width):
-                band = width - var["side"] - rail - right
-                composer = min(max(lo, band - 2 * var["lane"]), hi, band - 48)
-                lane = int((band - composer) / 2 // cw) - 2
-                self.assertGreaterEqual(lane, 18)
-                if width == 1440:
-                    self.assertEqual(band, 810)  # as measured in the browser
-                    seat = dashboard._creature("seat", "amber", 0)  # a seat waiting on you
-                    r, length = seat["r"], seat["len"]
-                    fit = min(1, (lane - 6) / (r * 2.12), (lane - 4) / (r * 1.82 + length * 0.64))
-                    self.assertGreaterEqual(fit, 0.75)
-        self.assertIn("(x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64)", script)
+    def test_today_opens_on_what_needs_you(self):
+        # Anything but the one-line composer between the top bar and Needs you (a band, a headline, the sea), a
+        # composer taller than one line before you type, the sea anywhere but beside the list (or over it on a phone),
+        # or a first Needs you row below the middle of a 1440 x 900 window, must fail. The heights come from the
+        # stylesheet.
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        center = page[page.index('<div class="center">'):page.index('<aside class="reef"')]
+        ahead = center[:center.index('<section class="s-g-needs group"')]
+        self.assertNotIn("<canvas", center)
+        self.assertEqual(re.findall(r'<section class="([^"]+)"', ahead), ["c-strip", "jobs"])
+        self.assertIn('<textarea class="c-text" id="brief" name="brief" rows="1"', ahead)
+        self.assertRegex(page, r'</div><aside class="reef" aria-label="Who is working"><canvas class="tank-c"')
+        style = dashboard.STYLE
+        rule = lambda sel: style.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        px = lambda sel, prop: int(re.search(prop + r": (\d+)px", rule(sel)).group(1))  # noqa: E731
+        self.assertIn("height: 30px", rule(".composer textarea.c-text"))
+        self.assertRegex(rule(".compose.composer"), r'grid-template-areas: "text row" "cmd cmd"')
+        line = max(30, px(".send", "height")) + 2 * px(".compose.composer", "padding") + 2
+        top = px(".top", "height") + 1 + 2 * px(".c-strip", "padding") + line + 1
+        self.assertLess(top + px(".group .head", "height"), 450)
+        self.assertIn("--reef: 320px;", style)
+        phone = style.split("@media (max-width: 860px) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".reef { order: -1; position: relative; height: 112px;", phone)
 
     def test_a_running_jobs_cut_log_says_last_lines(self):
         # A running job whose page holds only the end of its log, shown as if it were all of it, or a whole log
@@ -1275,36 +1312,6 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(".clip.whole::after, .clip.open::after { display: none; }", dashboard.STYLE)
         self.assertIn("if (m) { more(m); return; }", dashboard.SCRIPT)
         self.assertIn("box.style.height = open ? box.scrollHeight + 'px' : '';", dashboard.SCRIPT)
-
-    def test_the_rail_says_who_works_without_repeating_the_list(self):
-        # A seat that repeats its job's title or its own name, or a Codex cloud section that lists the jobs again,
-        # must fail.
-        view = live_view()
-        view["seats"] = [{"name": "testing", "role": "Testing: the test runner", "route": "codex-cloud", "model": "m-1"},
-                         {"name": "docs", "role": "the guides", "route": "codex-cloud", "model": "m-1"},
-                         {"name": "backend", "role": "Back end: the supervisor", "route": "codex-cloud", "model": "m-1"}]
-        view["meta"] = {jid: {"kind": "codex-cloud"} for jid in ("live-job", "web-job", "queued-job", "finished-job",
-                                                                   "broke-job")}
-        view["meta"]["live-job"].update(seat="backend", brief="Tally the slow tests.")
-        page = dashboard.render(view, NOW, token=TOKEN)
-        seats = re.search(r'<section class="s-r-seats".*?</section>', page, re.S).group(0)
-        self.assertIn('<span class="i-m mono">live-job</span>', seats)
-        self.assertNotIn("Tally the slow tests", seats)
-        self.assertIn('title="The test runner"', seats)
-        self.assertNotIn("Testing:", seats)
-        self.assertIn('title="The guides"', seats)
-        self.assertNotIn('<span class="i-m">The guides</span>', seats, "an idle seat is one line")
-        self.assertNotIn("supervisor", seats)
-        cloud = re.search(r'<section class="s-r-cloud".*?</section>', page, re.S).group(0)
-        self.assertEqual(cloud.count('<p class="r-sum">'), 1)
-        self.assertNotIn('class="card"', cloud)
-        for jid in ("live-job", "web-job", "queued-job", "finished-job", "broke-job"):
-            self.assertNotIn(jid, cloud)
-        # The one to launch by hand comes first; live-job waits on a question, but it is still running.
-        line = text(re.search(r'<p class="r-sum">.*?</p>', cloud, re.S).group(0))
-        self.assertEqual(line, "1 to launch by hand · 1 running · 1 on hold · 1 failed · 1 ended today")
-        self.assertIn('<span class="n num">5</span>', cloud)
-        self.assertRegex(cloud, r'<a href="/inbox\?t=[^"]*" data-nav><span class="num">1</span> to launch by hand</a>')
 
     def test_a_finished_jobs_page_has_a_muted_meter_and_a_dim_seat(self):
         # A time meter coloured as a verdict, a finished job's page with its jellyfish drawn amber or teal, or a

@@ -1,9 +1,9 @@
 // The client for the live page, served same-origin at /app.js. It polls the page it shows, swaps only what changed
 // (FLIP for rows that move between groups), follows app links without reloading, posts forms with fetch and says what
-// happened in a toast, and adds the keyboard and the ⌘K palette. It also draws the tank: each seat as an ASCII
-// jellyfish on a faint character grid, with fish, germs, plankton, an eel and an octopus that count what the page
-// shows. Everything that moves stops under prefers-reduced-motion; the tank and the prompt cycle read it when the page
-// loads, so a change while the page is open takes a reload.
+// happened in a toast, and adds the keyboard and the ⌘K palette. It also draws the sea: each seat as a jellyfish of
+// dots, with fish, bacteria, plankton, an eel and an octopus that count what the page shows. Everything that moves
+// stops under prefers-reduced-motion; the sea reads it when the page loads, so a change while the page is open takes a
+// reload.
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -41,37 +41,234 @@ const busy = el => !!((el.matches && el.matches('dialog[open]'))
   || (el.contains(document.activeElement) && document.activeElement.matches('input, textarea')));
 const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' ');
 
-// ───────── the tank: seats drawn as ASCII jellyfish on the character grid ─────────
-const CW = 8, CH = 11, FONT = '10px "Geist Mono", ui-monospace, monospace';
-const RAMP = [' ', '.', "'", ':', ';', 't', 'o', '%', 'S', 'X', '8', '@'];
-const TONE = { accent: [95, 207, 185], amber: [226, 166, 84], faint: [159, 176, 212] };
-const T0 = performance.now() - 6000;  // one clock for every tank, so a redrawn band carries on where it was
+// ───────── the sea: dot creatures on one lattice of tall cells ─────────
+// Drawn the way 0xSero's ascii-art skill draws dot art: every creature is dots on one fixed grid of cells about 1.9
+// times as tall as wide, in two tones (a big bright dot, and a small dim one nudged down), lit from the upper left, and
+// red only on what moves. Plankton and bacteria are a finer grain, a different substance from the creatures.
+// Each creature stands for something the page shows: a jellyfish per seat (teal while it works, amber while it waits
+// on you, dim while idle), a fish per job running, a school of small fish for the jobs done today, a colony of
+// bacteria per job that failed today, plankton for the jobs up next, the eel while the harness is being checked, and
+// the octopus on the sea floor, amber while anything needs you.
+// <sea> From here to </sea> the code touches no page, so a test runs it in node.
 const FRAME = 46;  // ms between frames: about 20 a second on a 60 or 120 Hz screen
-// The rest of the sea, as glyphs on the same grid: a fish per job done today, a germ per job that failed today, an
-// eel while the harness is being checked, and the octopus on the sea floor (amber while anything needs you).
-const FISH = [['><>', '<><'], ['><(°>', '<°)><'], ['><((°>', '<°))><']];
-const GERM = ['o~', '(=)~', 'oo', '(==)~', 'o'];
-const OCTO = ['  .---.  ', ' ( o o ) ', '  )   (  '];
-const BLINK = ' ( - - ) ';
-const ARMS = [[' //|||\\\\ ', ' ~ ~ ~ ~ '], [' \\\\|||// ', '  ~ ~ ~ ~']];
-const SEA = { fish: [140, 214, 198], germ: [229, 132, 120], sand: [150, 160, 150], weed: [95, 160, 140] };
+const LATTICE = 1.887;  // a cell's height over its width, the skill's 19 x 36 lattice
+const BRIGHT = 2, DIM = 1, RING = 3, FINE = 0;  // a big dot, a small one, an eye (a big dot with a hollow), a speck
+const TONES = { accent: [95, 207, 185], amber: [226, 166, 84], faint: [159, 176, 212], red: [239, 107, 115],
+  sand: [150, 160, 150], weed: [95, 160, 140] };
+// Dot maps: '#' a bright dot, '.' a dim one, 'o' an eye, anything else water. Fish face right; a map is mirrored to
+// swim left.
+const FISH = ['#.  .###.  ', ' #.######o#', '#.  .###.  '];
+const MINNOW = ['#. .##.', ' .####o', '#. .##.'];
+const OCTOPUS = ['  .#####.  ', ' ##.....## ', ' #.o...o.# ', ' .#######. '];
+const JW = 15, JH = 12;  // a jellyfish's box in cells: its bell, its tentacles and its seat's name under them
+const OW = 14, OH = 8;  // the octopus's box: head and arms
+const EEL = 14;  // the eel's length in cells
+const SCHOOL = [[0, 0], [-9, -3], [-9, 3], [-18, 0], [-18, -6], [-18, 6], [-27, -3], [-27, 3], [-36, 0]];
 const hash = (a, b, c) => {
   let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1274126177);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 };
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-// slow value noise, so the texture of a bell shimmers instead of flickering
-const noise = (x, y, z) => {
-  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z);
-  const xf = x - xi, yf = y - yi, zf = z - zi;
-  const u = xf * xf * (3 - 2 * xf), v = yf * yf * (3 - 2 * yf), w = zf * zf * (3 - 2 * zf);
-  const l = (a, b, t) => a + (b - a) * t;
-  const c = (dx, dy, dz) => hash(xi + dx, yi + dy, zi + dz);
-  return l(l(l(c(0, 0, 0), c(1, 0, 0), u), l(c(0, 1, 0), c(1, 1, 0), u), v),
-    l(l(c(0, 0, 1), c(1, 0, 1), u), l(c(0, 1, 1), c(1, 1, 1), u), v), w);
-};
+const flip = map => map.map(r => r.split('').reverse().join(''));
 
+// The lattice's pitch in px for a tank: big enough to read, small enough that every seat's jellyfish fits whole.
+function seaPitch(W, H, n, sea) {
+  if (!sea) return Math.max(3, Math.min(6, H / ((JH + 2) * LATTICE)));
+  if (H > W * 1.2) return Math.max(3, Math.min(7, W / (3 * JW + 2)));  // the reef: a column beside the list
+  return Math.max(2.5, Math.min(7, H / ((JH + 1) * LATTICE), W / (Math.max(1, n) * JW + OW + 3)));  // a strip
+}
+
+// Where each seat's jellyfish lives: [x, y, slack], the top-left cell of its box and how far it may drift sideways
+// without touching its neighbour. In the reef the seats take up to three lanes, the middle one set half a jellyfish
+// lower; in a strip they stand in one row beside the octopus; in a small tank (a job's head) a creature sits where the
+// page put it.
+function seaLayout(spec, fauna, cols, rows) {
+  const n = spec.length, sea = !!(fauna && fauna.floor);
+  if (!sea) {
+    return spec.map(c => [Math.max(0, Math.min(cols - JW, Math.round(c.fx * cols - JW / 2))),
+      Math.max(0, Math.min(rows - JH, Math.round(c.fy * rows - JH / 2))), 1]);
+  }
+  const tall = rows > 30;
+  if (!tall) {
+    const room = Math.max(JW, cols - OW - 1), step = n ? room / n : 0;
+    return spec.map((c, k) => [OW + 1 + Math.max(0, Math.min(room - JW, Math.round(k * step + (step - JW) / 2))),
+      Math.max(0, Math.floor((rows - JH) / 2)), Math.max(0, Math.floor((step - JW) / 2))]);
+  }
+  const lanes = Math.max(1, Math.min(n, 3, Math.floor(cols / JW))), tiers = Math.ceil(n / lanes);
+  const room = rows - OH - 4;  // the octopus and the floor keep the bottom rows
+  const th = Math.max(4, Math.min(JH + 2, Math.floor((room - 1) / (tiers + (lanes > 1 ? 0.5 : 0)))));
+  return spec.map((c, k) => {
+    const lane = k % lanes, tier = Math.floor(k / lanes);
+    const x = Math.round((lane + 0.5) * cols / lanes - JW / 2);
+    const y = 1 + tier * th + (lane % 2 ? Math.round(th / 2) : 0);
+    return [Math.max(0, Math.min(cols - JW, x)), Math.max(0, Math.min(rows - JH, y)),
+      Math.max(0, Math.floor((cols / lanes - JW) / 2))];
+  });
+}
+
+// One swimmer's way back and forth across [0, cols - width): where it is at time t and which way it faces. It turns
+// round at each wall, so it is always drawn whole.
+function lap(n, t, cols, width, speed) {
+  const span = Math.max(1, cols - width), f = (hash(n, 8, 4) + (t * speed) / (2 * span)) % 1;
+  const out = f < 0.5, p = out ? f * 2 : 2 - f * 2, dir = hash(n, 2, 6) > 0.5 ? 1 : -1;
+  return { x: Math.round((dir > 0 ? p : 1 - p) * span), dir: out ? dir : -dir };
+}
+
+// Every dot of the sea at time t, in cells: [x, y, kind, tone, alpha]; the seats' names to write under their
+// jellyfish; and each creature's box, for the test that checks every creature is drawn whole.
+function seaDots(spec, fauna, cols, rows, t) {
+  const dots = [], labels = [], parts = [];
+  const put = (x, y, kind, tone, a) => { dots.push([x, y, kind, tone, a]); };
+  const map = (rowsOf, x0, y0, tone, a, part) => {
+    rowsOf.forEach((row, j) => {
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '#') put(x0 + i, y0 + j, BRIGHT, tone, a);
+        else if (ch === '.') put(x0 + i, y0 + j, DIM, tone, a);
+        else if (ch === 'o') put(x0 + i, y0 + j, RING, tone, a);
+      }
+    });
+    parts.push({ ...part, box: [x0, y0, x0 + rowsOf[0].length, y0 + rowsOf.length] });
+  };
+  const slots = seaLayout(spec, fauna, cols, rows);
+  let below = 0;
+  spec.forEach((c, k) => {
+    const sp = c.sp || 1, ph = k * 1.7, tone = TONES[c.tone] ? c.tone : 'faint', a = tone === 'faint' ? 0.78 : 0.95;
+    // it bobs about its slot, never past its own box's edge
+    let [x0, y0, slack] = slots[k];
+    x0 = Math.max(0, Math.min(cols - JW, x0 + Math.round(Math.sin(t * 0.22 * sp + ph) * slack)));
+    y0 = Math.max(0, Math.min(rows - JH, y0 + Math.round(Math.sin(t * 0.35 * sp + ph))));
+    below = Math.max(below, y0 + JH);
+    // the bell: a solid dome, lit on its upper left and dim on its shaded side, over a frilled lip; it opens and
+    // closes as it swims
+    const pulse = Math.sin(t * (tone === 'accent' ? 1.7 : 0.9) * sp + ph);
+    const cx = x0 + 7, cy = y0 + 3.7, rx = 6.6 * (1 + 0.04 * pulse), ry = 3.8 * (1 - 0.05 * pulse);
+    for (let j = 0; j <= 4; j++) {
+      for (let i = 0; i < JW; i++) {
+        const dx = (x0 + i - cx) / rx, dy = (y0 + j - cy) / ry;
+        if (dy > 0.1) continue;
+        const d = Math.hypot(dx, dy);
+        if (d > 1.04) continue;
+        const kind = j === 4 ? ((i + Math.floor(t * 0.8 * sp)) % 2 ? BRIGHT : DIM)
+          : dx * 0.55 + dy * 0.85 < -0.12 || (d > 0.8 && dy < -0.5) ? BRIGHT : DIM;
+        put(x0 + i, y0 + j, kind, tone, a);
+      }
+    }
+    // tentacles: a wave runs from root to tip, and the tips swing most
+    for (let q = 0; q < 5; q++) {
+      const len = 4 + Math.round(2 * hash(q, k, 1));
+      for (let s = 0; s < len; s++) {
+        const sway = Math.sin(t * 1.1 * sp - s * 0.8 + q * 1.3 + ph) * (0.3 + s * 0.28);
+        put(Math.round(cx - 5 + q * 2.5 + sway), y0 + 5 + s, s === len - 1 && q % 2 ? BRIGHT : DIM, tone,
+          a * (1 - s / (len * 2)));
+      }
+    }
+    // two heavier oral arms in the middle, the lit one bright
+    for (let m = 0; m < 2; m++) {
+      for (let s = 0; s < 5; s++) {
+        put(Math.round(cx - 1 + m * 2 + Math.sin(t * 0.7 * sp - s * 0.6 + m * 2 + ph) * (0.2 + s * 0.22)), y0 + 5 + s,
+          m ? DIM : BRIGHT, tone, a * (1 - s / 7));
+      }
+    }
+    if (c.name && fauna && fauna.floor) labels.push([x0 + JW / 2, y0 + JH - 0.5, String(c.name), tone]);
+    parts.push({ kind: 'jelly', name: c.name, box: [x0, y0, x0 + JW, y0 + JH] });
+  });
+  if (!fauna) return { dots, labels, parts };
+  const f = fauna, floor = f.floor ? 1 : 0;
+  // plankton: a fine drift rising everywhere, and a brighter cloud for each job up next
+  const specks = Math.round(cols * rows * 0.012);
+  for (let i = 0; i < specks; i++) {
+    const r = hash(i, 13, 9), y = ((hash(i, 11, 5) * rows - t * (0.15 + 0.25 * r)) % rows + rows) % rows;
+    put(hash(i, 7, 3) * cols + Math.sin(t * 0.3 + i) * 0.8, y, FINE, 'faint', 0.14 + 0.2 * (0.5 + 0.5 * Math.sin(t + r * 20)));
+  }
+  for (let q = 0; q < Math.min(12, f.plankton || 0); q++) {
+    const cx = (0.1 + 0.8 * hash(q, 21, 4)) * cols + Math.sin(t * 0.12 + q) * 3;
+    const cy = ((hash(q, 22, 5) * rows - t * 0.2) % rows + rows) % rows;
+    for (let s = 0; s < 7; s++) {
+      put(cx + Math.cos(s * 0.9 + t * 0.4 + q) * (0.6 + s * 0.25), cy + Math.sin(s * 1.3 + t * 0.3) * 0.7, FINE, 'faint', 0.6);
+    }
+    parts.push({ kind: 'plankton', box: [cx, cy, cx, cy] });
+  }
+  // the octopus on the sea floor, or where the page puts it in a small tank; it blinks and curls its arms
+  if (f.octopus) {
+    const o = f.octopus, tone = TONES[o.tone] ? o.tone : 'faint', a = tone === 'faint' ? 0.55 : 0.95;
+    const ox = o.at ? Math.round(o.at[0] * cols - OW / 2) : 0;
+    const oy = o.at ? Math.round(o.at[1] * rows - OH / 2) : rows - OH - floor;
+    const x = Math.max(0, Math.min(cols - OW, ox)), y = Math.max(0, Math.min(rows - OH, oy));
+    const head = t % 5.3 < 0.18 ? OCTOPUS.map(r => r.replace(/o/g, '.')) : OCTOPUS;
+    map(head, x + 1, y, tone, a, { kind: 'octopus' });
+    parts[parts.length - 1].box = [x, y, x + OW, y + OH];
+    for (let m = 0; m < 5; m++) {
+      const out = m < 2 ? -1 : m > 2 ? 1 : 0;
+      for (let s = 0; s < 4; s++) {
+        put(Math.round(x + 2 + m * 2.2 + out * s * 0.5 + Math.sin(t * 0.9 - s * 0.9 + m * 1.7) * s * 0.3), y + 4 + s,
+          s ? DIM : BRIGHT, tone, a * (1 - s * 0.15));
+      }
+    }
+  }
+  if (!f.floor) return { dots, labels, parts };
+  // A strip (a phone's sea) has room for the seats and the octopus only; the rest swims in the reef.
+  if (rows <= 30) return seaFloor(dots, cols, rows, t, labels, parts);
+  // Where the fish swim: under the jellyfish and above the octopus when there is room, else the whole water.
+  const top = below + 4 < rows - OH - 6 ? below + 1 : 1, bottom = rows - OH - 3;
+  const depth = (n, h) => Math.max(1, Math.min(rows - h - 2, Math.round(top + hash(n, 9, 5) * Math.max(0, bottom - top - h))));
+  for (let n = 0; n < Math.min(9, f.fish || 0); n++) {  // a fish for each job running
+    const w = FISH[0].length, { x, dir } = lap(n, t, cols, w, 2.2 + 1.4 * hash(n, 7, 3));
+    const y = depth(n, 3) + Math.round(Math.sin(t * 0.4 + n * 2) * 0.6);
+    map(dir > 0 ? FISH : flip(FISH), x, Math.max(0, Math.min(rows - 3, y)), 'accent', 0.95, { kind: 'fish' });
+  }
+  const school = Math.min(SCHOOL.length, f.school || 0);
+  if (school) {  // the jobs done today swim together, the first one leading
+    const back = Math.max(...SCHOOL.slice(0, school).map(([dx]) => -dx)), w = back + MINNOW[0].length;
+    const { x, dir } = lap(31, t, cols, w, 1.1), y = depth(31, 9) + 4 + Math.round(Math.sin(t * 0.3) * 0.6);
+    SCHOOL.slice(0, school).forEach(([dx, dy], i) => {
+      const mx = dir > 0 ? x + back + dx : x - dx, my = Math.max(0, Math.min(rows - 3, y + dy - 1));
+      map(dir > 0 ? MINNOW : flip(MINNOW), mx, my, 'accent', 0.5, { kind: 'minnow' });
+    });
+  }
+  for (let n = 0; n < Math.min(7, f.bacteria || 0); n++) {  // a colony for each job that failed today: red, moving
+    const cx = Math.max(2, Math.min(cols - 3, (0.18 + 0.7 * hash(n, 12, 7)) * cols + Math.sin(t * 0.13 + n) * 3));
+    const cy = Math.max(2, Math.min(rows - 4, rows * (0.5 + 0.3 * hash(n, 13, 8)) + Math.sin(t * 0.11 + n * 2) * 1.5));
+    const phase = (t / 8 + hash(n, 3, 3)) % 1, split = phase > 0.72 ? (phase - 0.72) / 0.28 : 0;  // it divides
+    const ang = t * 0.2 + n, ux = Math.cos(ang), uy = Math.sin(ang) * 0.5;
+    const rod = n % 2 === 0, count = rod ? 4 : 2, gap = split * 1.1;
+    for (let s = 0; s < count; s++) {
+      const half = s < count / 2 ? -1 : 1, along = (s - (count - 1) / 2) * 0.42 + half * gap / 2;
+      put(cx + ux * along, cy + uy * along, FINE, 'red', 0.9);
+      if (!rod) put(cx + ux * along + 0.18, cy + uy * along + 0.35, FINE, 'red', 0.65);
+    }
+    parts.push({ kind: 'bacteria', box: [cx - 2, cy - 1, cx + 2, cy + 1] });
+  }
+  if (f.eel) {  // the eel weaves back and forth just above the sand while the harness is being checked
+    const lane = lap(47, t, cols - OW, EEL, 2.6), x = lane.x + OW, dir = lane.dir, base = rows - 3;
+    for (let s = 0; s < EEL; s++) {
+      const ex = dir > 0 ? x + EEL - 1 - s : x + s, ey = base + Math.round(0.9 * Math.sin(s * 0.5 - t * 2.2));
+      put(ex, ey, s === 1 ? RING : s < 6 ? BRIGHT : DIM, 'accent', s < 6 ? 0.85 : 0.85 - s * 0.03);
+      if (s > 3 && s < EEL - 2 && s % 2 === 0) put(ex, ey - 1, DIM, 'accent', 0.45);
+    }
+    parts.push({ kind: 'eel', box: [x, base - 2, x + EEL, base + 2] });
+  }
+  return seaFloor(dots, cols, rows, t, labels, parts);
+}
+
+// The sea floor: sand along the bottom row, and a few weeds swaying on it.
+function seaFloor(dots, cols, rows, t, labels, parts) {
+  const put = (x, y, kind, tone, a) => { dots.push([x, y, kind, tone, a]); };
+  for (let i = 0; i < cols; i++) {
+    const h = hash(i, 3, 17);
+    if (h > 0.45) put(i, rows - 1, DIM, 'sand', 0.35);
+    if (h > 0.93 && i > OW + 1) {
+      const tall = 2 + Math.floor(hash(i, 4, 9) * 3);
+      for (let s = 1; s <= tall; s++) {
+        put(i + Math.round(Math.sin(t * 0.7 + i + s * 0.8) * 0.6 * s / tall), rows - 1 - s, s === tall ? BRIGHT : DIM, 'weed', 0.5);
+      }
+    }
+  }
+  return { dots, labels, parts };
+}
+// </sea>
+
+const T0 = performance.now() - 6000;  // one clock for every tank, so a redrawn tank carries on where it was
 function Tank(canvas) {
   let spec = [], fauna = null;
   try { spec = JSON.parse(canvas.dataset.creatures || '[]'); } catch (err) { spec = []; }
@@ -79,268 +276,66 @@ function Tank(canvas) {
   const ctx = canvas.getContext('2d');
   const host = canvas.parentElement;
   if (!ctx || !host) return;
-  let W = 0, H = 0, cols = 0, rows = 0, floor = 0, dens, who, taken, specks = [];
-
+  let W = 0, H = 0, P = 6, Q = 11, cols = 0, rows = 0;
+  const ground = getComputedStyle(document.documentElement).getPropertyValue('--ground').trim() || '#0b0e0e';
   function size() {
     const r = canvas.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     W = r.width; H = r.height;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    cols = Math.ceil(W / CW); rows = Math.ceil(H / CH);
-    // the band's sea floor: the bottom rows, under the composer, where the jellyfish do not go
-    floor = fauna && fauna.floor ? Math.min(6, Math.max(4, Math.floor(rows * 0.18))) : 0;
-    dens = new Float32Array(cols * rows); who = new Int8Array(cols * rows); taken = new Uint8Array(cols * rows);
-    // plankton: a thin drift everywhere, thicker by a patch for each job up next
-    specks = [];
-    const bloom = 0.014 + 0.0016 * Math.min(12, (fauna && fauna.plankton) || 0);
-    for (let i = 0; i < cols * rows * bloom; i++) specks.push([hash(i, 7, 3) * cols, hash(i, 11, 5) * rows, hash(i, 13, 9)]);
+    P = seaPitch(W, H, spec.length, !!(fauna && fauna.floor)); Q = P * LATTICE;
+    cols = Math.floor(W / P); rows = Math.floor(H / Q);
   }
-  // Words sit on clear water: the creatures thin out behind every [data-clear] element. Measured on each frame, since
-  // the composer grows and shrinks as you type.
+  // Words sit on clear water: dots fade behind every [data-clear] element in the tank's box.
   function clears() {
     const box = host.getBoundingClientRect();
     return $$('[data-clear]', host).filter(el => el.getClientRects().length).map(el => {
       const b = el.getBoundingClientRect();
-      return [(b.left - box.left - 8) / CW, (b.top - box.top - 4) / CH, (b.right - box.left + 8) / CW, (b.bottom - box.top + 4) / CH];
+      return [(b.left - box.left) / P - 1, (b.top - box.top) / Q - 0.5, (b.right - box.left) / P + 1, (b.bottom - box.top) / Q + 0.5];
     });
   }
-  // The composer is solid: the water beside it and above it ends two cells short of it. A creature that no piece of
-  // that water holds at a tenth of its size gets the whole band, and can pass behind the composer.
-  function solid() {
-    const el = $('[data-solid]', host);
-    if (!el || !el.getClientRects().length) return null;
-    const box = host.getBoundingClientRect(), b = el.getBoundingClientRect();
-    return [Math.floor((b.left - box.left) / CW) - 2, Math.ceil((b.right - box.left) / CW) + 2,
-      Math.floor((b.top - box.top) / CH) - 2];
-  }
-  const put = (i, j, v, k) => {
-    if (i < 0 || j < 0 || i >= cols || j >= rows) return;
-    const n = j * cols + i;
-    if (v > dens[n]) { dens[n] = Math.min(1, v); who[n] = k; }
-  };
-
-  // How big a creature can be drawn in water [x0, y0, x1, y1] with a cell to spare round its bell, fringe and arms.
-  const scale = (c, [x0, y0, x1, y1]) => Math.min(1, (y1 - y0 - 6) / (c.r * 0.78 + c.len * 1.05),
-    (x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64));
-  // Where a creature swims and at what size. Beside the composer it takes whichever piece of its side's water lets it
-  // be biggest. It is never drawn under 0.3 of its size, so in a piece that holds it at 0.1 to 0.3 (a phone's strip
-  // above the composer) it is bigger than the piece's room and is centred on it; where every piece is under 0.1, it
-  // has the whole band.
-  function place(c, open) {
-    const pick = open && open.reduce((a, b) => (scale(c, b) > scale(c, a) ? b : a));
-    const held = !!pick && scale(c, pick) >= 0.1;
-    const box = held ? pick : [0, 0, cols, rows - floor];
-    const fit = Math.max(0.3, scale(c, box));
-    const tall = (box[3] - box[1]) * CH > (box[2] - box[0]) * CW;
-    return { box, fit, held, tall, h: fit * (c.r * 0.78 + c.len * 1.05) + 4, slot: 0.5 };  // h: its height in rows
-  }
-  // The creatures sharing a piece of water are spread along its length: down a lane, each gets a share in proportion
-  // to its height (they overlap where the lane is shorter than all of them); along a strip, equal shares.
-  function stack(at) {
-    for (const piece of new Set(at.filter(p => p.held).map(p => p.box))) {
-      const here = at.filter(p => p.box === piece), total = here.reduce((sum, p) => sum + p.h, 0);
-      let before = 0;
-      here.forEach((p, i) => {
-        p.slot = p.tall ? (before + p.h / 2) / total : (i + 0.5) / here.length;
-        before += p.h;
-      });
-    }
-  }
-
-  function creature(c, k, t, at) {
-    const sp = c.sp || 1, ph = c.ph || k * 1.7;
-    const { box: [x0, y0, x1, y1], fit, held, tall, slot } = at;
-    const R = c.r * fit, L = c.len * fit;
-    const rx = (R * (1 + 0.06 * Math.sin(t * 1.05 * sp + ph))), ry = R * 0.62 * (1 - 0.05 * Math.sin(t * 1.05 * sp + ph));
-    const up = ry + 2, down = ry * 0.2 + L * 1.05 + 2, side = Math.max(rx + 2, rx * 0.86 + L * 0.32 + 1);
-    const clamp = (v, a, b) => (b < a ? (a + b) / 2 : Math.min(b, Math.max(a, v)));
-    // Its place: its own spot in the band, or its share of the piece of water it shares with its side's other seats.
-    const ax = held && !tall ? x0 + slot * (x1 - x0) : c.fx * cols;
-    const ay = held && tall ? y0 + slot * (y1 - y0) - (down - up) / 2 : c.fy * rows;
-    // it bobs and drifts about its place inside its water's edges, or sits centred where it is wider than its water
-    const cy = clamp(ay + Math.sin(t * 0.21 * sp + ph) * 1.4, y0 + 1 + up, y1 - 1 - down);
-    const cx = clamp(ax + Math.sin(t * 0.17 * sp + ph) * 1.6, x0 + 1 + side, x1 - 1 - side);
-    const flick = Math.floor(t * 5);
-    const tz = t * 0.7 + k * 9;
-    // the bell leans a little as it swims
-    const tilt = (c.tilt ?? 0.16) * Math.sin(t * 0.23 * sp + ph * 1.3), ca = Math.cos(tilt), sa = Math.sin(tilt), asp = CH / CW;
-    const lean = s => s * sa * 0.9;
-    // bell: a dome, densest on its crown and rim, darker inside, a frilled lip
-    for (let j = Math.floor(cy - ry - 2); j <= Math.ceil(cy + ry * 0.6); j++) {
-      for (let i = Math.floor(cx - rx - 2); i <= Math.ceil(cx + rx + 2); i++) {
-        const px = i - cx, py = (j - cy) * asp;
-        const dx = (px * ca + py * sa) / rx, dy = ((-px * sa + py * ca) / asp) / ry;
-        const lip = 0.22 + 0.09 * Math.sin(dx * 11 + t * 2 * sp + ph);
-        if (dy > lip) continue;
-        const d2 = dx * dx + dy * dy; if (d2 > 1.02) continue;
-        const d = Math.sqrt(d2);
-        let v = 0.3 + 0.5 * smooth(0.58, 0.98, d) + Math.max(0, -dy - 0.3) * 0.55;
-        v += Math.exp(-((d - 0.4) ** 2) / 0.01) * (0.5 + 0.5 * Math.sin(Math.atan2(dy, dx) * 4 + t * 0.5)) * 0.3;
-        if (dy > lip - 0.18) v += 0.18;
-        v *= 0.62 + 0.62 * noise(i * 0.45, j * 0.6, tz);
-        if (hash(i, j, flick + k * 31) > 0.975) v = Math.max(v, 0.96);
-        put(i, j, v * c.b, k);
-      }
-    }
-    // fringe: many short hairs under the lip
-    const lipY = cy + ry * 0.2;
-    const rim = u => [cx + u * rx * ca - ry * 0.2 * asp * sa, lipY + (u * rx * sa) / asp];
-    for (let i = -Math.floor(rx * 0.92); i <= Math.floor(rx * 0.92); i++) {
-      const [fx, fy] = rim(i / rx);
-      const h = 1 + Math.floor(hash(i + 50, k, 5) * 3);
-      for (let s = 1; s <= h; s++) if (hash(i + 50, s, flick + k) > 0.3) put(Math.round(fx + lean(s) + Math.sin(t + i) * 0.4), Math.round(fy + s), (0.42 - s * 0.09) * c.b, k);
-    }
-    // long tentacles: thin and sparse, swaying
-    const n = c.n || Math.max(5, Math.round(R * 0.7));
-    for (let q = 0; q < n; q++) {
-      const [ax, ay] = rim(-0.86 + (1.72 * q) / (n - 1));
-      const len = L * (0.75 + 0.5 * hash(q, k, 1));
-      for (let s = 0; s < len; s++) {
-        if (hash(q * 97 + s, k, flick >> 1) < 0.22) continue;
-        const x = ax + lean(s) + Math.sin(s * 0.3 - t * 1.2 * sp + q * 1.9 + ph) * (0.4 + s * 0.17);
-        put(Math.round(x), Math.round(ay + s), Math.pow(1 - s / len, 1.1) * 0.55 * c.b * (0.7 + 0.45 * hash(q, s, flick)), k);
-      }
-    }
-    // oral arms: three or four thick, frilled, slower strands from the centre
-    const arms = R > 6 ? 4 : 3;
-    for (let m = 0; m < arms; m++) {
-      const [ax, ay] = rim((m - (arms - 1) / 2) * 0.17);
-      const len = L * (0.8 + 0.25 * hash(m, k, 2));
-      const wide = Math.max(1, Math.round(R / 4.5));
-      for (let s = 0; s < len; s++) {
-        const x = ax + lean(s) + Math.sin(s * 0.2 - t * 0.85 * sp + m * 2.3 + ph) * (0.3 + s * 0.13);
-        const taper = 1 - s / len;
-        const w = Math.max(0, Math.round(wide * taper + 0.4 * Math.sin(s * 1.3 + m)));
-        for (let o = -w; o <= w; o++) {
-          const v = taper * (0.88 - Math.abs(o) * 0.2) * c.b * (0.62 + 0.5 * noise(s * 0.5, (m + o) * 0.7, tz));
-          put(Math.round(x) + o, Math.round(ay + s), v, k);
-        }
-      }
-    }
-  }
-
   function draw(t) {
     if (!cols || !rows) return;
-    dens.fill(0);
-    // Each side's open water: the lane beside the composer and the strip above it, shared by that side's seats.
-    const s = solid(), half = Math.floor(cols / 2), top = s ? Math.max(0, s[2]) : 0;
-    const water = s && [[[0, 0, Math.max(0, s[0]), rows - floor], [0, 0, half, top]],
-      [[Math.min(cols, s[1]), 0, cols, rows - floor], [half, 0, cols, top]]];
-    const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));
-    stack(at);
-    spec.forEach((c, k) => creature(c, k, t, at[k]));
+    const { dots, labels } = seaDots(spec, fauna, cols, rows, t);
     const clear = clears();
-    // The faint character grid is the canvas's CSS background, so a frame never redraws it.
     ctx.clearRect(0, 0, W, H);
-    ctx.font = FONT;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    // plankton: rising slowly, swaying, twinkling
-    for (const [i0, j0, r] of specks) {
-      const a = 0.08 + 0.14 * (0.5 + 0.5 * Math.sin(t * (0.6 + r) + r * 20));
-      const j = Math.floor(((j0 - t * (0.08 + 0.18 * r)) % rows + rows) % rows);
-      const i = Math.floor(i0 + Math.sin(t * 0.3 + r * 9) * 1.2);
-      ctx.fillStyle = 'rgba(159, 176, 212, ' + a.toFixed(3) + ')';
-      ctx.fillText(r > 0.94 ? '°' : r > 0.5 ? '.' : "'", i * CW + CW / 2, j * CH + CH / 2);
-    }
-    for (let j = 0; j < rows; j++) {
-      for (let i = 0; i < cols; i++) {
-        const n = j * cols + i;
-        let v = dens[n];
-        if (v < 0.06) continue;
-        // behind words the water clears, with a soft edge two cells wide
-        for (const [x0, y0, x1, y1] of clear) {
-          const ox = Math.max(x0 - i, 0, i - x1), oy = Math.max(y0 - j, 0, j - y1);
-          const o = Math.max(ox, oy * 1.4);
-          if (o < 2) v *= 0.2 + 0.4 * o;
-        }
-        if (v < 0.06) continue;
-        const c = spec[who[n]], rgb = TONE[c.tone] || TONE.accent, al = c.alpha ?? 1;
-        const lv = Math.min(RAMP.length - 1, Math.floor(v * RAMP.length));
-        const ch = RAMP[lv]; if (ch === ' ') continue;
-        const mix = v > 0.86 ? (v - 0.86) * 3.2 : 0;
-        const r = Math.round(rgb[0] + (232 - rgb[0]) * mix), g = Math.round(rgb[1] + (240 - rgb[1]) * mix), b = Math.round(rgb[2] + (236 - rgb[2]) * mix);
-        if (v > 0.5) {
-          ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + (0.075 * v * al).toFixed(3) + ')';
-          ctx.fillRect(i * CW + 1, j * CH + 1, CW - 1, CH - 1);
-        }
-        ctx.fillStyle = 'rgba(' + r + ', ' + g + ', ' + b + ', ' + ((0.16 + 0.84 * v) * al).toFixed(3) + ')';
-        ctx.fillText(ch, i * CW + CW / 2, j * CH + CH / 2 + 0.5);
+    // one path per tone, size and alpha, so a frame is a few dozen fills however many dots it has
+    const groups = new Map(), rings = [];
+    for (const [x, y, kind, tone, alpha] of dots) {
+      let a = alpha;
+      for (const [x0, y0, x1, y1] of clear) {
+        const o = Math.max(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1) * 1.6);
+        if (o < 2) a *= 0.15 + 0.4 * o;
       }
+      if (a < 0.04) continue;
+      const key = tone + '|' + kind + '|' + Math.round(a * 20);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push([x, y]);
+      if (kind === RING) rings.push([x, y]);
     }
-    if (fauna) sea(t, clear);
-  }
-
-  // One glyph of the rest of the sea: it fades behind words like the jellyfish do, passes behind a jellyfish, and
-  // behind whatever took its cell earlier in the frame (the octopus first, then fish, germs, the eel, the floor).
-  function glyph(ch, i, j, rgb, a, clear) {
-    if (ch === ' ' || i < 0 || j < 0 || i >= cols || j >= rows) return;
-    const n = j * cols + i;
-    if (dens[n] > 0.15 || taken[n]) return;
-    taken[n] = 1;
-    for (const [x0, y0, x1, y1] of clear) {
-      const o = Math.max(Math.max(x0 - i, 0, i - x1), Math.max(y0 - j, 0, j - y1) * 1.4);
-      if (o < 2) a *= 0.2 + 0.4 * o;
-    }
-    if (a < 0.04) return;
-    ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + a.toFixed(3) + ')';
-    ctx.fillText(ch, i * CW + CW / 2, j * CH + CH / 2 + 0.5);
-  }
-  const line = (s, i, j, rgb, a, clear) => { for (let k = 0; k < s.length; k++) glyph(s[k], i + k, j, rgb, a, clear); };
-
-  function sea(t, clear) {
-    const f = fauna, deep = rows - floor;
-    taken.fill(0);
-    // the octopus: on the sea floor in the band, or where it is put in a smaller tank; it blinks and waves its arms
-    if (f.octopus) {
-      const o = f.octopus, rgb = TONE[o.tone] || TONE.faint, w = OCTO[0].length, h = OCTO.length + 2;
-      const ox = o.at ? Math.round(o.at[0] * cols - w / 2) : Math.max(1, Math.round(cols * 0.06));
-      const oy = o.at ? Math.round(o.at[1] * rows - h / 2 + Math.sin(t * 0.5) * 0.6) : rows - h - 1;
-      const x = Math.min(Math.max(0, ox), cols - w), y = Math.min(Math.max(0, oy), rows - h);
-      const rows5 = [OCTO[0], t % 5.3 < 0.2 ? BLINK : OCTO[1], OCTO[2], ...ARMS[Math.floor(t / 0.9) % 2]];
-      rows5.forEach((s, r) => line(s, x, y + r, rgb, o.tone === 'faint' ? 0.6 : 0.85, clear));
-    }
-    // fish cross the water at their own depth and speed, their tails flicking
-    for (let n = 0; n < (f.fish || 0); n++) {
-      const dir = hash(n, 5, 1) > 0.5 ? 1 : -1, size = Math.floor(hash(n, 6, 2) * 3);
-      const body = FISH[size][dir > 0 ? 0 : 1], len = body.length;
-      const span = cols + len * 2 + 8, speed = 1.1 + 1.6 * hash(n, 7, 3);
-      const x = (((hash(n, 8, 4) * span + dir * speed * t) % span) + span) % span - len - 4;
-      const y = Math.round(2 + hash(n, 9, 5) * Math.max(1, deep - 5) + Math.sin(t * 0.4 + n * 2) * 0.8);
-      const flick = Math.floor(t * 3 + n) % 2;
-      const shown = !flick ? body : dir > 0 ? '}' + body.slice(1) : body.slice(0, -1) + '{';
-      line(shown, Math.round(x), y, SEA.fish, 0.6, clear);
-    }
-    // germs tumble slowly in the lower water
-    for (let n = 0; n < (f.germs || 0); n++) {
-      const body = GERM[n % GERM.length];
-      const x = (0.12 + 0.76 * hash(n, 12, 7)) * cols + (noise(t * 0.12, n * 3.1, 1) - 0.5) * 16;
-      const y = deep * (0.42 + 0.46 * hash(n, 13, 8)) + (noise(t * 0.1, n * 2.3, 5) - 0.5) * 6;
-      line(Math.floor(t * 2 + n) % 2 ? body.replace('~', '-') : body, Math.round(x), Math.round(y), SEA.germ, 0.5, clear);
-    }
-    // the eel weaves along the sea floor, left to right, while something checks the harness
-    if (f.eel && floor) {
-      const L = Math.max(8, Math.min(18, Math.floor(cols / 6))), span = cols + L * 2;
-      const head = (t * 1.6) % span - L / 2, base = rows - 3;
-      const at = s => Math.round(base - 0.7 * Math.sin((head - s) * 0.32 - t * 1.1));
-      for (let s = L - 1; s >= 0; s--) {
-        const y = at(s), ahead = at(s - 1);
-        const ch = s === 0 ? '>' : s === L - 1 ? '.' : s === L - 2 ? '-' : ahead < y ? '/' : ahead > y ? '\\' : '~';
-        glyph(ch, Math.round(head - s), y, TONE.accent, 0.55, clear);
+    for (const [key, list] of groups) {
+      const [tone, k, a] = key.split('|'), kind = +k, rgb = TONES[tone];
+      ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + (a / 20).toFixed(2) + ')';
+      const r = kind === DIM ? P * 0.19 : kind === FINE ? Math.max(0.8, P * 0.16) : P * 0.4;
+      ctx.beginPath();
+      for (const [x, y] of list) {
+        const px = kind === FINE ? x * P : (x + 0.5) * P, py = kind === FINE ? y * Q : (y + 0.5) * Q + (kind === DIM ? Q * 0.19 : 0);
+        ctx.moveTo(px + r, py); ctx.arc(px, py, r, 0, Math.PI * 2);
       }
+      ctx.fill();
     }
-    if (floor) {
-      // sand along the bottom row, and a few stalks of weed swaying on it
-      for (let i = 0; i < cols; i++) {
-        const h = hash(i, 3, 17);
-        glyph(h > 0.8 ? ',' : h > 0.55 ? '.' : h > 0.45 ? '_' : ' ', i, rows - 1, SEA.sand, 0.24, clear);
-        if (h > 0.955 && i > 12) {
-          const tall = 2 + Math.floor(hash(i, 4, 9) * 3);
-          for (let s = 1; s <= tall; s++) {
-            const sway = Math.round(Math.sin(t * 0.7 + i + s * 0.8) * 0.6);
-            glyph((s + Math.floor(t * 0.8 + i)) % 2 ? '(' : ')', i + sway, rows - 1 - s, SEA.weed, 0.42, clear);
-          }
-        }
+    if (rings.length) {  // an eye is a bright dot with the water showing through its middle
+      ctx.fillStyle = ground; ctx.beginPath();
+      for (const [x, y] of rings) { const px = (x + 0.5) * P, py = (y + 0.5) * Q; ctx.moveTo(px + P * 0.15, py); ctx.arc(px, py, P * 0.15, 0, Math.PI * 2); }
+      ctx.fill();
+    }
+    if (labels.length) {
+      ctx.font = Math.max(9, Math.min(11, Q * 0.8)) + 'px "Geist Mono", ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const [x, y, name, tone] of labels) {
+        ctx.fillStyle = tone === 'faint' ? 'rgba(128, 139, 136, .9)' : 'rgba(' + TONES[tone].join(', ') + ', .9)';
+        ctx.fillText(name, x * P, y * Q);
       }
     }
   }
@@ -357,7 +352,7 @@ function Tank(canvas) {
   const go = () => { if (!raf && !document.hidden && seen && canvas.isConnected) raf = requestAnimationFrame(loop); };
   const loop = now => {
     raf = 0;
-    // A band the live page replaced stops drawing and lets its listeners go.
+    // A tank the live page replaced stops drawing and lets its listeners go.
     if (!canvas.isConnected) {
       removeEventListener('resize', resized); document.removeEventListener('visibilitychange', go);
       if (io) io.disconnect();
@@ -372,38 +367,11 @@ function Tank(canvas) {
   go();
 }
 
-// The composer's prompt cycles through what it is for, word by word, every 4.6 s.
-function cycle(el) {
-  const phrases = el.dataset.cycle.split('|');
-  const words = s => s.split(' ').map((w, i, a) => {
-    const b = document.createElement('span'); b.className = 'w'; b.textContent = w + (i < a.length - 1 ? ' ' : '');
-    return b;
-  });
-  let k = 0;
-  el.replaceChildren(...words(phrases[0]));
-  if (calm.matches || phrases.length < 2) return;
-  const id = setInterval(() => {
-    if (!el.isConnected) { clearInterval(id); return; }
-    if (document.hidden) return;
-    const old = $$('.w', el);
-    old.forEach((w, i) => w.animate([{ opacity: 1, filter: 'blur(0)' }, { opacity: 0, filter: 'blur(6px)' }],
-      { duration: 260, delay: i * 25, fill: 'forwards', easing: 'cubic-bezier(.2,.7,.2,1)' }));
-    setTimeout(() => {
-      k = (k + 1) % phrases.length;
-      el.replaceChildren(...words(phrases[k]));
-      $$('.w', el).forEach((w, i) => w.animate(
-        [{ opacity: 0, filter: 'blur(10px)', transform: 'translateY(3px)' }, { opacity: 1, filter: 'blur(0)', transform: 'none' }],
-        { duration: 620, delay: i * 85, fill: 'backwards', easing: 'cubic-bezier(.2,.7,.2,1)' }));
-    }, 260 + old.length * 25);
-  }, 4600);
-}
-
 let fonts = false;
 function wake() {
-  // Bands and prompts that arrived with a page or a poll start here; the ones already running carry on.
+  // Tanks that arrived with a page or a poll start here; the ones already running carry on.
   if (!fonts) return;
   for (const c of $$('canvas[data-tank]')) if (!c.dataset.on) { c.dataset.on = '1'; Tank(c); }
-  for (const el of $$('[data-cycle]')) if (!el.dataset.on) { el.dataset.on = '1'; cycle(el); }
 }
 
 // ───────── the live page ─────────

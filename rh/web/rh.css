@@ -1,7 +1,7 @@
-/* research-harness, look v3. Dark only.
+/* research-harness, look v5. Dark only.
    Two faces with one job each: Geist Serif (Square cut) for the human words (briefs, titles, questions, labels),
    Geist Mono for the machine's words (ids, times, counts, exit codes, commands, output).
-   At 1440 × 900: sidebar 228 + panel (8px inset right, top and bottom); Today's panel is the centre plus a 392 rail. */
+   At 1440 × 900: sidebar 228 + panel (8px inset right, top and bottom); Today's panel is the list plus a 320 sea. */
 
 :root {
   color-scheme: dark;
@@ -32,7 +32,7 @@
   --mono: "Geist Mono", ui-monospace, Menlo, monospace;
   --r-panel: 12px; --r-card: 10px; --r-control: 7px;
   --side: 228px; --rail: 392px; --jside: 340px; --row: 34px;
-  --lane: 184px;  /* the water each side of the composer keeps for its jellyfish, while the composer is 420 px or more */
+  --reef: 320px;  /* Today's sea, beside the list */
   --ease: cubic-bezier(.2, .7, .2, 1);
 }
 
@@ -232,32 +232,32 @@ a.ws-btn:hover { background: var(--raised); }
 @keyframes changed { from { background: var(--accent-bg); } }
 .row.moving { background: var(--surface); }
 
-/* ───────── Today: the composer in a band of ASCII water, the jobs below, who works on the right ───────── */
+/* ───────── Today: what needs you first, the composer as one line over the list, the sea on the right ───────── */
 .mc { grid-template-columns: minmax(0, 1fr) var(--rail); }
+.reef-page { grid-template-columns: minmax(0, 1fr) var(--reef); }
 .center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-.tank { position: relative; flex: none; min-height: 282px; border-bottom: 1px solid var(--rule); z-index: 2; }
-/* the tank's faint character grid, one 8 x 11 cell per glyph; the script draws the water over it */
-.tank-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none;
-  background-image: linear-gradient(to right, rgba(150, 190, 182, .035) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(150, 190, 182, .035) 1px, transparent 1px);
-  background-size: 8px 11px; }
+/* the sea: dark water the script draws its creatures on, in dots */
+.reef { position: relative; border-left: 1px solid var(--rule); min-height: 0; overflow: hidden; }
+.tank-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 [data-clear] { width: fit-content; max-width: 100%; }
-.tank-in { position: relative; width: clamp(420px, calc(100% - 2 * var(--lane)), 600px); max-width: calc(100% - 48px);
-  margin: 0 auto; padding: 30px 0 74px; display: flex; flex-direction: column; align-items: center;
-  container-type: inline-size; }
-.tally { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; border-radius: 11px;
-  background: rgba(11, 14, 14, .72); font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
+.tally { display: flex; align-items: center; gap: 8px; font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
 .tally a { color: var(--amber); }
 .tally a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.ask { margin-top: 12px; font: 34px/42px var(--serif); letter-spacing: -0.02em; color: var(--text); text-align: center;
-  white-space: nowrap; min-height: 42px; }
-.ask .w { display: inline-block; white-space: pre; }
+/* The composer is one line until you type: then the brief opens to three lines, and its controls stay at its end. */
+.c-strip { flex: none; padding: 14px 24px; border-bottom: 1px solid var(--rule); container-type: inline-size; }
 .s-compose { width: 100%; }
-.composer { width: 100%; margin-top: 20px; background: var(--surface); border-radius: 14px; border: 1px solid var(--border);
+.composer { width: 100%; background: var(--surface); border-radius: 12px; border: 1px solid var(--border);
   padding: 11px 9px 9px 13px; transition: border-color .15s; text-align: left; }
+.compose.composer { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "text row" "cmd cmd";
+  align-items: center; column-gap: 12px; padding: 8px 8px 8px 14px; }
+.compose.composer > .c-text { grid-area: text; }
+.compose.composer > .cmd { grid-area: cmd; }
+.compose.composer > .c-row { grid-area: row; margin-top: 0; }
+.c-strip .c-hint { display: none; }  /* ⌘↵ is on the keyboard sheet; the one line keeps its room for the brief */
 .composer:focus-within { border-color: var(--control); }
-.composer textarea.c-text { margin: 0; padding: 2px 6px 2px 2px; border: 0; background: none; min-height: 44px;
-  font-size: 15px; line-height: 22px; resize: none; }
+.composer textarea.c-text { margin: 0; padding: 4px 6px 4px 2px; border: 0; background: none; min-height: 30px; height: 30px;
+  font-size: 15px; line-height: 22px; resize: none; transition: height .15s var(--ease); }
+.compose textarea.c-text:focus, .compose textarea.c-text:not(:placeholder-shown) { height: 74px; }
 .composer .cmd { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; column-gap: 10px;
   margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule); }
 .composer .cmd label { color: var(--faint); }
@@ -296,18 +296,21 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .c-hint { margin-left: auto; color: var(--faint); white-space: nowrap; }
 .send { width: 32px; height: 32px; padding: 0; border-radius: 9px; flex: none; }
 .send .ic { stroke-width: 2; }
-.how { width: 100%; margin-top: 18px; }
+.how { width: 100%; margin-top: 12px; }
 .how .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.how .steps li { background: rgba(16, 20, 20, .86); }
-/* A composer 400 to 520 px wide sets its controls on two rows (where it runs and its name; Options and send) and its
-   first-run steps in one column. A phone's narrower composer keeps its own wrap, below. */
-@container (min-width: 400px) and (max-width: 520px) {
+/* Under 640 px the composer's controls go under the brief, and the first-run steps stack. */
+@container (max-width: 640px) {
+  .compose.composer { grid-template-columns: minmax(0, 1fr); grid-template-areas: "text" "cmd" "row"; }
+  .compose.composer > .c-row { margin-top: 8px; }
   .c-hint { display: none; }
-  .c-row { display: grid; grid-template-columns: auto minmax(0, 1fr); }
-  .opts { justify-self: start; }
-  .send { justify-self: end; }
+  .send { margin-left: auto; }
   .how .steps { grid-template-columns: minmax(0, 1fr); }
 }
+/* the /new page: the same composer, opened up */
+.new-page .c-strip { border-bottom: 0; padding: 28px 32px; }
+.new-page .compose.composer { grid-template-columns: minmax(0, 1fr); grid-template-areas: "text" "cmd" "row"; }
+.new-page .compose.composer > .c-row { margin-top: 10px; }
+.new-page .compose textarea.c-text { height: 120px; }
 
 .jobs { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .jobs-head { height: 44px; flex: none; display: flex; align-items: center; gap: 20px; padding: 0 24px;
@@ -355,24 +358,7 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .rail .head, .sec-h { display: flex; align-items: baseline; gap: 8px; min-height: 26px; }
 .rail .head h2, .sec-h h2 { font-size: 14px; color: var(--text); }
 .rail .n { font: 12px var(--mono); color: var(--faint); }
-.card { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 2px; padding: 6px 8px;
-  margin: 0 -8px; border-radius: var(--r-control); transition: background .1s; }
-a.card:hover { background: var(--surface); }
-.i-t { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
-.i-t.mono { font-size: 13px; line-height: 20px; }
-.i-s { display: flex; align-items: center; gap: 6px; font: 12px/20px var(--mono); color: var(--muted); white-space: nowrap;
-  justify-self: end; }
-.i-m { color: var(--muted); font-size: 13px; line-height: 18px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 0; }
-.i-m.mono { display: flex; gap: 10px; color: var(--faint); font-size: 12px; }
-.i-r { color: var(--faint); white-space: nowrap; line-height: 18px; justify-self: end; }
-.card.idle { grid-template-columns: minmax(0, 1fr) auto auto; }  /* an idle seat: name, model, state */
-.card.idle .i-r { order: 1; font-size: 12px; line-height: 20px; }
-.card.idle .i-s { order: 2; }
 .rail .soft { font-size: 13px; line-height: 18px; }
-.r-sum { color: var(--muted); font-size: 13px; line-height: 20px; }
-.r-sum a { color: var(--amber); }
-.r-sum a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 /* the snapshot's printed list of what needs a person */
 .cards { display: flex; flex-direction: column; gap: 8px; }
@@ -386,7 +372,7 @@ a.card:hover { background: var(--surface); }
 .jd { grid-template-columns: minmax(0, 1fr) var(--jside); }
 .jd-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: auto; }
 .jd-head { position: relative; flex: none; border-bottom: 1px solid var(--rule); overflow: hidden; }
-.jd-head-in { position: relative; padding: 22px 32px 20px; max-width: 960px; }
+.jd-head-in { position: relative; padding: 22px max(32px, calc(12% + 72px)) 20px 32px; max-width: 960px; }  /* the right keeps clear of the seat's jellyfish */
 .jd-id { color: var(--faint); }
 /* A job's heading is the whole first sentence of its brief: it wraps and is not cut. */
 .jd-head h1 { margin-top: 8px; font: 26px/30px var(--serif); letter-spacing: -0.015em; max-width: 760px; outline: none;
@@ -403,6 +389,11 @@ a.card:hover { background: var(--surface); }
 .pg .cells { margin-top: 4px; }
 .pg-s { font-size: 13px; color: var(--faint); margin-top: 4px; line-height: 16px; }
 .jd-body { flex: 1; display: flex; flex-direction: column; gap: 20px; padding: 20px 32px 24px; min-width: 0; }
+.s-j-fail { padding: 14px 16px; border-radius: var(--r-card); background: var(--red-bg); max-width: 760px; }
+.fail-k { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--red); }
+.fail-c { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+.fail-c code { font-size: 15px; line-height: 22px; color: var(--text); overflow-wrap: anywhere; }
+.fail-c .exit { color: var(--red); white-space: nowrap; }
 .bubble { max-width: 640px; font-size: 16px; line-height: 25px; color: var(--text); white-space: pre-wrap; }
 .now { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; font-size: 14px; color: var(--muted); }
 .now .what { color: var(--text); }
@@ -569,7 +560,6 @@ a.ib:hover { background: var(--surface); }
 
 /* ───────── The /new page ───────── */
 .nw { align-content: start; overflow: auto; }
-.nw .tank { border-bottom: 0; min-height: 0; }
 
 /* ───────── ⌘K: Raycast's window ───────── */
 dialog { color: var(--text); }
@@ -637,6 +627,8 @@ dialog::backdrop { background: rgba(3, 5, 5, .62); }
   body { overflow: auto; }
   .app { height: auto; min-height: 100vh; }
   .mc, .jd, .ibx { grid-template-columns: minmax(0, 1fr); }
+  .reef-page { grid-template-columns: minmax(0, 1fr) 248px; }
+  .reef { position: sticky; top: 0; height: 100vh; align-self: start; }
   .rail, .jd-side { border-left: 0; border-top: 1px solid var(--rule); overflow: visible; }
   .ib-list { border-right: 0; border-bottom: 1px solid var(--rule); overflow: visible; }
   .list, .jd-main, .ib-detail { overflow: visible; }
@@ -659,8 +651,9 @@ dialog::backdrop { background: rgba(3, 5, 5, .62); }
   .row .where { display: none; }
   .row .time { grid-column: 3; grid-row: 1; }
   .row .do { grid-column: 2 / 4; grid-row: 3; justify-content: flex-start; padding-top: 6px; }
-  .tank-in { max-width: calc(100% - 32px); padding-top: 22px; }
-  .ask { font-size: 24px; white-space: normal; line-height: 30px; }
+  .reef-page { grid-template-columns: minmax(0, 1fr); }
+  .reef { order: -1; position: relative; height: 112px; border-left: 0; border-bottom: 1px solid var(--rule); }
+  .c-strip { padding: 12px 16px; }
   .c-hint, .head-r, .jobs-head .tabs [role="tab"]:not([aria-selected="true"]) { display: none; }
   .c-row { flex-wrap: wrap; }
   .compose .name { flex: 1 1 160px; }

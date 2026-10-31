@@ -64,13 +64,6 @@ replace = '        return "accent", "waiting on you", waiting[0], len(working)'
 tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
 
 [[mutant]]
-name = "an idle seat is drawn lit"
-file = "rh/dashboard.py"
-find = '"alpha": 0.55 if faint else 1'
-replace = '"alpha": 1'
-tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
-
-[[mutant]]
 name = "the tank keeps swimming under reduced motion"
 file = "rh/web/app.js"
 find = "  if (calm.matches) { draw(6); return; }"
@@ -209,13 +202,6 @@ replace = '    wait = len(inbox)'
 tests = ["tests.test_dashboard.DashboardTest.test_one_count_of_what_needs_you_everywhere"]
 
 [[mutant]]
-name = "the band counts only the jobs that need you"
-file = "rh/dashboard.py"
-find = '        center.append(_band(ctx, view, jobs, _creatures(jobs, view), not jobs, len(ctx["needs"])))'
-replace = '        center.append(_band(ctx, view, jobs, _creatures(jobs, view), not jobs, sum(j.group == "needs" for j in jobs)))'
-tests = ["tests.test_dashboard.DashboardTest.test_one_count_of_what_needs_you_everywhere"]
-
-[[mutant]]
 name = "an item for no listed job is left out everywhere"
 file = "rh/dashboard.py"
 find = '        if item.get("job") in known or (_setup_item(item, ctx["ready"]) and (attached or item is not ctx["setup"])):'
@@ -293,13 +279,6 @@ replace = '              "local-shell": "This machine"}'
 tests = ["tests.test_dashboard.DashboardTest.test_machine_words_are_mono_and_the_machine_has_one_name"]
 
 [[mutant]]
-name = "a creature rises out of the band"
-file = "rh/web/app.js"
-find = "    const cy = clamp(ay + Math.sin(t * 0.21 * sp + ph) * 1.4, y0 + 1 + up, y1 - 1 - down);"
-replace = "    const cy = ay - t * 0.2 * sp;"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_stay_inside_their_band"]
-
-[[mutant]]
 name = "an open item shown through its job's row loses its own address"
 file = "rh/dashboard.py"
 find = '            hit = next((i for i in view.get("inbox", []) if i.get("id") == pick), None)'
@@ -366,32 +345,11 @@ replace = "  if (m) { return; }"
 tests = ["tests.test_dashboard.DashboardTest.test_the_launch_prompt_shows_whole_lines"]
 
 [[mutant]]
-name = "v3.2: a seat repeats its job's title"
-file = "rh/dashboard.py"
-find = "        what = f'<span class=\"i-m mono\">{_text(job.id)}</span>' if job else"
-replace = "        what = f'<span class=\"i-m mono\">{_text(job.title)}</span>' if job else"
-tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_without_repeating_the_list"]
-
-[[mutant]]
 name = "v3.2: a seat's role keeps the label that repeats its name"
 file = "rh/dashboard.py"
 find = "        role = _sentence(_LABEL.sub(\"\", str(seat.get(\"role\", \"\"))))"
 replace = "        role = _sentence(str(seat.get(\"role\", \"\")))"
-tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_without_repeating_the_list"]
-
-[[mutant]]
-name = "v3.2: the launches lose their place at the front of the cloud line"
-file = "rh/dashboard.py"
-find = "key=lambda j: 0 if j.state == \"handoff\" or j.native else rank[j.group]"
-replace = "key=lambda j: rank[j.group]"
-tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_without_repeating_the_list"]
-
-[[mutant]]
-name = "v3.2: the cloud line's launches no longer lead to the Inbox"
-file = "rh/dashboard.py"
-find = "        go = ctx[\"live\"] and word in (\"to launch by hand\", \"waiting for the environment\")"
-replace = "        go = False"
-tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_without_repeating_the_list"]
+tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
 
 [[mutant]]
 name = "v3.2: time used is teal again"
@@ -428,63 +386,7 @@ find = ".p-s { display: flex; flex-wrap: wrap;"
 replace = ".p-s { display: flex; flex-wrap: nowrap;"
 tests = ["tests.test_dashboard.DashboardTest.test_the_palettes_state_word_shows_whole_or_not_at_all"]
 
-[[mutant]]
-name = "v3.2: the composer is not solid to the water"
-file = "rh/dashboard.py"
-find = "data-label=\"Start job\" data-solid>"
-replace = "data-label=\"Start job\">"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
-
-[[mutant]]
-name = "v3.2: the jellyfish ignore the open water beside the composer"
-file = "rh/web/app.js"
-find = "    const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));"
-replace = "    const at = spec.map(c => place(c, null));"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
-
-[[mutant]]
-name = "v3.2: a jellyfish drifts across the whole band again"
-file = "rh/web/app.js"
-find = "x0 + 1 + side, x1 - 1 - side);"
-replace = "1 + side, cols - 1 - side);"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_stay_inside_their_band"]
-
-[[mutant]]
-name = "v3.2: the seats on one side pile up in one spot of their lane"
-file = "rh/web/app.js"
-find = "    const ay = held && tall ? y0 + slot * (y1 - y0) - (down - up) / 2 : c.fy * rows;"
-replace = "    const ay = c.fy * rows;"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
-
-[[mutant]]
-name = "v3.2: a jellyfish is sized for the whole band, not its lane"
-file = "rh/web/app.js"
-find = "    const fit = Math.max(0.3, scale(c, box));"
-replace = "    const fit = Math.max(0.3, scale(c, [0, 0, cols, rows]));"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
-
 # Look v3.3: wide lanes for big jellyfish, and a cut log said to be the last lines.
-
-[[mutant]]
-name = "v3.3: the composer takes the lanes' water back"
-file = "rh/web/rh.css"
-find = "  --lane: 184px;"
-replace = "  --lane: 96px;"
-tests = ["tests.test_dashboard.DashboardTest.test_side_lanes_hold_a_big_jellyfish_at_1440_and_1100"]
-
-[[mutant]]
-name = "v3.3: the composer stays 600 px wide whatever the band"
-file = "rh/web/rh.css"
-find = "width: clamp(420px, calc(100% - 2 * var(--lane)), 600px);"
-replace = "width: clamp(600px, calc(100% - 2 * var(--lane)), 600px);"
-tests = ["tests.test_dashboard.DashboardTest.test_side_lanes_hold_a_big_jellyfish_at_1440_and_1100"]
-
-[[mutant]]
-name = "v3.3: a lane's jellyfish get equal room whatever their heights"
-file = "rh/web/app.js"
-find = "        p.slot = p.tall ? (before + p.h / 2) / total : (i + 0.5) / here.length;"
-replace = "        p.slot = (i + 0.5) / here.length;"
-tests = ["tests.test_dashboard.DashboardTest.test_jellyfish_swim_beside_the_composer_not_behind_it"]
 
 [[mutant]]
 name = "v3.3: a running job's cut log says lines so far"

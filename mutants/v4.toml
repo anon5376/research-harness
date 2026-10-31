@@ -164,50 +164,50 @@ replace = '''    started = True'''
 tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why"]
 
 [[mutant]]
-name = "every finished job is a fish, not only the ones done"
+name = "every finished job swims in the school, not only the ones done"
 file = "rh/dashboard.py"
-find = '''    return {"fish": min(_SCHOOL, sum(j.state == "done" for j in ended)),'''
-replace = '''    return {"fish": min(_SCHOOL, len(ended)),'''
-tests = ["tests.test_dashboard.DashboardTest.test_the_band_sea_life_counts_what_the_page_shows"]
+find = '''            "school": min(_SCHOOL, sum(j.state == "done" for j in ended)),'''
+replace = '''            "school": min(_SCHOOL, len(ended)),'''
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_life_counts_what_the_page_shows"]
 
 [[mutant]]
 name = "the school has no cap"
 file = "rh/dashboard.py"
 find = '''_SCHOOL, _GERMS, _BLOOM = 9, 7, 12'''
 replace = '''_SCHOOL, _GERMS, _BLOOM = 99, 7, 12'''
-tests = ["tests.test_dashboard.DashboardTest.test_the_band_sea_life_counts_what_the_page_shows"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_life_counts_what_the_page_shows"]
 
 [[mutant]]
 name = "the eel swims while checks are paused"
 file = "rh/dashboard.py"
 find = '''            "eel": bool(fresh and loop.get("mode") != "paused"),'''
 replace = '''            "eel": bool(fresh),'''
-tests = ["tests.test_dashboard.DashboardTest.test_the_band_sea_life_counts_what_the_page_shows"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_life_counts_what_the_page_shows"]
 
 [[mutant]]
 name = "the octopus stays calm while something needs you"
 file = "rh/dashboard.py"
 find = '''            "octopus": {"tone": "amber" if ctx["needs"] else "faint"}, "floor": True}'''
 replace = '''            "octopus": {"tone": "faint"}, "floor": True}'''
-tests = ["tests.test_dashboard.DashboardTest.test_the_band_sea_life_counts_what_the_page_shows"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_life_counts_what_the_page_shows"]
 
 [[mutant]]
 name = "the tank draws at the screen's full rate"
 file = "rh/web/app.js"
 find = '''const FRAME = 46;'''
 replace = '''const FRAME = 8;'''
-tests = ["tests.test_dashboard.DashboardTest.test_the_band_sea_life_counts_what_the_page_shows"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_life_counts_what_the_page_shows"]
 
 [[mutant]]
 name = "the tank keeps drawing in a hidden tab"
 file = "rh/web/app.js"
 find = '''    if (document.hidden || !seen) return;'''
 replace = '''    if (!seen) return;'''
-tests = ["tests.test_dashboard.DashboardTest.test_the_band_sea_life_counts_what_the_page_shows"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_life_counts_what_the_page_shows"]
 
 [[mutant]]
 name = "a broken page script"
 file = "rh/web/app.js"
-find = '''  function sea(t, clear) {'''
-replace = '''  function sea(t, clear) {{'''
+find = '''function seaFloor(dots, cols, rows, t, labels, parts) {'''
+replace = '''function seaFloor(dots, cols, rows, t, labels, parts) {{'''
 tests = ["tests.test_dashboard.DashboardTest.test_the_page_script_parses"]

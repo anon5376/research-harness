@@ -36,6 +36,8 @@ _STATES = {
     "collecting": ("Checking the result", "live"), "done": ("Done", "good"), "failed": ("Failed", "bad"),
     "blocked": ("Blocked", "warn"), "capacity": ("No capacity", "warn"), "truncated": ("Cut short", "bad"),
     "aborted": ("Ended early", "bad"), "no_result": ("No result", "bad"), "cancelled": ("Cancelled", "neutral"),
+    # not a ledger state: a ready cloud job while the codex CLI cannot see its environment, named once for every place
+    "env": ("Waiting for environment", "warn"),
 }
 _PRE = ("draft", "ready", "waiting", "held", "handoff")  # states rh job cancel accepts
 _LIVE = ("launching", "handoff", "running", "stalled", "collecting")
@@ -90,7 +92,6 @@ _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _PRESSURE = {1: "normal", 2: "warning", 4: "critical"}
 # The composer's prompt: what it is for, not suggestions the harness never made.
-_CYCLE = ("What should run?", "Describe it, pick where it runs, go.", "Every job ends in a receipt.")
 
 # Icons, 24-unit strokes from the look's set.
 _ICONS = {
@@ -141,8 +142,9 @@ _SHAPES = {
 _RINGS = {"draft": ("draft", "faint"), "ready": ("empty", "faint"), "waiting": ("wait", "faint"),
           "held": ("held", "muted"), "launching": ("quarter", "accent"), "handoff": ("handoff", "amber"),
           "running": ("half", "accent"), "stalled": ("half", "amber"), "collecting": ("three", "accent"),
-          "done": ("done", "accent"), "cancelled": ("cancelled", "faint"), **{s: ("failed", "red") for s in _FAILED}}
-# The tank: where each seat's jellyfish starts, as fractions of the band, and how fast each drifts.
+          "done": ("done", "accent"), "cancelled": ("cancelled", "faint"), "env": ("wait", "amber"),
+          **{s: ("failed", "red") for s in _FAILED}}
+# The sea: where a seat's jellyfish sits in a small tank, as fractions of it, and how fast each swims.
 _SLOTS = ((0.1, 0.3), (0.9, 0.22), (0.03, 0.9), (0.79, 0.76), (0.33, 0.93), (0.985, 0.86), (0.64, 0.07))
 _SPEEDS = (0.8, 0.95, 1.1)
 _MARK = ((2, 3, 4), (1, 2, 3, 4, 5), (0, 1, 2, 3, 4, 5, 6), (0, 2, 4, 6), (0, 2, 4, 6), (1, 4), (2, 5))
@@ -257,37 +259,37 @@ def _cells(filled, total=20, tone=""):
 
 
 def _creature(name, tone, k, busy=1, at=None):
-    """One seat's jellyfish for the tank: teal while it works (bigger the more it runs), amber while it waits on you,
-    dim while idle."""
-    r = {"accent": 8 + min(3, busy), "amber": 7}.get(tone, 4.5)
+    """One seat's jellyfish for the sea: teal while it works (pulsing faster while it runs more than one job), amber
+    while it waits on you, dim while idle. `at` places it in a small tank, as fractions of its width and height."""
     fx, fy = at or (_SLOTS[k] if k < len(_SLOTS) else ((0.5 + k * 0.618) % 1, (0.2 + k * 0.381) % 1))
-    faint = tone == "faint"
-    return {"name": name, "tone": tone, "fx": fx, "fy": fy, "r": r, "len": round(r * 1.25 + 3),
-            "b": 0.7 if faint else 1, "alpha": 0.55 if faint else 1, "sp": _SPEEDS[k % len(_SPEEDS)]}
+    return {"name": name, "tone": tone, "fx": fx, "fy": fy,
+            "sp": round(_SPEEDS[k % len(_SPEEDS)] * (1.25 if busy > 1 else 1), 2)}
 
 
 def _tank(creatures, key, fauna=None):
-    """The canvas the client draws the water on; it draws nothing without the script. `fauna` is the rest of the sea
-    life (see _fauna)."""
+    """The canvas the client draws the sea on, in dots; it draws nothing without the script. `fauna` is the rest of the
+    sea life (see _fauna)."""
     data = _text(json.dumps(creatures, separators=(",", ":")))
     life = f' data-fauna="{_text(json.dumps(fauna, separators=(",", ":")))}"' if fauna else ""
     return (f'<canvas class="tank-c" data-tank data-creatures="{data}"{life} data-region="{key}" data-still '
             f'data-sig="{_sig(data + life)}" aria-hidden="true"></canvas>')
 
 
-_SCHOOL, _GERMS, _BLOOM = 9, 7, 12  # at most this many fish, germs and plankton patches in the band
+_SCHOOL, _GERMS, _BLOOM = 9, 7, 12  # at most this many fish, bacteria colonies and plankton clouds in the sea
 
 
 def _fauna(jobs, view, ctx):
-    """The band's sea life besides the seats' jellyfish, each kind a count the page already shows: a fish for each job
-    done today, a germ for each job that failed or stopped today, a patch of plankton for each job up next, an eel
-    while something checks the harness, and the octopus on the sea floor, amber while anything needs you."""
+    """The sea life besides the seats' jellyfish, each a count the page already shows: a fish for each job live, a
+    school of small fish for the jobs done today, a colony of bacteria for each job that failed or stopped today, a
+    cloud of plankton for each job up next, the eel while something checks the harness, and the octopus on the sea
+    floor, amber while anything needs you."""
     ended = [j for j in jobs if j.where == "recent" and j.group in ("ended", "needs")]
     sup = view.get("supervisor") if isinstance(view.get("supervisor"), dict) else {}
     loop = view.get("checks") if isinstance(view.get("checks"), dict) else {}
     fresh = _number(sup.get("age_s")) and sup["age_s"] <= _STALE
-    return {"fish": min(_SCHOOL, sum(j.state == "done" for j in ended)),
-            "germs": min(_GERMS, sum(j.state in _FAILED for j in ended)),
+    return {"fish": min(_SCHOOL, sum(j.group == "live" for j in jobs)),
+            "school": min(_SCHOOL, sum(j.state == "done" for j in ended)),
+            "bacteria": min(_GERMS, sum(j.state in _FAILED for j in ended)),
             "plankton": min(_BLOOM, sum(j.group == "next" for j in jobs)),
             "eel": bool(fresh and loop.get("mode") != "paused"),
             "octopus": {"tone": "amber" if ctx["needs"] else "faint"}, "floor": True}
@@ -323,6 +325,7 @@ def _plain(detail):
              (r"command and gate exited 0", "The command and its check passed"),
              (r"command exited (\d+)", r"The command exited with code \1"),
              (r"acceptance gate exited (\d+)", r"The check exited with code \1"),
+             (r"launch deferred: the codex CLI cannot see the environment", _STATES["env"][0]),
              (r"launch deferred: (.*)", r"Waiting to start: \1"),
              (r"no finish after (\d+) min", r"Past its \1-minute limit"),
              (r"attached from the web composer", ""),
@@ -501,7 +504,7 @@ def _ask_line(item):
         return "Paste the patch from Codex", (f"The codex CLI could not export its diff ({_clause(detail)}). Save the "
                                               "staged diff from the Codex web view and paste it.")
     if _native_item(item):
-        return (f"Make environment {_env_of(item)} visible to the codex CLI",
+        return ("Choose an environment the codex CLI lists",
                 "Cloud jobs wait for it and start by themselves once the CLI lists it.")
     if kind == "operator-step" and action.startswith(_SETUP):
         return "Set up Codex cloud", "Cloud jobs wait until Codex has an environment for this repository."
@@ -543,6 +546,8 @@ class _Job:
         self.held = self.state == "held" and not self.items
         self.setup = bool(ctx["setup"]) and self.kind == "codex-cloud" and self.state in _PRE
         self.native = bool(ctx.get("native")) and self.kind == "codex-cloud" and self.state == "ready"
+        if self.native:
+            self.word, self.tone = _STATES["env"]
         self.count = len(self.items) + self.handoff + len(self.mine) + self.failure + self.held
         if self.count:
             self.group = "needs"
@@ -579,7 +584,7 @@ class _Job:
         if self.setup:
             return " · ".join(parts + ["Waits for Codex cloud to be set up"])
         if self.native:
-            return " · ".join(parts + ["Waits for the codex CLI to see its environment"])
+            return " · ".join(parts + [self.word])
         if self.group == "live" and self.state in ("draft", "ready", "launching"):
             parts.append("Starting")
         elif self.state == "running" and self.kind in _PLACES:
@@ -638,7 +643,7 @@ class _Job:
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
-        cells = (f'{_ring(self.state, hue)}<span class="name">{_text(self.title)}</span>'
+        cells = (f'{_ring("env" if self.native else self.state, hue)}<span class="name">{_text(self.title)}</span>'
                  f'<span class="sub">{_text(self.headline())}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
@@ -682,8 +687,9 @@ def _setup_card(ctx, view, lead=True):
 
 
 def _native_card(ctx, item, jid=None, lead=True):
-    """While the codex CLI cannot see the environment: why cloud jobs wait, the way to point it at one the CLI lists,
-    and on a job's page the hand launch as the fallback."""
+    """While the codex CLI cannot see the environment: why cloud jobs wait, and the one thing to do about it, in order
+    (see what the CLI lists, name one, or make one and check it with rh doctor); on a job's page, why it waits and the
+    hand launch as the fallback."""
     env = _text(_env_of(item))
     said = str(item.get("detail") or "").split(". Cloud jobs wait")[0]
     why = (f'<p class="detail">This Mac starts cloud jobs with the codex CLI, and the CLI does not list environment '
@@ -693,19 +699,23 @@ def _native_card(ctx, item, jid=None, lead=True):
     if jid:
         act = (_acts([_button(ctx, "/handoff", [("job", jid)], "Launch by hand instead", "a", "", "Launch by hand")])
                if ctx["live"] else f'<p class="cli"><code>rh cloud handoff {_text(jid)}</code></p>')
-        return (f'<div class="ask-card"><p class="label">{_dot("neutral")}Waiting</p>'
-                f'<h3>Waits for the codex CLI to see environment {env}</h3>{why}{act}</div>')
+        return (f'<div class="ask-card"><p class="label">{_ring("env")}{_STATES["env"][0]}</p>'
+                f'<h3>The codex CLI does not list environment {env}</h3>{why}{act}</div>')
     if not ctx["live"]:
         form = '<p class="cli"><code>rh config set cloud.env_id &lt;name or ID&gt;</code></p>'
     else:
-        form = (f'<form method="post" action="/setup" data-act data-label="Save environment">{_hidden(ctx, [])}'
-                '<label>An environment the CLI lists<input type="text" name="env_id" required autocomplete="off" '
-                'spellcheck="false" class="mono" pattern="[A-Za-z0-9_.:\\-]{1,128}" data-k="r"></label>'
-                f'<button class="{_cls("primary" if lead else "")}">Use it</button></form>')
+        form = (f'<form method="post" action="/setup" data-act data-label="Use environment">{_hidden(ctx, [])}'
+                '<label>Environment name or ID<input type="text" name="env_id" required autocomplete="off" '
+                'spellcheck="false" class="mono" pattern="[A-Za-z0-9_.:\\-]{1,128}" placeholder="e.g. research-harness-cli" '
+                'aria-describedby="env-hint" data-k="r"></label><p class="note" id="env-hint">As <code>codex cloud</code> '
+                'prints it: letters, digits and <code>. _ : -</code>, up to 128.</p>'
+                f'<button class="{_cls("primary" if lead else "")}">Use environment</button></form>')
     return (f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you</p>'
-            f'<h3>Make environment {env} visible to the codex CLI</h3>{why}<ol class="steps">'
-            '<li><div><p>In Codex, make an environment for this repository that <code>codex cloud</code> lists, or '
-            f'pick one it already lists.</p>{_codex_link()}</div></li><li><div>{form}</div></li></ol></div>')
+            f'<h3>Choose an environment the codex CLI lists</h3>{why}<ol class="steps">'
+            '<li><div><p>See the environments it lists: run <code>codex cloud</code> in a terminal.</p></div></li>'
+            f'<li><div>{form}</div></li>'
+            '<li><div><p>None for this repository? Make one in Codex, then run <code>rh doctor</code>: it says whether '
+            f'the CLI lists it.</p>{_codex_link()}</div></li></ol></div>')
 
 
 def _launch_card(ctx, jid, opened, lead, foot=""):
@@ -1004,16 +1014,23 @@ def _need_word(n):
 
 
 def _item_row(ctx, item):
-    """Today's row for an open item that belongs to no listed job: what it asks, and the way to it in the Inbox."""
+    """Today's row for an open item that belongs to no listed job: what it asks, and the way to it in the Inbox. The
+    environment step says what to do, where it stands and the command that checks it, with the one button to it."""
     ask, _ = _ask_line(item)
     _, icon = _ask_kind(item)
-    about = f"For job {_text(item['job'])}" if item.get("job") else "From the harness"
+    about, act = (f"For job {_text(item['job'])}" if item.get("job") else "From the harness"), ""
+    href = _url(ctx, "/inbox/" + str(item["id"]))
+    if _native_item(item):
+        about = (f'It does not list {_text(_env_of(item))}, so cloud jobs wait · <span class="mono">codex cloud</span> '
+                 'lists them, <span class="mono">rh doctor</span> checks')
+        if ctx["live"]:
+            act = (f'<span class="do"><a class="btn gbtn" href="{href}" data-nav data-k="r">{_ic("cloud", True)}'
+                   'Choose…</a></span>')
     when = _clock(item["created"], ctx["now"]) if _number(item.get("created")) else ""
     cells = (f'<span class="st-ic" aria-hidden="true">{_ic(icon, True)}</span><span class="name">{_text(ask)}</span>'
              f'<span class="sub">{about}</span><span class="where"></span><span class="time mono num">{when}</span>')
-    link = (f'<a class="item" href="{_url(ctx, "/inbox/" + str(item["id"]))}" data-nav>{cells}</a>' if ctx["live"]
-            else f'<div class="item">{cells}</div>')
-    return _row(f"need:{item['id']}", link, attrs=' data-where="" data-tone="warn"')
+    link = f'<a class="item" href="{href}" data-nav>{cells}</a>' if ctx["live"] else f'<div class="item">{cells}</div>'
+    return _row(f"need:{item['id']}", link + act, attrs=' data-where="" data-tone="warn"')
 
 
 def _job_list(jobs, stop_rows, ctx):
@@ -1037,20 +1054,6 @@ def _job_list(jobs, stop_rows, ctx):
     return empty + "".join(out)
 
 
-def _where_tabs(jobs, ctx):
-    counts = {"mac": sum(j.place == "mac" for j in jobs), "cloud": sum(j.place == "cloud" for j in jobs)}
-    tabs = (f'<button type="button" role="tab" aria-selected="true" data-where="">All '
-            f'<span class="num">{len(jobs)}</span></button>'
-            f'<button type="button" role="tab" aria-selected="false" data-where="mac">{_ic("mac", True)}{HERE} '
-            f'<span class="num">{counts["mac"]}</span></button>'
-            f'<button type="button" role="tab" aria-selected="false" data-where="cloud">{_ic("cloud", True)}Codex cloud '
-            f'<span class="num">{counts["cloud"]}</span></button>')
-    if not ctx["live"]:
-        return ""
-    return (f'<div class="tabs" role="tablist" aria-label="Where jobs run" data-region="where-tabs" data-still '
-            f'data-sig="{_sig(tabs)}">{tabs}</div>')
-
-
 def _seat_state(name, jobs):
     """What a seat is doing, from the jobs assigned to it: (tone, word, the job it is on, how many it runs)."""
     mine = [j for j in jobs if j.seat == name]
@@ -1061,52 +1064,6 @@ def _seat_state(name, jobs):
     if working:
         return "accent", "working", working[0], len(working)
     return "faint", "idle", None, 0
-
-
-def _rail(jobs, view, ctx):
-    """Who is working, as far as the harness knows: the seats from seats.toml and the Codex cloud jobs. More sections
-    (Claude sessions, Devin seats, GitHub) drop in here as the harness learns about them."""
-    seats = [s for s in view.get("seats", []) if isinstance(s, dict) and s.get("name")]
-    rows = []
-    for seat in seats:
-        tone, word, job, _ = _seat_state(str(seat["name"]), jobs)
-        dot = {"accent": "live", "amber": "warn"}.get(tone, "neutral")
-        # The job a seat is on goes by its id here, since the list already says what it is; an idle seat is one line,
-        # with its role (without its leading label, "Testing: …") as the card's title.
-        role = _sentence(_LABEL.sub("", str(seat.get("role", ""))))
-        what = f'<span class="i-m mono">{_text(job.id)}</span>' if job else ""
-        inner = (f'<span class="i-t mono">{_text(seat["name"])}</span><span class="i-s">{_dot(dot)}{word}</span>'
-                 f'{what}<span class="i-r mono">{_text(seat.get("model", ""))}</span>')
-        card = (f'<a class="card" href="{_url(ctx, "/job/" + job.id)}" data-nav>{inner}</a>' if job and ctx["live"]
-                else f'<div class="card idle" title="{_text(role)}">{inner}</div>')
-        rows.append(_row(f"seat:{seat['name']}", card, "li"))
-    parts = []
-    if rows:
-        parts.append(_section("r-seats", "Seats", _rows(rows), f'<span class="n num">{len(rows)}</span>'))
-    else:
-        parts.append(_section("r-seats", "Seats", '<p class="soft">This repository has no seats.toml, so no seat is '
-                                                  'drawn in the water.</p>'))
-    # Codex cloud in one line of counts: the jobs themselves are in the list, and those to launch are in the Inbox.
-    cloud = [j for j in jobs if j.place == "cloud" and j.group in ("needs", "live", "next", "ended")]
-    words, counts = {"live": "live", "next": "up next", "ended": "ended today"}, {}
-    rank = {"needs": 1, "live": 2, "next": 3, "ended": 4}
-    for job in sorted(cloud, key=lambda j: 0 if j.state == "handoff" or j.native else rank[j.group]):
-        word = ("to launch by hand" if job.state == "handoff" else "waiting for the environment" if job.native
-                else words.get(job.group) or job.word.lower())
-        counts[word] = counts.get(word, 0) + 1
-    said = []
-    for word, n in counts.items():
-        bit = f'<span class="num">{n}</span> {_text(word)}'
-        go = ctx["live"] and word in ("to launch by hand", "waiting for the environment")
-        said.append(f'<a href="{_url(ctx, "/inbox")}" data-nav>{bit}</a>' if go else bit)
-    if said:
-        line = ' <span class="sep">·</span> '.join(said)
-        parts.append(_section("r-cloud", "Codex cloud", f'<p class="r-sum">{line}</p>',
-                              f'<span class="n num">{len(cloud)}</span>'))
-    elif not ctx["ready"]:
-        parts.append(_section("r-cloud", "Codex cloud", '<p class="soft">Not set up yet. Cloud jobs wait until Codex '
-                                                        'has an environment for this repository.</p>'))
-    return f'<aside class="rail" aria-label="Who is working">{"".join(parts)}</aside>'
 
 
 def _creatures(jobs, view):
@@ -1128,10 +1085,10 @@ def _composer(ctx, draft, ready, first):
                     for n in _NEEDS)
     timeout = value("timeout_min") or "120"
     later = "" if ready else "<small>set up first</small>"
-    form = (f'<form class="compose composer" method="post" action="/job" data-act data-label="Start job" data-solid>'
+    form = (f'<form class="compose composer" method="post" action="/job" data-act data-label="Start job">'
             f'{_hidden(ctx, [])}<label class="sr" for="brief">What should the job do?</label>'
-            '<textarea class="c-text" id="brief" name="brief" rows="2" required placeholder="Describe a job: what to '
-            f'find, what to write, how to check it">{value("brief")}</textarea>'
+            '<textarea class="c-text" id="brief" name="brief" rows="1" required placeholder="Describe a job: what to '
+            f'find, write and check">{value("brief")}</textarea>'
             '<div class="cmd"><label for="command">Command</label><input type="text" id="command" name="command" '
             f'class="mono" autocomplete="off" spellcheck="false" placeholder="sh -c \'date &gt; today.txt\'" '
             f'value="{value("command")}"><small>Runs in runs/&lt;name&gt;/, so write plain file names. Pipes and &gt; '
@@ -1166,19 +1123,34 @@ def _composer(ctx, draft, ready, first):
             f'data-sig="{_sig("compose", body)}">{body}</div>')
 
 
-def _band(ctx, view, jobs, creatures, first, wait):
-    """The composer in its band of ASCII water: what is live and what waits, the prompt, and the form."""
-    live = sum(j.group == "live" for j in jobs)
+def _tally(ctx, jobs):
+    """The top bar's count: what needs you (the way to the Inbox) and what is live."""
+    live, wait = sum(j.group == "live" for j in jobs), len(ctx["needs"])
     waits = (f'<a href="{_url(ctx, "/inbox")}" data-nav data-need="{wait}">{_need_word(wait)}</a>' if wait
              else _need_word(0))
-    pulse = (f'{_dot("live" if live else "neutral")}<span class="num">{live}</span> '
-             f'{"job" if live == 1 else "jobs"} live <span class="sep">·</span> {waits}')
-    return ('<section class="tank" aria-labelledby="compose-title">' + _tank(creatures, "water", _fauna(jobs, view, ctx))
-            + '<div class="tank-in">'
-            + f'<p class="tally" data-clear data-region="tally" data-still data-sig="{_sig(pulse)}">{pulse}</p>'
-            + '<h1 class="sr" id="compose-title" tabindex="-1">What should run?</h1>'
-            + f'<p class="ask" data-clear data-cycle="{_text("|".join(_CYCLE))}" aria-hidden="true">{_CYCLE[0]}</p>'
-            + _composer(ctx, view.get("compose"), ctx["ready"], first) + '</div></section>')
+    pulse = (f'{_dot("warn" if wait else "neutral")}{waits} <span class="sep">·</span> <span class="num">{live}</span> '
+             f'{"job" if live == 1 else "jobs"} live')
+    return f'<p class="tally" data-region="tally" data-still data-sig="{_sig(pulse)}">{pulse}</p>'
+
+
+def _compose_strip(ctx, view, first):
+    """Starting a job: the composer as one line over the list, opening up as you type."""
+    return ('<section class="c-strip" aria-labelledby="compose-title"><h1 class="sr" id="compose-title" tabindex="-1">'
+            'What should run?</h1>' + _composer(ctx, view.get("compose"), ctx["ready"], first) + '</section>')
+
+
+def _reef(ctx, view, jobs):
+    """The sea beside the list: a jellyfish for each seat, named under it, and the rest of the sea life, each a count
+    the page already shows (see _fauna). A screen reader gets the seats as a list, with what each does."""
+    said = []
+    for seat in (s for s in view.get("seats", []) if isinstance(s, dict) and s.get("name")):
+        _, word, job, _ = _seat_state(str(seat["name"]), jobs)
+        role = _sentence(_LABEL.sub("", str(seat.get("role", ""))))
+        said.append(f'<li>{_text(seat["name"])}, {word}{" on " + _text(job.id) if job else ""}: {_text(role)}</li>')
+    seats = (f'<h2 class="sr">Seats</h2><ul class="sr">{"".join(said)}</ul>' if said
+             else '<p class="sr">This repository has no seats.toml, so no seat is drawn in the sea.</p>')
+    return ('<aside class="reef" aria-label="Who is working">'
+            + _tank(_creatures(jobs, view), "water", _fauna(jobs, view, ctx)) + _region("seats", seats) + '</aside>')
 
 
 def _snapshot_rail(jobs, loose, view, ctx):
@@ -1233,18 +1205,20 @@ def _snapshot_rail(jobs, loose, view, ctx):
 
 
 def _home(jobs, stop_rows, loose_cards, view, ctx, feedback):
-    """Today: the composer in its band of water, the jobs by what you do next, and who is working."""
-    live = ctx["live"]
-    top = _top(ctx, '<h1 tabindex="-1">Today</h1>'
-                    f'<span class="top-meta mono"><span class="when" data-clock>{_date(ctx["now"])}</span></span>')
-    center = []
-    if live and ctx["can_add"]:
-        center.append(_band(ctx, view, jobs, _creatures(jobs, view), not jobs, len(ctx["needs"])))
-    jobs_head = f'<div class="jobs-head"><h2 id="jobs-h">Jobs</h2>{_where_tabs(jobs, ctx)}</div>'
-    center.append(f'<section class="jobs" aria-labelledby="jobs-h">{jobs_head}<div class="list">'
-                  f'{_job_list(jobs, stop_rows, ctx)}</div></section>')
-    rail = _rail(jobs, view, ctx) if live else _snapshot_rail(jobs, loose_cards, view, ctx)
-    return top + feedback + f'<div class="page mc"><div class="center">{"".join(center)}</div>{rail}</div>'
+    """Today: what needs you first, then the rest of the jobs, under the composer as one line; on the right, the sea,
+    where each seat is a jellyfish. A printed snapshot has neither, and lists on the right what needs a person, each
+    with the command that settles it."""
+    when = (f'<h1 tabindex="-1">Today</h1><span class="top-meta mono"><span class="when" data-clock>{_date(ctx["now"])}'
+            '</span></span>')
+    listed = f'<div class="list">{_job_list(jobs, stop_rows, ctx)}</div>'
+    if not ctx["live"]:
+        jobs_head = '<div class="jobs-head"><h2 id="jobs-h">Jobs</h2></div>'
+        return (_top(ctx, when) + feedback + f'<div class="page mc"><div class="center"><section class="jobs" '
+                f'aria-labelledby="jobs-h">{jobs_head}{listed}</section></div>'
+                f'{_snapshot_rail(jobs, loose_cards, view, ctx)}</div>')
+    strip = _compose_strip(ctx, view, not jobs) if ctx["can_add"] else ""
+    return (_top(ctx, when, _tally(ctx, jobs)) + feedback + f'<div class="page reef-page"><div class="center">{strip}'
+            f'<section class="jobs" aria-label="Jobs">{listed}</section></div>{_reef(ctx, view, jobs)}</div>')
 
 
 def _event(ev, now, kind):
@@ -1261,7 +1235,7 @@ def _event(ev, now, kind):
         elif to == "ready":
             if not detail:
                 return None
-            text = f"Ready: {detail}"
+            text = detail if detail == _STATES["env"][0] else f"Ready: {detail}"
         elif to == "handoff":
             return None
         elif to == "collecting":
@@ -1359,8 +1333,9 @@ def _receipt(ctx, opened, job, spec, finished, lead):
 def _props(ctx, job, spec, entry, view):
     """The right side's properties: what the job is, where and when it runs, and what it was asked to do."""
     now, kind = ctx["now"], job.get("kind") or spec.get("kind", "")
-    word = _STATES.get(job.get("state"), (job.get("state"),))[0]
-    rows = [("State", f'{_ring(job.get("state"))}<span>{_text(word)}</span>'),
+    shown = "env" if entry.native else job.get("state")
+    word = _STATES.get(shown, (shown,))[0]
+    rows = [("State", f'{_ring(shown)}<span>{_text(word)}</span>'),
             ("Runs on", f'{_ic("mac" if kind == "local-shell" else "cloud", True)}<span>{_text(_platform(kind))}</span>')]
     seat = str(spec.get("seat") or "")
     if seat:
@@ -1419,8 +1394,9 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
     receipt = opened.get("receipt") if isinstance(opened.get("receipt"), dict) else {}
     started = receipt.get("started") or job.get("started")
     ended = receipt.get("ended") or job.get("updated")
-    word, tone = _STATES.get(state, (state, "neutral"))
-    line = [_ring(state)]
+    shown = "env" if entry.native else state
+    word, tone = _STATES.get(shown, (shown, "neutral"))
+    line = [_ring(shown)]
     if finished:
         took = (f" in {_m(_duration(ended - started))}" if state == "done"
                 else f" after {_m(_duration(ended - started))}") if _number(started) and _number(ended) else ""
@@ -1448,7 +1424,7 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
         prog.append(f'<div class="pg wide"><span class="pg-k">Time used</span><b>{took}<em> / {_text(limit)} min</em></b>'
                     f'{_cells(-(-used * 20 // (limit * 60)), 20, "amber" if state == "stalled" else "muted")}</div>')
     log = opened.get("log")
-    if isinstance(log, str) and log.strip():
+    if isinstance(log, str) and log.strip() and not finished:  # once it ends, its output is folded below, with its count
         n = len(log.rstrip("\n").splitlines())
         # The page holds only the end of a long log (serve's last 200 lines or 64 KB), so a cut one is "last".
         cut = finished or opened.get("log_cut")
@@ -1512,6 +1488,14 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     creature = _creature(entry.seat or _platform(kind), tone, 0, 1, (0.88, 0.62))
     main = [_job_head(ctx, opened, job, spec, entry, finished, creature), feedback]
     work = []
+    failed = finished and state != "done" and state != "cancelled"
+    # A failed job leads with the check that failed: what it ran and its exit code, before anything else.
+    bad = next(((cmd, code) for passed, cmd, code in _checks_of(opened, spec, True) if passed is False), None)
+    if failed and bad:
+        what = "Its Done when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "Its command"
+        work.append(_region("j-fail", f'<p class="fail-k">{_ring(state)}{what} failed</p><p class="fail-c"><code>'
+                            f'{_text(bad[0])}</code><span class="exit mono">exit {_text(bad[1])}</span></p>', "section",
+                            "s-j-fail", ' aria-label="What failed"'))
     said = _lead(spec)[1]
     if said:
         work.append(_region("j-brief", f'<div class="bubble">{_text(_reflow(said))}</div>', "section", "s-j-brief",
@@ -1563,7 +1547,6 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     log = opened.get("log")
     log = log if isinstance(log, str) and log.strip() else ""
     lines = log.rstrip("\n").splitlines()
-    failed = finished and state != "done" and state != "cancelled"
     if log and not finished:
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
@@ -1632,7 +1615,9 @@ def _ib_row(ctx, entry, picked):
     sub = (f'<span class="mono">{_text(jid)}</span> · {_text(job.title) if job else "a job not listed here"}' if jid
            else "The app's own pause" if entry["stop"] else "The harness")
     current = ' aria-current="true"' if picked else ""
-    inner = (f'<span class="ib-ic">{_ic(entry["icon"])}</span><span class="ib-t">{_text(entry["ask"])}</span>'
+    # a job's entry wears the ring it wears on Today, so a state has one mark in both places
+    mark = _ring(job.state, "red" if job.state in _FAILED else "amber") if job else _ic(entry["icon"])
+    inner = (f'<span class="ib-ic">{mark}</span><span class="ib-t">{_text(entry["ask"])}</span>'
              f'<span class="ib-age mono num">{age}</span><span class="ib-s">{sub}</span>')
     link = (f'<a class="ib" href="{href}" data-nav{current}>{inner}</a>' if ctx["live"]
             else f'<div class="ib">{inner}</div>')
@@ -1935,8 +1920,8 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     elif compose:
         page, title = "new", "New job · Research harness"
         top = _top(ctx, '<h1 tabindex="-1">New job</h1>')
-        pane = (top + feedback + '<div class="page nw">'
-                + _band(ctx, view, jobs, _creatures(jobs, view), not jobs, len(ctx["needs"])) + '</div>')
+        pane = (top + feedback + '<div class="page reef-page new-page"><div class="center">'
+                + _compose_strip(ctx, view, not jobs) + f'</div>{_reef(ctx, view, jobs)}</div>')
     else:
         page, title = "home", "Research harness"
         pane = _home(jobs, stop_rows, loose, view, ctx, feedback)

@@ -50,7 +50,7 @@ class DesktopTest(unittest.TestCase):
             self.assertNotEqual(sock.connect_ex(addresses[0]), 0)
 
     def test_requirements_are_hashed_and_platform_scoped(self):
-        lines = (ROOT / "desktop/requirements.txt").read_text().splitlines()
+        lines = (ROOT / "desktop/requirements.txt").read_text(encoding="utf-8").splitlines()
         requirements = [line for line in lines if line.strip() and not line.startswith("#")]
         self.assertTrue(requirements)
         for line in requirements:
@@ -64,7 +64,7 @@ class DesktopTest(unittest.TestCase):
     def test_core_has_no_desktop_imports(self):
         forbidden = {"webview", "PyInstaller", "objc", "clr"}
         for path in (ROOT / "rh").rglob("*.py"):
-            for node in ast.walk(ast.parse(path.read_text())):
+            for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                 if isinstance(node, ast.Import):
                     modules = [alias.name for alias in node.names]
                 elif isinstance(node, ast.ImportFrom):
@@ -74,8 +74,8 @@ class DesktopTest(unittest.TestCase):
                 self.assertFalse(forbidden.intersection(m.split(".")[0] for m in modules), str(path))
 
     def test_workflow_contract(self):
-        workflow = (ROOT / ".github/workflows/build.yml").read_text()
-        spec = (ROOT / "desktop/rh-desktop.spec").read_text()
+        workflow = (ROOT / ".github/workflows/build.yml").read_text(encoding="utf-8")
+        spec = (ROOT / "desktop/rh-desktop.spec").read_text(encoding="utf-8")
         for text in ("macos-arm64:", "macos-x64:", "windows:", "release:",
                      "--require-hashes", "--smoke", "hdiutil create",
                      "bin/rh --version", '"rh ${TAG#v}"',

@@ -515,8 +515,7 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(view, NOW, token=TOKEN)
         right = text(pane(page))
         for value in ("Write the notes", "Done", "finished-job", dashboard.HERE, "finished 10 s ago", "Done in 1 min 20 s.",
-                      "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Write the notes.",
-                      "Cite each source.", "notes.md exists", "runs/finished-job/",
+                      "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Cite each source.", "notes.md exists", "runs/finished-job/",
                       "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",
                       f"Asked you: {ASK.capitalize()}{dashboard._clock(NOW - 31, NOW)}",
                       f"Mystery thing: raw zz{dashboard._clock(NOW - 5, NOW)}",
@@ -549,8 +548,13 @@ class DashboardTest(unittest.TestCase):
         single["open"]["job"]["spec"]["brief"] = "Count the words."
         self.assertEqual(text(pane(dashboard.render(single, NOW, token=TOKEN))).count("Count the words"), 1)
         single["open"]["job"]["spec"]["brief"] = "Read the last 90 nightly logs and list every test that timed out in timeouts.md."
-        long = pane(dashboard.render(single, NOW, token=TOKEN))
+        single["meta"] = {"live-job": {"brief": single["open"]["job"]["spec"]["brief"]}}
+        page = dashboard.render(single, NOW, token=TOKEN)
+        long = pane(page)
         self.assertIn("timed out in timeouts.md</h1>", long)
+        # The list and ⌘K keep an ordinary first sentence whole too; only one past 100 characters is cut.
+        self.assertIn('<span class="p-t">Read the last 90 nightly logs and list every test that timed out in timeouts.md'
+                      '</span>', page)
         self.assertNotIn('class="bubble"', long)
 
     def test_hand_launch_is_one_ordered_card(self):
@@ -1009,9 +1013,136 @@ class DashboardTest(unittest.TestCase):
         code = dashboard.SCRIPT[dashboard.SCRIPT.index("  function creature("):]
         code = code[:code.index("\n  }\n")]
         self.assertNotIn("% span", code)
-        self.assertRegex(code, r"const cy = clamp\([^;]*, 1 \+ up, rows - 1 - down\);")
-        self.assertRegex(code, r"const cx = clamp\([^;]*, 1 \+ side, cols - 1 - side\);")
+        self.assertRegex(code, r"const cy = clamp\([^;]*, y0 \+ 1 \+ up, y1 - 1 - down\);")
+        self.assertRegex(code, r"const cx = clamp\([^;]*, x0 \+ 1 \+ side, x1 - 1 - side\);")
         self.assertIn("const fit = ", code)
+
+    def test_jellyfish_swim_beside_the_composer_not_behind_it(self):
+        # A composer the water does not know is solid, a creature that may swim behind it, one sized for the whole
+        # band instead of its own water, or a side's seats piled on one spot, must fail.
+        today = dashboard.render(live_view(), NOW, token=TOKEN)
+        self.assertRegex(today, r'<form class="compose composer"[^>]* data-solid>')
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank("):]
+        code = code[:code.index("\n}\n")]
+        self.assertIn("const el = $('[data-solid]', host);", code)
+        # The water beside the composer and above it ends two cells short of it.
+        self.assertIn("return [Math.floor((b.left - box.left) / CW) - 2, Math.ceil((b.right - box.left) / CW) + 2,\n"
+                      "      Math.floor((b.top - box.top) / CH) - 2];", code)
+        # Each side's water is the lane beside the composer and the strip above it, never the composer itself.
+        self.assertIn("const water = s && [[[0, 0, Math.max(0, s[0]), rows], [0, 0, half, top]],\n"
+                      "      [[Math.min(cols, s[1]), 0, cols, rows], [half, 0, cols, top]]];", code)
+        self.assertIn("creature(c, k, t, water && water[sides[k]], (i + 0.5) / n);", code)
+        self.assertIn("const [x0, y0, x1, y1] = held ? pick : [0, 0, cols, rows];", code)
+        self.assertIn("const fit = Math.max(0.3, scale([x0, y0, x1, y1]));", code)
+        self.assertIn("const ay = held && tall ? y0 + slot * (y1 - y0) - (down - up) / 2 : c.fy * rows;", code)
+        # The size it is drawn at leaves room for its bell and its arms' sway, which `side` measures.
+        self.assertIn("(x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64)", code)
+        self.assertIn("side = Math.max(rx + 2, rx * 0.86 + L * 0.32 + 1)", code)
+
+    def test_a_jobs_heading_is_its_whole_first_sentence_said_once(self):
+        # A heading cut short, a brief repeated under its own heading, or a list title left uncut, must fail.
+        view = opened(live_view(), "live-job")
+        first = ("Read every nightly log from the last ninety days, list each test that timed out with its slowest "
+                 "run, and flag any test that timed out more than twice")
+        view["open"]["job"]["spec"]["brief"] = first + ". Write it to timeouts.md.\nKeep it short."
+        view["meta"] = {"live-job": {"brief": view["open"]["job"]["spec"]["brief"]}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertIn(f"{first}</h1>", page)
+        self.assertEqual(text(pane(page).split('<aside class="jd-side"', 1)[0]).count(first), 1)
+        bubble = re.search(r'<div class="bubble">(.*?)</div>', page, re.S).group(1)
+        self.assertEqual(bubble, "Write it to timeouts.md.\nKeep it short.")
+        listed = re.search(r'href="/job/live-job\?t=[^"]*" data-nav><span class="p-ic">.*?<span class="p-t">(.*?)</span>',
+                           page, re.S).group(1)
+        self.assertTrue(listed.endswith("…") and len(listed) <= 100 and first.startswith(listed[:-1]), listed)
+        self.assertIn("text-wrap: pretty", dashboard.STYLE.split(".jd-head h1 {", 1)[1].split("}", 1)[0])
+
+    def test_the_launch_prompt_shows_whole_lines(self):
+        # A prompt box whose height is not a whole number of its lines, a box with no fade or no Show all, or a box
+        # the page cannot open in full, must fail.
+        view = opened(live_view(), "web-job")
+        view["open"]["prompt"] = "line\n" * 12
+        card = re.search(r'<div class="ask-card launch">.*?</ol>', pane(dashboard.render(view, NOW, token=TOKEN)),
+                         re.S).group(0)
+        self.assertRegex(card, r'<div class="clip" data-clip><textarea class="prompt mono" id="prompt-web-job"')
+        self.assertIn('<button type="button" class="btn small quiet" data-more hidden>Show all</button>', card)
+        # The text is cut by its own box at exactly four lines; the padding and border sit outside it, on the clip,
+        # so no part of a fifth line shows in them.
+        rule = dashboard.STYLE.split(".steps .clip .prompt {", 1)[1].split("}", 1)[0]
+        height, line = (int(re.search(rf"(?<![\w-]){k}: (\d+)px", rule).group(1)) for k in ("height", "line-height"))
+        self.assertEqual(height, 4 * line)
+        for zero in ("padding: 0;", "border: 0;"):
+            self.assertIn(zero, rule)
+        clip = dashboard.STYLE.split(".clip {", 1)[1].split("}", 1)[0]
+        for rule in ("padding: 12px", "border: 1px solid"):
+            self.assertIn(rule, clip)
+        self.assertIn("height: 24px", dashboard.STYLE.split(".clip::after {", 1)[1].split("}", 1)[0])
+        self.assertIn(".clip.whole::after, .clip.open::after { display: none; }", dashboard.STYLE)
+        self.assertIn("if (m) { more(m); return; }", dashboard.SCRIPT)
+        self.assertIn("box.style.height = open ? box.scrollHeight + 'px' : '';", dashboard.SCRIPT)
+
+    def test_the_rail_says_who_works_without_repeating_the_list(self):
+        # A seat that repeats its job's title or its own name, or a Codex cloud section that lists the jobs again,
+        # must fail.
+        view = live_view()
+        view["seats"] = [{"name": "testing", "role": "Testing: the test runner", "route": "codex-cloud", "model": "m-1"},
+                         {"name": "docs", "role": "the guides", "route": "codex-cloud", "model": "m-1"},
+                         {"name": "backend", "role": "Back end: the supervisor", "route": "codex-cloud", "model": "m-1"}]
+        view["meta"] = {jid: {"kind": "codex-cloud"} for jid in ("live-job", "web-job", "queued-job", "finished-job",
+                                                                   "broke-job")}
+        view["meta"]["live-job"].update(seat="backend", brief="Tally the slow tests.")
+        page = dashboard.render(view, NOW, token=TOKEN)
+        seats = re.search(r'<section class="s-r-seats".*?</section>', page, re.S).group(0)
+        self.assertIn('<span class="i-m mono">live-job</span>', seats)
+        self.assertNotIn("Tally the slow tests", seats)
+        self.assertIn('<span class="i-m">The test runner</span>', seats)
+        self.assertNotIn("Testing:", seats)
+        self.assertIn('<span class="i-m">The guides</span>', seats)
+        self.assertNotIn("supervisor", seats)
+        cloud = re.search(r'<section class="s-r-cloud".*?</section>', page, re.S).group(0)
+        self.assertEqual(cloud.count('<p class="r-sum">'), 1)
+        self.assertNotIn('class="card"', cloud)
+        for jid in ("live-job", "web-job", "queued-job", "finished-job", "broke-job"):
+            self.assertNotIn(jid, cloud)
+        # The one to launch by hand comes first; live-job waits on a question, but it is still running.
+        line = text(re.search(r'<p class="r-sum">.*?</p>', cloud, re.S).group(0))
+        self.assertEqual(line, "1 to launch by hand · 1 running · 1 on hold · 1 failed · 1 ended today")
+        self.assertIn('<span class="n num">5</span>', cloud)
+        self.assertRegex(cloud, r'<a href="/inbox\?t=[^"]*" data-nav><span class="num">1</span> to launch by hand</a>')
+
+    def test_a_finished_jobs_page_has_a_muted_meter_and_a_dim_seat(self):
+        # A time meter coloured as a verdict, a finished job's page with its jellyfish drawn amber or teal, or a
+        # question on a failed job drawn amber in the Inbox, must fail.
+        # live-job is running with a question waiting on you, so its seat is amber; the two ended jobs' are dim.
+        for jid, tone in (("broke-job", "faint"), ("finished-job", "faint"), ("live-job", "amber")):
+            with self.subTest(jid=jid):
+                view = opened(live_view(), jid)
+                page = pane(dashboard.render(view, NOW, token=TOKEN))
+                meter = re.search(r'<span class="cells( \w+)?" aria-hidden="true">', page)
+                self.assertEqual(meter.group(1), " muted")
+                found = re.search(r'data-creatures="([^"]*)" data-region="j-water"', page)
+                self.assertEqual(json.loads(html.unescape(found.group(1)))[0]["tone"], tone)
+        stalled = opened(live_view(), "live-job", state="stalled")
+        self.assertIn('<span class="cells amber"', pane(dashboard.render(stalled, NOW, token=TOKEN)))
+        # In the Inbox, a question on a failed job is drawn dim too; one on a running job, amber.
+        view = live_view()
+        view["inbox"].append({"id": 9, "kind": "decision", "job": "broke-job", "action": "run it again?", "detail": "",
+                              "created": NOW - 1, "resolved": None, "resolution": None})
+        for pick, tone in ((9, "faint"), (7, "amber")):
+            found = re.search(r'data-creatures="([^"]*)" data-region="q-water"', inbox(view, pick))
+            self.assertEqual(json.loads(html.unescape(found.group(1)))[0]["tone"], tone)
+
+    def test_the_palettes_state_word_shows_whole_or_not_at_all(self):
+        # A job's id and state run together in one ellipsised line, or a meta column that can show part of the state
+        # word, must fail.
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        self.assertRegex(page, r'<span class="p-s"><span class="mono">web-job</span><span>launch by hand</span></span>')
+        row = dashboard.STYLE.split(".p-row {", 1)[1].split("}", 1)[0]
+        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) 240px auto", row)
+        meta = dashboard.STYLE.split(".p-s {", 1)[1].split("}", 1)[0]
+        for rule in ("flex-wrap: wrap", "justify-content: flex-end", "height: 20px", "line-height: 20px",
+                     "overflow: hidden"):
+            self.assertIn(rule, meta)
+        self.assertNotIn("text-overflow", meta)
 
     def test_render_is_deterministic_and_does_not_mutate_view(self):
         # Mutating the source ledger view or consulting wall-clock time must fail.

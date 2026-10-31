@@ -90,23 +90,45 @@ function Tank(canvas) {
       return [(b.left - box.left - 8) / CW, (b.top - box.top - 4) / CH, (b.right - box.left + 8) / CW, (b.bottom - box.top + 4) / CH];
     });
   }
+  // The composer is solid: the water beside it and above it ends two cells short of it. A creature that no piece of
+  // that water holds at a tenth of its size gets the whole band, and can pass behind the composer.
+  function solid() {
+    const el = $('[data-solid]', host);
+    if (!el || !el.getClientRects().length) return null;
+    const box = host.getBoundingClientRect(), b = el.getBoundingClientRect();
+    return [Math.floor((b.left - box.left) / CW) - 2, Math.ceil((b.right - box.left) / CW) + 2,
+      Math.floor((b.top - box.top) / CH) - 2];
+  }
   const put = (i, j, v, k) => {
     if (i < 0 || j < 0 || i >= cols || j >= rows) return;
     const n = j * cols + i;
     if (v > dens[n]) { dens[n] = Math.min(1, v); who[n] = k; }
   };
 
-  function creature(c, k, t) {
+  function creature(c, k, t, open, slot) {
     const sp = c.sp || 1, ph = c.ph || k * 1.7;
-    // The whole body stays in the water with a cell to spare; in a band too short for it, it is drawn smaller.
-    const fit = Math.max(0.3, Math.min(1, (rows - 2) / (c.r * 0.75 + c.len * 1.05 + 4), (cols - 2) / (c.r * 2.2 + 6)));
+    // How big it can be drawn in water [x0, y0, x1, y1] with a cell to spare round its bell, fringe and arms.
+    const scale = ([x0, y0, x1, y1]) => Math.min(1, (y1 - y0 - 6) / (c.r * 0.78 + c.len * 1.05),
+      (x1 - x0 - 6) / (c.r * 2.12), (x1 - x0 - 4) / (c.r * 1.82 + c.len * 0.64));
+    // Beside the composer it swims in whichever piece of its side's water lets it be biggest. It is never drawn under
+    // 0.3 of its size, so in a piece that holds it at 0.1 to 0.3 (a phone's strip above the composer) it is bigger
+    // than the piece's room and is centred on it; where every piece is under 0.1, it has the whole band.
+    const pick = open && open.reduce((a, b) => (scale(b) > scale(a) ? b : a));
+    const held = !!pick && scale(pick) >= 0.1;
+    const [x0, y0, x1, y1] = held ? pick : [0, 0, cols, rows];
+    const fit = Math.max(0.3, scale([x0, y0, x1, y1]));
     const R = c.r * fit, L = c.len * fit;
     const rx = (R * (1 + 0.06 * Math.sin(t * 1.05 * sp + ph))), ry = R * 0.62 * (1 - 0.05 * Math.sin(t * 1.05 * sp + ph));
-    const up = ry + 2, down = ry * 0.2 + L * 1.05 + 2, side = Math.max(rx + 3, L * 0.32 + 2);
-    const clamp = (v, lo, hi) => (hi < lo ? (lo + hi) / 2 : Math.min(hi, Math.max(lo, v)));
-    // it bobs and drifts about its place, never past the band's edges
-    const cy = clamp(c.fy * rows + Math.sin(t * 0.21 * sp + ph) * 1.4, 1 + up, rows - 1 - down);
-    const cx = clamp(c.fx * cols + Math.sin(t * 0.17 * sp + ph) * 1.6, 1 + side, cols - 1 - side);
+    const up = ry + 2, down = ry * 0.2 + L * 1.05 + 2, side = Math.max(rx + 2, rx * 0.86 + L * 0.32 + 1);
+    const clamp = (v, a, b) => (b < a ? (a + b) / 2 : Math.min(b, Math.max(a, v)));
+    // Its place: its own spot in the band, or, sharing a piece of water with its side's other seats, an even share
+    // along that piece's length.
+    const tall = (y1 - y0) * CH > (x1 - x0) * CW;
+    const ax = held && !tall ? x0 + slot * (x1 - x0) : c.fx * cols;
+    const ay = held && tall ? y0 + slot * (y1 - y0) - (down - up) / 2 : c.fy * rows;
+    // it bobs and drifts about its place inside its water's edges, or sits centred where it is wider than its water
+    const cy = clamp(ay + Math.sin(t * 0.21 * sp + ph) * 1.4, y0 + 1 + up, y1 - 1 - down);
+    const cx = clamp(ax + Math.sin(t * 0.17 * sp + ph) * 1.6, x0 + 1 + side, x1 - 1 - side);
     const flick = Math.floor(t * 5);
     const tz = t * 0.7 + k * 9;
     // the bell leans a little as it swims
@@ -169,7 +191,15 @@ function Tank(canvas) {
   function draw(t) {
     if (!cols || !rows) return;
     dens.fill(0);
-    spec.forEach((c, k) => creature(c, k, t));
+    // Each side's open water: the lane beside the composer and the strip above it, shared by that side's seats.
+    const s = solid(), half = Math.floor(cols / 2), top = s ? Math.max(0, s[2]) : 0;
+    const water = s && [[[0, 0, Math.max(0, s[0]), rows], [0, 0, half, top]],
+      [[Math.min(cols, s[1]), 0, cols, rows], [half, 0, cols, top]]];
+    const sides = spec.map(c => (c.fx < 0.5 ? 0 : 1)), seen = [0, 0];
+    spec.forEach((c, k) => {
+      const n = sides.filter(v => v === sides[k]).length, i = seen[sides[k]]++;
+      creature(c, k, t, water && water[sides[k]], (i + 0.5) / n);
+    });
     const clear = clears();
     ctx.clearRect(0, 0, W, H);
     // the faint character grid of the reference
@@ -357,6 +387,21 @@ function mark() {
   }
   for (const log of $$('.log')) if (!log.dataset.held) log.scrollTop = log.scrollHeight;
   for (const b of $$('[data-copy]')) b.hidden = false;
+  // A clipped box offers Show all only when it holds more than it shows.
+  for (const c of $$('[data-clip]')) {
+    const box = c.firstElementChild, more = c.nextElementSibling && $('[data-more]', c.nextElementSibling);
+    const whole = box.scrollHeight <= box.clientHeight + 1;
+    c.classList.toggle('whole', whole && !c.classList.contains('open'));
+    if (more) more.hidden = whole && !c.classList.contains('open');
+  }
+}
+function more(b) {
+  const c = b.parentElement.previousElementSibling, box = c && c.firstElementChild;
+  if (!box) return;
+  const open = !c.classList.contains('open');
+  c.classList.toggle('open', open);
+  box.style.height = open ? box.scrollHeight + 'px' : '';
+  b.textContent = open ? 'Show less' : 'Show all';
 }
 
 function filter() {
@@ -663,6 +708,8 @@ document.addEventListener('click', e => {
   for (const d of $$('details.act[open], details.opts[open]')) if (!d.contains(e.target)) d.open = false;
   const c = e.target.closest && e.target.closest('[data-copy]');
   if (c) { copy(c); return; }
+  const m = e.target.closest && e.target.closest('[data-more]');
+  if (m) { more(m); return; }
   if (e.target.closest && e.target.closest('[data-pal]')) { openPal(); return; }
   const d = pal();
   if (d && e.target === d) { closePal(); return; }  // a click on the backdrop

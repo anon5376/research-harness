@@ -63,6 +63,7 @@ _NEEDS = ("net", "python", "git", "loopback", "browser", "gpu")  # capabilities 
 _STALE = 300  # seconds without a check before the status line says the checks may have stopped
 _TAIL = 12  # lines of a failed job's output shown open, as where it stopped
 _CODEX = "https://chatgpt.com/codex"  # the one page outside the app a live page links to, for a hand launch
+_LABEL = re.compile(r"^[^:]{1,24}:\s+")  # a seat role's leading label of up to 24 characters, such as "Testing: "
 _SETUP = "create and publish the cloud environment"  # how the supervisor's Codex cloud setup step begins
 _KEYS = (("⌘K / Ctrl K", "Jump to a job, a page or an action"), ("j / ↓", "Next row"), ("k / ↑", "Previous row"),
          ("Enter", "Open it"), ("n", "New job"), ("i", "Open the Inbox"), ("r", "Answer or mark done"),
@@ -304,13 +305,19 @@ def _plain(detail):
     return _sentence(re.sub(r"\s*\(?pid \d+\)?", "", text))
 
 
+def _lead(meta):
+    """A brief as its job's page shows it: the first sentence, whole, for the heading, and the rest under it."""
+    lines = str((meta or {}).get("brief") or "").strip().splitlines()
+    if not lines:
+        return "", ""
+    head, *more = re.split(r"(?<=[.!?])\s", lines[0].strip(), maxsplit=1)
+    return head.rstrip("."), "\n".join([*more, *lines[1:]]).strip()
+
+
 def _title(meta, jid):
-    """A job's name in the list and on its page: the first sentence of its brief, else its id."""
-    brief = str((meta or {}).get("brief") or "").strip()
-    if not brief:
-        return str(jid)
-    line = brief.splitlines()[0].strip()
-    line = re.split(r"(?<=[.!?])\s", line, maxsplit=1)[0].rstrip(".")
+    """A job's name in the list and the palette: the first sentence of its brief, cut to at most 98 characters and an
+    ellipsis when it runs past 100, else its id."""
+    line = _lead(meta)[0]
     if len(line) > 100:
         line = line[:98].rsplit(" ", 1)[0].rstrip(",;:") + "…"
     return line or str(jid)
@@ -591,8 +598,12 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
     env = _ENV.search(str((opened.get("job") or {}).get("detail") or ""))
     where = f" in environment <code>{_text(env.group(1))}</code>" if env else ""
     pid = f"prompt-{jid}"
-    copy = (f'<textarea class="prompt mono" id="{_text(pid)}" rows="4" readonly>{_text(prompt)}</textarea>'
-            f'{_copy(pid, "Copy prompt")}' if isinstance(prompt, str) and prompt.strip() else
+    # The prompt shows four whole lines with the last fading; the page's script drops the fade when they hold all of
+    # it, and otherwise shows Show all.
+    copy = (f'<div class="clip" data-clip><textarea class="prompt mono" id="{_text(pid)}" rows="4" readonly>'
+            f'{_text(prompt)}</textarea></div><div class="clip-acts">{_copy(pid, "Copy prompt")}'
+            '<button type="button" class="btn small quiet" data-more hidden>Show all</button></div>'
+            if isinstance(prompt, str) and prompt.strip() else
             f'<p class="detail">The prompt could not be read here; <code>rh cloud prompt {_text(jid)}</code> prints it.'
             '</p>')
     attach = (f'<form method="post" action="/attach" data-act data-label="Link task">{_hidden(ctx, [("job", jid)])}'
@@ -937,9 +948,12 @@ def _rail(jobs, view, ctx):
     for seat in seats:
         tone, word, job, _ = _seat_state(str(seat["name"]), jobs)
         dot = {"accent": "live", "amber": "warn"}.get(tone, "neutral")
-        what = _text(job.title) if job else _text(seat.get("role", ""))
+        # The job a seat is on goes by its id here, since the list already says what it is; an idle seat says its
+        # role without its leading label ("Testing: …").
+        role = _sentence(_LABEL.sub("", str(seat.get("role", ""))))
+        what = f'<span class="i-m mono">{_text(job.id)}</span>' if job else f'<span class="i-m">{_text(role)}</span>'
         inner = (f'<span class="i-t mono">{_text(seat["name"])}</span><span class="i-s">{_dot(dot)}{word}</span>'
-                 f'<span class="i-m">{what}</span><span class="i-r mono">{_text(seat.get("model", ""))}</span>')
+                 f'{what}<span class="i-r mono">{_text(seat.get("model", ""))}</span>')
         card = (f'<a class="card" href="{_url(ctx, "/job/" + job.id)}" data-nav>{inner}</a>' if job and ctx["live"]
                 else f'<div class="card">{inner}</div>')
         rows.append(_row(f"seat:{seat['name']}", card, "li"))
@@ -949,21 +963,22 @@ def _rail(jobs, view, ctx):
     else:
         parts.append(_section("r-seats", "Seats", '<p class="soft">This repository has no seats.toml, so no seat is '
                                                   'drawn in the water.</p>'))
+    # Codex cloud in one line of counts: the jobs themselves are in the list, and those to launch are in the Inbox.
     cloud = [j for j in jobs if j.place == "cloud" and j.group in ("needs", "live", "next", "ended")]
-    rows = []
-    for job in cloud[:6]:
-        word, tone = _STATES.get(job.state, (job.state, "neutral"))
-        ext = str(job.row.get("external_id") or "")
-        meta = [f"<span>{_text(job.id)}</span>"] + ([f"<span>{_text(ext[:18])}</span>"] if ext else [])
-        since = job.since()
-        inner = (f'<span class="i-t">{_text(job.title)}</span><span class="i-s">{_dot(tone)}{_text(word.lower())}</span>'
-                 f'<span class="i-m mono">{"".join(meta)}</span>'
-                 f'<span class="i-r mono">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
-        card = (f'<a class="card" href="{_url(ctx, "/job/" + job.id)}" data-nav>{inner}</a>' if ctx["live"]
-                else f'<div class="card">{inner}</div>')
-        rows.append(_row(f"cloud:{job.id}", card, "li"))
-    if rows:
-        parts.append(_section("r-cloud", "Codex cloud", _rows(rows), f'<span class="n num">{len(cloud)}</span>'))
+    words, counts = {"live": "live", "next": "up next", "ended": "ended today"}, {}
+    rank = {"needs": 1, "live": 2, "next": 3, "ended": 4}
+    for job in sorted(cloud, key=lambda j: 0 if j.state == "handoff" else rank[j.group]):
+        word = "to launch by hand" if job.state == "handoff" else words.get(job.group) or job.word.lower()
+        counts[word] = counts.get(word, 0) + 1
+    said = []
+    for word, n in counts.items():
+        bit = f'<span class="num">{n}</span> {_text(word)}'
+        go = ctx["live"] and word == "to launch by hand"
+        said.append(f'<a href="{_url(ctx, "/inbox")}" data-nav>{bit}</a>' if go else bit)
+    if said:
+        line = ' <span class="sep">·</span> '.join(said)
+        parts.append(_section("r-cloud", "Codex cloud", f'<p class="r-sum">{line}</p>',
+                              f'<span class="n num">{len(cloud)}</span>'))
     elif not ctx["ready"]:
         parts.append(_section("r-cloud", "Codex cloud", '<p class="soft">Not set up yet. Cloud jobs wait until Codex '
                                                         'has an environment for this repository.</p>'))
@@ -989,7 +1004,7 @@ def _composer(ctx, draft, ready, first):
                     for n in _NEEDS)
     timeout = value("timeout_min") or "120"
     later = "" if ready else "<small>set up first</small>"
-    form = (f'<form class="compose composer" method="post" action="/job" data-act data-label="Start job">'
+    form = (f'<form class="compose composer" method="post" action="/job" data-act data-label="Start job" data-solid>'
             f'{_hidden(ctx, [])}<label class="sr" for="brief">What should the job do?</label>'
             '<textarea class="c-text" id="brief" name="brief" rows="2" required placeholder="Describe a job: what to '
             f'find, what to write, how to check it">{value("brief")}</textarea>'
@@ -1315,7 +1330,7 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
         took = (f'<span class="num">{_text(_span(max(0, round(used))))}</span>' if finished
                 else _when(started, now, "j:used", short=True))
         prog.append(f'<div class="pg wide"><span class="pg-k">Time used</span><b>{took}<em> / {_text(limit)} min</em></b>'
-                    f'{_cells(-(-used * 20 // (limit * 60)), 20, "amber" if state == "stalled" else "")}</div>')
+                    f'{_cells(-(-used * 20 // (limit * 60)), 20, "amber" if state == "stalled" else "muted")}</div>')
     log = opened.get("log")
     if isinstance(log, str) and log.strip():
         n = len(log.rstrip("\n").splitlines())
@@ -1334,7 +1349,7 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
                     '</span></div>')
     body = (_tank([creature], "j-water") + '<div class="jd-head-in">'
             f'<p class="jd-id mono" data-clear>{_text(jid)} <span class="sep">·</span> {_text(_platform(kind))}</p>'
-            f'<h1 tabindex="-1" data-clear>{_text(_title(spec, jid))}</h1>'
+            f'<h1 tabindex="-1" data-clear>{_text(_lead(spec)[0] or jid)}</h1>'
             f'<p class="jd-state" data-clear>{"".join(line)}</p>'
             + (f'<div class="jd-prog" data-clear>{"".join(prog)}</div>' if prog else "") + '</div>')
     return _region("j-head", body, "section", "jd-head")
@@ -1374,12 +1389,13 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         acts.append(_cancel(ctx, jid))
     top = _top(ctx, crumbs + f'{_ic("chev", True)}<span>{group}</span>{_ic("chev", True)}'
                              f'<span class="mono">{_text(jid)}</span></nav>', "".join(acts))
-    tone = "amber" if entry.group == "needs" else "accent" if entry.group == "live" else "faint"
+    # Its seat's jellyfish: dim once the job has ended, whatever the ending, since nothing works on it any more.
+    tone = "faint" if finished else {"needs": "amber", "live": "accent"}.get(entry.group, "faint")
     creature = _creature(entry.seat or _platform(kind), tone, 0, 1, (0.88, 0.62))
     main = [_job_head(ctx, opened, job, spec, entry, finished, creature), feedback]
     work = []
-    said = str(spec.get("brief") or "").strip()
-    if said.rstrip(".") != title:
+    said = _lead(spec)[1]
+    if said:
         work.append(_region("j-brief", f'<div class="bubble">{_text(said)}</div>', "section", "s-j-brief",
                             ' aria-label="What it was asked"'))
     # What it needs from you, each with the form that settles it.
@@ -1548,7 +1564,7 @@ def _ib_detail(ctx, entry, settled, view, missing):
                 else _text(job.title))
         about = (f'<p class="q-job" data-clear>{_dot("warn" if entry else "neutral")}<span>On “{link}”</span>'
                  f'<span class="sep">·</span><span>{_text(job.word)}</span></p>')
-    tone = "amber" if entry else "faint"
+    tone = "amber" if entry and not (job and job.state in _FAILED) else "faint"
     creature = _creature(job.seat if job and job.seat else "harness", tone, 1, 1, (0.9, 0.55))
     head = (f'<div class="q-head">{_tank([creature], "q-water")}<div class="q-head-in">'
             f'<p class="q-who" data-clear>{"".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
@@ -1640,7 +1656,7 @@ def _palette(jobs, ctx, keys):
     for j in sorted(jobs, key=lambda j: order[j.group]):
         rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
                     f'<span class="p-ic">{_ring(j.state)}</span><span class="p-t">{_text(j.title)}</span>'
-                    f'<span class="p-s"><span class="mono">{_text(j.id)}</span> {_text(j.word.lower())}</span>'
+                    f'<span class="p-s"><span class="mono">{_text(j.id)}</span><span>{_text(j.word.lower())}</span></span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:

@@ -141,4 +141,4 @@ name = "the title cuts an ordinary first sentence at 64 characters again"
 file = "rh/dashboard.py"
 find = "    if len(line) > 100:\n        line = line[:98]"
 replace = "    if len(line) > 64:\n        line = line[:62]"
-tests = ["tests.test_dashboard.DashboardTest.test_job_page_is_a_transcript_that_ends_in_its_receipt"]
+tests = ["tests.test_dashboard.DashboardTest.test_job_page_shows_the_work_left_and_its_record_right"]

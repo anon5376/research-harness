@@ -274,7 +274,7 @@ class ServeTest(unittest.TestCase):
             'owns = ["docs/"]\ndone = "it reads well"\n')
         self.assertEqual(self.serve._seats(self.cfg),
                          [{"name": "docs", "role": "Docs: the guides", "route": "codex-cloud", "model": "m-1"}])
-        self.assertIn("Docs: the guides", self.request()[2])
+        self.assertIn('<span class="i-m">The guides</span>', self.request()[2])
         (self.repo / "seats.toml").write_text("[seat.docs]\nrole = 1\n")
         self.assertEqual(self.serve._seats(self.cfg), [])
         self.assertEqual(self.request()[0], 200)

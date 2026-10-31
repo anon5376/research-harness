@@ -80,6 +80,22 @@ function seaPitch(W, H, n, sea) {
   return Math.max(2.5, Math.min(7, H / ((JH + 1) * LATTICE), W / (Math.max(1, n) * JW + OW + 3)));  // a strip
 }
 
+// The tank's lattice: column pitch P and row pitch Q = P * LATTICE at every size, so a creature keeps its shape and
+// only its size changes; cols and rows are the whole cells that fit.
+function seaGrid(W, H, n, sea) {
+  const P = seaPitch(W, H, n, sea), Q = P * LATTICE;
+  return { P, Q, cols: Math.floor(W / P), rows: Math.floor(H / Q) };
+}
+
+// A dot's radius in px. A bright dot fills 0.8 of its column, but stays GAP px from its neighbour: on a phone's strip
+// the column is about 3 px, and dots 0.7 px apart run together into dashes that flatten every creature into stripes.
+const GAP = 1.2;
+function dotRadius(kind, P) {
+  if (kind === DIM) return P * 0.19;
+  if (kind === FINE) return Math.max(0.8, P * 0.16);
+  return Math.min(P * 0.4, (P - GAP) / 2);
+}
+
 // Where each seat's jellyfish lives: [x, y, slack], the top-left cell of its box and how far it may drift sideways
 // without touching its neighbour. In the reef the seats take up to three lanes, the middle one set half a jellyfish
 // lower; in a strip they stand in one row beside the octopus; in a small tank (a job's head) a creature sits where the
@@ -301,8 +317,7 @@ function Tank(canvas) {
     W = r.width; H = r.height;
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    P = seaPitch(W, H, spec.length, !!(fauna && fauna.floor)); Q = P * LATTICE;
-    cols = Math.floor(W / P); rows = Math.floor(H / Q);
+    ({ P, Q, cols, rows } = seaGrid(W, H, spec.length, !!(fauna && fauna.floor)));
   }
   // Words sit on clear water: dots fade behind every [data-clear] element in the tank's box.
   function clears() {
@@ -334,7 +349,7 @@ function Tank(canvas) {
     for (const [key, list] of groups) {
       const [tone, k, a] = key.split('|'), kind = +k, rgb = TONES[tone];
       ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + (a / 20).toFixed(2) + ')';
-      const r = kind === DIM ? P * 0.19 : kind === FINE ? Math.max(0.8, P * 0.16) : P * 0.4;
+      const r = dotRadius(kind, P);
       ctx.beginPath();
       for (const [x, y] of list) {
         const px = kind === FINE ? x * P : (x + 0.5) * P, py = kind === FINE ? y * Q : (y + 0.5) * Q + (kind === DIM ? Q * 0.19 : 0);

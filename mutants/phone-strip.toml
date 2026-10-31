@@ -1,0 +1,37 @@
+# The phone's sea strip: each mutant brings back a way the strip's creatures ran together into flat stripes, or a cure
+# that changes the reef beside a desktop list, and the named tests must catch it.
+
+[[mutant]]
+name = "a bright dot fills 0.8 of its column at any size, so dots touch on a phone"
+file = "rh/web/app.js"
+find = "  return Math.min(P * 0.4, (P - GAP) / 2);"
+replace = "  return P * 0.4;"
+tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+
+[[mutant]]
+name = "rows stretch to fill the strip's height"
+file = "rh/web/app.js"
+find = "  const P = seaPitch(W, H, n, sea), Q = P * LATTICE;"
+replace = "  const P = seaPitch(W, H, n, sea), Q = H / Math.max(1, Math.floor(H / (P * LATTICE)));"
+tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+
+[[mutant]]
+name = "square cells: the row pitch is the column pitch"
+file = "rh/web/app.js"
+find = "  const P = seaPitch(W, H, n, sea), Q = P * LATTICE;"
+replace = "  const P = seaPitch(W, H, n, sea), Q = P;"
+tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+
+[[mutant]]
+name = "a dim dot as big as a bright one"
+file = "rh/web/app.js"
+find = "  if (kind === DIM) return P * 0.19;"
+replace = "  if (kind === DIM) return P * 0.4;"
+tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+
+[[mutant]]
+name = "a gap so wide that the reef's dots shrink too"
+file = "rh/web/app.js"
+find = "const GAP = 1.2;"
+replace = "const GAP = 3;"
+tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]

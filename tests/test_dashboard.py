@@ -969,7 +969,7 @@ const spec = ['backend', 'cli', 'app', 'testing', 'design', 'lead'].map((name, k
 const fauna = { fish: 3, school: 5, bacteria: 2, plankton: 2, eel: true, octopus: { tone: 'amber' }, floor: true };
 const out = [];
 for (const [W, H] of [[320, 760], [320, 1100], [860, 112], [390, 112]]) {
-  const P = seaPitch(W, H, spec.length, true), cols = Math.floor(W / P), rows = Math.floor(H / (P * LATTICE));
+  const { cols, rows } = seaGrid(W, H, spec.length, true);
   for (const t of [0, 2.7, 9.4, 31.1, 77.7]) {
     const { dots, parts } = seaDots(spec, fauna, cols, rows, t);
     const outside = dots.filter(d => d[2] !== FINE && (d[0] < 0 || d[1] < 0 || d[0] >= cols || d[1] >= rows)).length;
@@ -1013,6 +1013,31 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
                     for b in boxes[i + 1:]:
                         self.assertFalse(a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3], (a, b))
         self.assertGreater(len({json.dumps(f["first"]) for f in got["out"] if f["W"] == 320}), 1)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_a_phone_draws_the_sea_smaller_not_flatter(self):
+        # A phone's strip (357 x 111 px under a 375 px screen) once drew bright dots 0.7 px apart, and each creature
+        # ran together into flat stripes. Rows stretched to fill the strip, or dots that touch, must fail; so must a
+        # cure that shrinks the dots of the reef beside a desktop list.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <sea>"):dashboard.SCRIPT.index("// </sea>")]
+        probe = block + """
+const out = [];
+for (const [W, H] of [[357, 111], [390, 112], [860, 112], [320, 760], [320, 1100]]) {
+  const { P, Q } = seaGrid(W, H, 6, true);
+  out.push({ W, H, P, Q, bright: dotRadius(BRIGHT, P), dim: dotRadius(DIM, P), fine: dotRadius(FINE, P), LATTICE });
+}
+console.log(JSON.stringify(out));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        for g in json.loads(r.stdout):
+            with self.subTest(size=(g["W"], g["H"])):
+                self.assertAlmostEqual(g["Q"] / g["P"], g["LATTICE"], places=9)  # one cell shape at every size
+                for kind in ("bright", "dim", "fine"):  # a dot clear of the dot beside it, by at least 1 px
+                    self.assertGreaterEqual(g["P"] - 2 * g[kind], 1, kind)
+                self.assertGreater(g["bright"], g["dim"])
+                if g["H"] > 700:  # the reef: dots as big as before
+                    self.assertAlmostEqual(g["bright"], g["P"] * 0.4, places=9)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):

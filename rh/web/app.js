@@ -46,10 +46,11 @@ const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' 
 // times as tall as wide, in two tones (a big bright dot, and a small dim one nudged down), lit from the upper left, and
 // red only on what moves. Plankton are a finer grain, a different substance from the creatures.
 // Each creature stands for something the page shows: a jellyfish per seat (teal while it works, amber while it waits
-// on you, dim while idle), a fish per job running, a school of small fish for the jobs done today, a colony of
-// bacteria per job that failed today, plankton for the jobs up next, the eel while the harness is being checked, and
-// the octopus on the sea floor, amber while anything needs you. The fish, the school and the bacteria swim in the open
-// water between the jellyfish and the octopus.
+// on you, dim while idle), a fish per job running (at most 9), a school of up to 9 small fish for the jobs done today,
+// a colony of bacteria per job that failed today (at most 7), a cloud of plankton per job up next (at most 12), the
+// eel while the harness is being checked, and the octopus on the sea floor, amber while anything needs you. The fish,
+// the school and the bacteria swim in the open water between the jellyfish and the octopus; once the seats reach
+// down near the octopus (8 seats in a reef 760 px tall, 14 in one 1100 px tall), they use the whole water.
 // <sea> From here to </sea> the code touches no page, so a test runs it in node.
 const FRAME = 46;  // ms between frames: about 20 a second on a 60 or 120 Hz screen
 const LATTICE = 1.887;  // a cell's height over its width, the skill's 19 x 36 lattice

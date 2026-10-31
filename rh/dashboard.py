@@ -279,10 +279,10 @@ _SCHOOL, _GERMS, _BLOOM = 9, 7, 12  # at most this many fish, bacteria colonies 
 
 
 def _fauna(jobs, view, ctx):
-    """The sea life besides the seats' jellyfish, each a count the page already shows: a fish for each job live, a
-    school of small fish for the jobs done today, a colony of bacteria for each job that failed or stopped today, a
-    cloud of plankton for each job up next, the eel while something checks the harness, and the octopus on the sea
-    floor, amber while anything needs you."""
+    """The sea life besides the seats' jellyfish, each a count the page already shows, up to a cap: a fish for each
+    job live (at most 9), a school of up to 9 small fish for the jobs done today, a colony of bacteria for each job
+    that failed or stopped today (at most 7), a cloud of plankton for each job up next (at most 12), the eel while
+    something checks the harness, and the octopus on the sea floor, amber while anything needs you."""
     ended = [j for j in jobs if j.where == "recent" and j.group in ("ended", "needs")]
     sup = view.get("supervisor") if isinstance(view.get("supervisor"), dict) else {}
     loop = view.get("checks") if isinstance(view.get("checks"), dict) else {}
@@ -700,8 +700,8 @@ def _native_card(ctx, item, jid=None, lead=True):
     env = _text(_env_of(item))
     said = str(item.get("detail") or "").split(". Cloud jobs wait")[0]
     why = (f'<p class="detail">This Mac starts cloud jobs with the codex CLI, and the CLI does not list environment '
-           f'<code>{env}</code>. Environments made under Settings → Codex Cloud → Environments are not in its list. '
-           f'Each waiting job starts by itself once it is (checked every 10 minutes).</p>'
+           f'<code>{env}</code>. So far, environments made under Settings → Codex Cloud → Environments are not in '
+           f'its list. Each waiting job starts by itself once it is (checked every 10 minutes).</p>'
            + (f'<p class="said mono">{_text(said)}</p>' if said else ""))
     if jid:
         choose = (f'<a class="btn primary" href="{_url(ctx, "/inbox/" + str(item["id"]))}" data-nav data-k="r">'

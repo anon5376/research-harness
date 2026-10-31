@@ -1,0 +1,199 @@
+# Look v3: each mutant breaks one claim the new look makes, and the named tests must catch it.
+
+[[mutant]]
+name = "the serif route serves the mono file"
+file = "rh/serve.py"
+find = '_FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / name for name in dashboard.FONTS}'
+replace = '_FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / dashboard.FONTS[1] for name in dashboard.FONTS}'
+tests = ["tests.test_serve.ServeTest.test_fonts_come_from_the_repo_and_nothing_else_is_served_beside_them"]
+
+[[mutant]]
+name = "every file in the font folder is served"
+file = "rh/serve.py"
+find = '_FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / name for name in dashboard.FONTS}'
+replace = '_FONTS = {f"/fonts/{p.name}": p for p in (dashboard._WEB / "fonts").iterdir()}'
+tests = ["tests.test_serve.ServeTest.test_fonts_come_from_the_repo_and_nothing_else_is_served_beside_them"]
+
+[[mutant]]
+name = "the page names a face the server does not serve"
+file = "rh/dashboard.py"
+find = "src:url(/fonts/GeistSerif-Square.woff2)"
+replace = "src:url(/fonts/GeistSerif.woff2)"
+tests = ["tests.test_serve.ServeTest.test_fonts_come_from_the_repo_and_nothing_else_is_served_beside_them"]
+
+[[mutant]]
+name = "the snapshot asks for the fonts too"
+file = "rh/dashboard.py"
+find = '        head, extra, style = "", "", STYLE'
+replace = '        head, extra, style = "", "", _FACES + STYLE'
+tests = ["tests.test_dashboard.DashboardTest.test_self_contained_document"]
+
+[[mutant]]
+name = "the policy lets fonts load from anywhere"
+file = "rh/serve.py"
+find = "font-src 'self'"
+replace = "font-src *"
+tests = ["tests.test_serve.ServeTest.test_every_response_carries_the_security_headers_and_app_js_needs_no_token"]
+
+[[mutant]]
+name = "faint text falls under 4.5:1"
+file = "rh/web/rh.css"
+find = "--faint: #808b88;"
+replace = "--faint: #6c7673;"
+tests = ["tests.test_dashboard.DashboardTest.test_text_contrast_on_the_dark_surfaces"]
+
+[[mutant]]
+name = "a failure is drawn in teal"
+file = "rh/dashboard.py"
+find = '**{s: ("failed", "red") for s in _FAILED}'
+replace = '**{s: ("failed", "accent") for s in _FAILED}'
+tests = ["tests.test_dashboard.DashboardTest.test_a_ring_names_each_state_in_its_hue"]
+
+[[mutant]]
+name = "checking the result looks like running"
+file = "rh/dashboard.py"
+find = '"collecting": ("three", "accent")'
+replace = '"collecting": ("half", "accent")'
+tests = ["tests.test_dashboard.DashboardTest.test_a_ring_names_each_state_in_its_hue"]
+
+[[mutant]]
+name = "a seat waiting on you is drawn teal"
+file = "rh/dashboard.py"
+find = '        return "amber", "waiting on you", waiting[0], len(working)'
+replace = '        return "accent", "waiting on you", waiting[0], len(working)'
+tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
+
+[[mutant]]
+name = "an idle seat is drawn lit"
+file = "rh/dashboard.py"
+find = '"alpha": 0.55 if faint else 1'
+replace = '"alpha": 1'
+tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
+
+[[mutant]]
+name = "the tank keeps swimming under reduced motion"
+file = "rh/web/app.js"
+find = "  if (calm.matches) { draw(6); return; }"
+replace = "  if (false) { draw(6); return; }"
+tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
+
+[[mutant]]
+name = "the palette offers every action on every page"
+file = "rh/dashboard.py"
+find = "    acts = [(k, word, sub) for k, word, sub in _PRESS if k in keys]"
+replace = "    acts = list(_PRESS)"
+tests = ["tests.test_dashboard.DashboardTest.test_palette_finds_every_job_every_page_and_only_this_pages_actions"]
+
+[[mutant]]
+name = "the palette drops the first job"
+file = "rh/dashboard.py"
+find = "    for j in sorted(jobs, key=lambda j: order[j.group]):"
+replace = "    for j in sorted(jobs, key=lambda j: order[j.group])[1:]:"
+tests = ["tests.test_dashboard.DashboardTest.test_palette_finds_every_job_every_page_and_only_this_pages_actions"]
+
+[[mutant]]
+name = "a tie in the Inbox puts the older item first"
+file = "rh/dashboard.py"
+find = '-(e["item"]["id"] if e["item"] and _number(e["item"].get("id")) else 0)))'
+replace = '0))'
+tests = ["tests.test_dashboard.DashboardTest.test_inbox_lists_what_waits_newest_first_and_shows_one"]
+
+[[mutant]]
+name = "the Inbox opens on its oldest item"
+file = "rh/serve.py"
+find = 'key=lambda i: (-(i.get("created") or 0), -i["id"]))'
+replace = 'key=lambda i: ((i.get("created") or 0), i["id"]))'
+tests = ["tests.test_serve.ServeTest.test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address"]
+
+[[mutant]]
+name = "a hand launch opened from the Inbox has no prompt"
+file = "rh/serve.py"
+find = '                elif item["kind"] == "web-launch" and item.get("job") and not item.get("resolved"):'
+replace = '                elif False:'
+tests = ["tests.test_serve.ServeTest.test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address"]
+
+[[mutant]]
+name = "a missing Inbox item answers 200"
+file = "rh/serve.py"
+find = "                    status = 404"
+replace = "                    status = 200"
+tests = ["tests.test_serve.ServeTest.test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address"]
+
+[[mutant]]
+name = "any path under /inbox is a way back"
+file = "rh/serve.py"
+find = '    if re.fullmatch(r"/inbox/[0-9]{1,12}", target):'
+replace = '    if target.startswith("/inbox/"):'
+tests = ["tests.test_serve.ServeTest.test_forms_return_to_the_page_they_came_from_and_nowhere_else"]
+
+[[mutant]]
+name = "forms on the Inbox lose their way back"
+file = "rh/dashboard.py"
+find = '    ctx["back"] = "/inbox"'
+replace = '    ctx["back"] = None'
+tests = ["tests.test_dashboard.DashboardTest.test_live_forms_cover_every_route"]
+
+[[mutant]]
+name = "heavy work is offered over the load limit"
+file = "rh/serve.py"
+find = "    ok, reason = lease.admit(reading, limit)"
+replace = "    ok, reason = lease.admit(reading, limit * 2)"
+tests = ["tests.test_serve.ServeTest.test_this_mac_and_the_seats_come_from_the_lease_and_seats_toml"]
+
+[[mutant]]
+name = "an unreadable host breaks the page"
+file = "rh/serve.py"
+find = "    except Exception as error:  # noqa: BLE001  (a host that cannot be read must not break the page)"
+replace = "    except ValueError as error:"
+tests = ["tests.test_serve.ServeTest.test_this_mac_and_the_seats_come_from_the_lease_and_seats_toml"]
+
+[[mutant]]
+name = "a broken seats.toml breaks the page"
+file = "rh/serve.py"
+find = "    except (OSError, ValueError):"
+replace = "    except OSError:"
+tests = ["tests.test_serve.ServeTest.test_this_mac_and_the_seats_come_from_the_lease_and_seats_toml"]
+
+[[mutant]]
+name = "This Mac says heavy jobs may start while they must wait"
+file = "rh/dashboard.py"
+find = '"may start" if ok else "wait"'
+replace = '"may start"'
+tests = ["tests.test_dashboard.DashboardTest.test_this_mac_says_whether_a_heavy_step_may_start"]
+
+[[mutant]]
+name = "a finished job never moves to Earlier"
+file = "rh/dashboard.py"
+find = 'self.group = "earlier" if _number(ended) and ended < ctx["midnight"] else "ended"'
+replace = 'self.group = "ended"'
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_needs_you_until_it_is_run_again_or_a_day_passes"]
+
+[[mutant]]
+name = "the client selects a group the page does not render"
+file = "rh/web/app.js"
+find = "'.s-g-live'"
+replace = "'.s-g-running'"
+tests = ["tests.test_dashboard.DashboardTest.test_every_class_the_script_selects_is_in_the_page"]
+
+# Three app-v2 claims whose code moved in v3 (app-v2.toml still points at the old lines).
+
+[[mutant]]
+name = "the receipt shows the space-joined command"
+file = "rh/dashboard.py"
+find = 'joined if joined and c.get("cmd") == " ".join(argv) else str(c.get("cmd", ""))'
+replace = 'str(c.get("cmd", ""))'
+tests = ["tests.test_dashboard.DashboardTest.test_job_page_shows_the_work_left_and_its_record_right"]
+
+[[mutant]]
+name = "the waiting cloud job's setup button leads back home"
+file = "rh/dashboard.py"
+find = '            return go(page, "Set up Codex cloud", "cloud", "r")'
+replace = '            return go(_url(ctx, "/"), "Set up Codex cloud", "cloud", "r")'
+tests = ["tests.test_dashboard.DashboardTest.test_cloud_setup_is_one_tap_from_the_job_list"]
+
+[[mutant]]
+name = "a failure in Needs you keeps the amber of a question"
+file = "rh/dashboard.py"
+find = '        tone = " fail" if self.failure else " warn" if self.group == "needs" else ""'
+replace = '        tone = " warn" if self.group == "needs" else ""'
+tests = ["tests.test_dashboard.DashboardTest.test_a_failure_needs_you_until_it_is_run_again_or_a_day_passes"]

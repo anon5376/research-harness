@@ -7,6 +7,7 @@ import io
 import json
 import os
 from pathlib import Path
+import re
 import socket
 import subprocess
 import tempfile
@@ -167,13 +168,13 @@ class ServeTest(unittest.TestCase):
             return response.code, response.headers, response.read().decode()
 
     def test_app_requires_token_and_renders_status(self):
-        for path in ("/", "/new", "/job/web-job", "/actions"):
+        for path in ("/", "/new", "/job/web-job", "/actions", "/inbox", "/inbox/1"):
             self.assertEqual(self.request(path, token=False)[0], 403)
             self.assertEqual(self.request(path + "?t=wrong", token=False)[0], 403)
         code, _, page = self.request()
         self.assertEqual(code, 200)
-        for heading in ("Needs you", "Running", "Queued", "Done"):
-            self.assertIn(f">{heading}</h2>", page)
+        for group in ("Needs you", "Live", "Up next", "Ended today"):
+            self.assertIn(f">{group}</h3>", page)
         self.assertIn(">What should run?</h1>", page)
         self.assertIn('/actions?t=serve-test-key', page)
         self.assertIn('/new?t=serve-test-key', page)
@@ -183,7 +184,7 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(page.count("<nav"), 1)
 
     def test_every_response_carries_the_security_headers_and_app_js_needs_no_token(self):
-        csp = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src data:; img-src data:; "
+        csp = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src data:; "
                "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
         replies = [self.request(), self.request(token=False), self.request("/not-found"), self.request("/tick", {}),
                    self.request("/app.js", token=False), self.request("/job/ghost")]
@@ -199,6 +200,81 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(script, dashboard.SCRIPT)
         bad_host = {"Host": f"example.test:{self.server.server_port}"}
         self.assertEqual(self.request("/app.js", token=False, headers=bad_host)[0], 403)
+
+    def raw(self, path, headers=None):
+        """A tokenless GET answered as bytes."""
+        try:
+            response = self.opener.open(Request(self.origin + path, headers=headers or {}), timeout=5)
+        except HTTPError as error:
+            response = error
+        with response:
+            return response.code, response.headers, response.read()
+
+    def test_fonts_come_from_the_repo_and_nothing_else_is_served_beside_them(self):
+        # A face the page names that the server does not serve, a served face that is not the shipped file, a path
+        # off the fixed list answered, or a font that skips the Host check, must fail.
+        page = self.request()[2]
+        named = re.findall(r"url\((/fonts/[^)]+)\)", page)
+        self.assertEqual(sorted(named), sorted(f"/fonts/{name}" for name in dashboard.FONTS))
+        for path in named:
+            with self.subTest(path=path):
+                code, headers, body = self.raw(path)
+                self.assertEqual((code, headers["Content-Type"]), (200, "font/woff2"))
+                self.assertEqual(body, (dashboard._WEB / "fonts" / path.rsplit("/", 1)[1]).read_bytes())
+                self.assertEqual(body[:4], b"wOF2")
+                self.assertEqual(headers["X-Content-Type-Options"], "nosniff")
+                self.assertEqual(self.raw(path, {"Host": f"example.test:{self.server.server_port}"})[0], 403)
+        for path in ("/fonts/OFL.txt", "/fonts/", "/fonts/..%2Fapp.js", "/fonts/GeistMono-VF.woff2x"):
+            with self.subTest(path=path):
+                self.assertIn(self.raw(path)[0], (403, 404))
+        self.assertIn("SIL Open Font License", (dashboard._WEB / "fonts" / "OFL.txt").read_text())
+
+    def test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address(self):
+        # An Inbox that opens on an older item, a hand launch opened from it without its prompt, or an item address
+        # that serves a missing item, must fail.
+        self.job()
+        with self.ledger() as led:
+            step, _ = led.inbox_add("operator-step", "publish the notes", "web-job")
+            launch, _ = led.inbox_add("web-launch", "launch it in Codex", "web-job")
+        code, _, page = self.request("/inbox")
+        self.assertEqual(code, 200)
+        self.assertIn('data-pane="inbox"', page)
+        self.assertRegex(page, rf'data-key="inbox:{launch}"[^>]*><a[^>]*aria-current="true"')
+        self.assertIn("research-harness job web-job", page)
+        code, _, page = self.request(f"/inbox/{step}")
+        self.assertEqual(code, 200)
+        self.assertRegex(page, rf'data-key="inbox:{step}"[^>]*><a[^>]*aria-current="true"')
+        self.assertIn("Publish the notes", page)
+        self.assertNotIn("research-harness job web-job", page)
+        code, _, page = self.request("/inbox/99999")
+        self.assertEqual(code, 404)
+        self.assertIn("No inbox item 99999", page)
+        self.assertEqual(self.request("/inbox/x")[0], 404)
+
+    def test_this_mac_and_the_seats_come_from_the_lease_and_seats_toml(self):
+        # A reading the panel drops, heavy work allowed over the limit, an unreadable host that breaks the page, or a
+        # seats.toml the app misreads, must fail.
+        from rh.lease import Reading
+        calm = self.serve._host(self.cfg, reader=lambda: Reading(level=1, load1=2.5, taken=0))
+        self.assertEqual((calm["load1"], calm["level"], calm["ok"]), (2.5, 1, True))
+        busy = self.serve._host(self.cfg, reader=lambda: Reading(level=1, load1=12.0, taken=0))
+        self.assertFalse(busy["ok"])
+        self.assertIn("load 12.00 above 10.00", busy["reason"])
+
+        def broken():
+            raise OSError("sysctl missing")
+        self.assertEqual(self.serve._host(self.cfg, reader=broken), {"error": "OSError: sysctl missing"})
+        self.assertIn("Load, 1 min", self.request()[2])
+        self.assertEqual(self.serve._seats(self.cfg), [])
+        (self.repo / "seats.toml").write_text(
+            '[seat.docs]\nrole = "Docs: the guides"\nroute = "codex-cloud"\nmodel = "m-1"\neffort = "high"\n'
+            'owns = ["docs/"]\ndone = "it reads well"\n')
+        self.assertEqual(self.serve._seats(self.cfg),
+                         [{"name": "docs", "role": "Docs: the guides", "route": "codex-cloud", "model": "m-1"}])
+        self.assertIn("Docs: the guides", self.request()[2])
+        (self.repo / "seats.toml").write_text("[seat.docs]\nrole = 1\n")
+        self.assertEqual(self.serve._seats(self.cfg), [])
+        self.assertEqual(self.request()[0], 200)
 
     def test_host_and_origin_checks_prevent_mutation(self):
         for path in ("/", "/actions"):
@@ -400,7 +476,7 @@ class ServeTest(unittest.TestCase):
         code, _, page = self.request("/job/scan-local")
         self.assertEqual(code, 200)
         self.assertIn('data-open="job:scan-local"', page)
-        self.assertIn("<h1 tabindex=\"-1\">Scan the &lt;listings&gt;</h1>", page)
+        self.assertIn("<h1 tabindex=\"-1\" data-clear>Scan the &lt;listings&gt;</h1>", page)
         self.assertIn("python3 scan.py", page)
         self.assertIn("last &lt;line&gt; \ufffd", page)  # the tail, escaped, with undecodable bytes replaced
         self.assertIn("line 399", page)
@@ -409,7 +485,7 @@ class ServeTest(unittest.TestCase):
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)
         self.assertIn("No job named ghost", page)
-        self.assertIn('data-key="job:scan-local"', page)
+        self.assertIn('href="/job/scan-local?t=', page)  # ⌘K still lists it
         for path in ("/job/..%2Fhome", "/job/", "/job/Bad"):
             self.assertEqual(self.request(path)[0], 404)
 
@@ -479,6 +555,8 @@ class ServeTest(unittest.TestCase):
 
     def test_forms_return_to_the_page_they_came_from_and_nowhere_else(self):
         for target, expected in (("/job/web-job", "/job/web-job?t="), ("/new", "/new?t="), ("/", "/?t="),
+                                 ("/inbox", "/inbox?t="), ("/inbox/12", "/inbox/12?t="), ("/inbox/x", "/?t="),
+                                 ("/inbox/12/../../actions", "/?t="),
                                  ("https://example.test/", "/?t="), ("//example.test", "/?t="),
                                  ("/job/../actions", "/?t="), ("/actions", "/?t=")):
             with self.subTest(target=target):

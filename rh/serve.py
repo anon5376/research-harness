@@ -20,7 +20,7 @@ import tomllib
 import urllib.parse
 import webbrowser
 
-from rh import cli, contract, dashboard, oslock
+from rh import cli, contract, dashboard, lease, oslock, seats
 from rh.ledger import TERMINAL, Ledger
 from rh.supervisor import AlreadyRunning, single_instance
 
@@ -35,9 +35,13 @@ _FILES = 50  # files a receipt lists, at most
 _PEEK = 64 * 1024  # a text file up to this size is previewed in the receipt
 _PEEK_LINES = 40
 _FILE_MAX = 1024 * 1024  # bytes GET /job/<id>/file serves, at most
-# The page is one document with one same-origin script and inline styles; nothing else may load or frame it.
-_CSP = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src data:; img-src data:; "
+# The page is one document with one same-origin script, inline styles and its two same-origin fonts; nothing else may
+# load or frame it.
+_CSP = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src data:; "
         "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+_FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / name for name in dashboard.FONTS}
+_HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
+_SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
           "/checks", "/again", "/setup")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
@@ -311,9 +315,11 @@ def _next(fields):
     if len(values) != 1:
         return "/"
     target = values[0]
-    if target in ("/", "/new"):
+    if target in ("/", "/new", "/inbox"):
         return target
     if target.startswith("/job/") and contract.JOB_ID_RE.fullmatch(target[5:]):
+        return target
+    if re.fullmatch(r"/inbox/[0-9]{1,12}", target):
         return target
     return "/"
 
@@ -371,14 +377,48 @@ def _files(root):
 
 
 def _meta(cfg):
-    """What the status view leaves out and the job list needs: each job's brief, kind, times and the run it follows."""
+    """What the status view leaves out and the app needs: each job's brief, kind, seat, time limit, times and the run
+    it follows; the inbox items settled in the last day; and, for the Inbox, the one item asked for, open or not."""
     led = Ledger(Path(cfg["home"]) / "ledger.db")
     try:
-        return {j["id"]: {"brief": j["spec"].get("brief", ""), "kind": j["spec"].get("kind", ""),
+        meta = {j["id"]: {"brief": j["spec"].get("brief", ""), "kind": j["spec"].get("kind", ""),
+                          "seat": j["spec"].get("seat", ""), "timeout_min": j["spec"].get("timeout_min"),
                           "created": j.get("created"), "started": j.get("started"), "updated": j.get("updated"),
                           "prior": j["spec"].get("prior", "")} for j in led.jobs()}
+        since = time.time() - _SETTLED
+        items = led.inbox(open_only=False)
+        settled = [i for i in items if i.get("resolved") and i["resolved"] >= since][-100:]
+        return meta, settled, {i["id"]: i for i in items}
     finally:
         led.close()
+
+
+def _seats(cfg):
+    """The seat cards in the repository's seats.toml, as the app shows them; none when it is missing or unreadable."""
+    path = Path(cfg["repo"]["path"]) / "seats.toml"
+    try:
+        cards = seats.load(path) if path.is_file() else {}
+    except (OSError, ValueError):
+        return []
+    return [{"name": name, "role": card["role"], "route": card["route"], "model": card["model"]}
+            for name, card in cards.items()]
+
+
+def _host(cfg, reader=None):
+    """This machine as the heavy-step lease sees it: load, memory pressure, whether a heavy step may start, and
+    whether the lease is in use. A reading that fails is reported, not guessed."""
+    try:
+        reading = (reader or lease.read_host)()
+    except Exception as error:  # noqa: BLE001  (a host that cannot be read must not break the page)
+        return {"error": f"{type(error).__name__}: {error}"[:300]}
+    limit = float(cfg["lease"]["max_load"])
+    ok, reason = lease.admit(reading, limit)
+    try:
+        held = lease.status(cfg["lease"]["lock"])
+    except OSError:
+        held = None
+    return {"load1": reading.load1, "level": reading.level, "max_load": limit, "ok": ok,
+            "reason": "" if ok else reason, "lease": held and {"held": held["held"], "age_s": held["age_s"]}}
 
 
 class _Checks:
@@ -551,6 +591,12 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
     Ledger(Path(cfg["home"]) / "ledger.db").close()
     loop = _Checks(cfg, supervisor) if checks else None
     spec_text = None  # `rh env spec`, read once, for the Codex cloud setup card
+    host_seen = [0.0, None]  # when this machine was last read, and what it said
+
+    def machine():
+        if host_seen[1] is None or time.monotonic() - host_seen[0] > _HOST_TTL:
+            host_seen[:] = [time.monotonic(), _host(cfg)]
+        return host_seen[1]
 
     def env_spec():
         nonlocal spec_text
@@ -565,7 +611,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             pass
 
         def reply(self, code, page="", *, location=None, content_type="text/html; charset=utf-8"):
-            data = page.encode("utf-8")
+            data = page if isinstance(page, bytes) else page.encode("utf-8")
             self.send_response(code)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(data)))
@@ -625,8 +671,24 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 return
             view = json.loads(output)
             ready = bool(cfg["cloud"]["env_id"])
-            view.update({"can_add": True, "compose": draft or {}, "meta": _meta(cfg), "cloud_ready": ready,
-                         "checks": loop.state() if loop else None, **(extra or {})})
+            meta, settled, items = _meta(cfg)
+            view.update({"can_add": True, "compose": draft or {}, "meta": meta, "settled": settled,
+                         "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
+                         "host": machine(), **(extra or {})})
+            if view.get("box") and view.get("pick") is None:
+                # The Inbox opens on its newest waiting item, as the page lists it.
+                waiting = sorted((i for i in items.values() if not i.get("resolved")),
+                                 key=lambda i: (-(i.get("created") or 0), -i["id"]))
+                view["pick"] = waiting[0]["id"] if waiting else None
+            if view.get("box") and view.get("pick") is not None:
+                item = items.get(view["pick"])
+                view["picked"] = item
+                if item is None:
+                    status = 404
+                elif item["kind"] == "web-launch" and item.get("job") and not item.get("resolved"):
+                    # The prompt a person pastes into the Codex web composer, as on the job's own page.
+                    code, prompt, _ = _call(cfg, ["cloud", "prompt", "--", item["job"]], split=True)
+                    view["prompt"] = prompt if code == 0 else None
             if not ready:
                 view["env_spec"] = env_spec()
             self.reply(status, dashboard.render(view, time.time(), token=token, result=last_result))
@@ -645,6 +707,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 # Same-origin code with no data in it; the page that loads it is the part behind the token.
                 self.reply(200, dashboard.SCRIPT, content_type="text/javascript; charset=utf-8")
                 return
+            if target.path in _FONTS:
+                # The two faces the page names, from a fixed list; like the script, they carry no data.
+                self.reply(200, _FONTS[target.path].read_bytes(), content_type="font/woff2")
+                return
             query_fields = urllib.parse.parse_qs(target.query, keep_blank_values=True)
             if not self.valid_token(query_fields):
                 self.reply(403)
@@ -656,6 +722,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 self.page()
             elif target.path == "/new":
                 self.page({"open": None, "new": True})
+            elif target.path == "/inbox":
+                self.page({"open": None, "box": True})
+            elif len(parts) == 3 and parts[1] == "inbox" and re.fullmatch(r"[0-9]{1,12}", parts[2]):
+                self.page({"open": None, "box": True, "pick": int(parts[2])})
             elif len(parts) == 3 and parts[1] == "job" and contract.JOB_ID_RE.fullmatch(parts[2]):
                 jid = parts[2]
                 shown = self.job(jid)

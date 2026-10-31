@@ -1,5 +1,6 @@
 """The app presents the existing status view and one job's record without trusting worker text."""
 import copy
+import html
 import json
 import os
 import re
@@ -117,14 +118,14 @@ class Page(HTMLParser):
     """Inspect rendered text and elements without relying on presentation markup."""
     def __init__(self, source):
         super().__init__()
-        self.tags, self.headings, self.text = [], [], []
+        self.tags, self.headings, self.groups, self.text = [], [], [], []
         self.heading = None
         self.feed(source)
         self.close()
 
     def handle_starttag(self, tag, attrs):
         self.tags.append((tag, dict(attrs)))
-        if tag == "h2":
+        if tag in ("h2", "h3"):
             self.heading = []
 
     def handle_data(self, data):
@@ -133,8 +134,8 @@ class Page(HTMLParser):
             self.heading.append(data)
 
     def handle_endtag(self, tag):
-        if tag == "h2" and self.heading is not None:
-            self.headings.append("".join(self.heading).strip().lower())
+        if tag in ("h2", "h3") and self.heading is not None:
+            (self.headings if tag == "h2" else self.groups).append("".join(self.heading).strip().lower())
             self.heading = None
 
 
@@ -163,6 +164,12 @@ def pane(page):
     return page.split('<main class="pane"', 1)[1]
 
 
+def inbox(view, pick=None):
+    """The live Inbox page, showing item `pick` (or its newest waiting item)."""
+    picked = next((i for i in view.get("inbox", []) if i["id"] == pick), None)
+    return dashboard.render({**view, "box": True, "pick": pick, "picked": picked}, NOW, token=TOKEN)
+
+
 def primaries(html):
     """The filled buttons a person sees, leaving out the confirm button inside a popover, which confirms itself."""
     shown = re.sub(r'<form class="pop.*?</form>', "", html, flags=re.S)
@@ -185,22 +192,26 @@ class DashboardTest(unittest.TestCase):
 
     def test_job_list_groups_and_empty_states(self):
         # Omitting or reordering a group, showing an empty one, or an empty page that teaches nothing must fail.
-        headings = ["needs you", "running", "queued", "done", "needs you", "today"]
+        groups = ["needs you", "live", "up next", "ended today", "earlier"]
+        headings = ["check loop", "jobs", "needs you", "today"]
         page = dashboard.render(full_view(), NOW)
         self.assertEqual(Page(page).headings, headings)
-        self.assertEqual(shown_groups(page), ["needs", "done"])
+        self.assertEqual(Page(page).groups, groups)
+        self.assertEqual(shown_groups(page), ["needs", "ended"])
+        self.assertEqual(Page(dashboard.render(live_view(), NOW, token=TOKEN)).groups, groups)
         empty = {"supervisor": None, "stops": [], "routes": [], "live": [], "not_started": [],
                  "inbox": [], "last_24h": {}, "recent": []}
         for view in ({}, empty):
             with self.subTest(view=view):
                 page = dashboard.render(view, NOW)
                 self.assertEqual(Page(page).headings, headings)
+                self.assertEqual(Page(page).groups, groups)
                 self.assertEqual(shown_groups(page), [])
                 shown = " ".join(Page(page).text)
                 for sentence in ("No jobs yet.", "Nothing needs you.", "The harness has not run yet.",
                                  "Last 24 h: nothing finished"):
                     self.assertIn(sentence, shown)
-        self.assertIn(" hidden>No jobs yet.", dashboard.render(full_view(), NOW))
+        self.assertRegex(dashboard.render(full_view(), NOW), r'<p class="empty no-jobs"[^>]* hidden><b>No jobs yet\.')
         # The live app with no jobs at all opens on the composer and walks a first-time user through three steps.
         first = " ".join(Page(dashboard.render({**empty, "can_add": True}, NOW, token=TOKEN)).text)
         for sentence in ("What should run?", "Describe a job and start it.", "Watch it here.", "Answer when it asks."):
@@ -236,38 +247,36 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("<script", page.lower())
         self.assertNotIn("@import", page.lower())
         self.assertNotIn("url(", page.lower())
-        self.assertIn("prefers-color-scheme: dark", page)
+        self.assertNotIn("@font-face", page)
+        self.assertIn("color-scheme: dark", page)
         self.assertIn("overflow-wrap", page)
-        self.assertIn("max-width: 719px", page)
+        self.assertIn("max-width: 860px", page)
         parsed = Page(page)
         tags = [tag for tag, _ in parsed.tags]
-        for tag in ("html", "head", "title", "style", "body", "nav", "main"):
+        for tag in ("html", "head", "title", "style", "body", "aside", "main"):
             self.assertIn(tag, tags)
-        for tag in ("script", "link", "img", "iframe", "object", "embed", "video", "audio", "font"):
+        for tag in ("script", "link", "img", "iframe", "object", "embed", "video", "audio", "font", "canvas"):
             self.assertNotIn(tag, tags)
-        self.assertEqual(tags.count("section"), 6)
+        self.assertEqual(tags.count("section"), 8)  # five job groups, the job list, Needs you and Today
         self.assertTrue(any(tag == "meta" and attrs.get("name") == "viewport"
                             and "width=device-width" in attrs.get("content", "")
                             for tag, attrs in parsed.tags))
         for _, attrs in parsed.tags:
             self.assertFalse(any(k.startswith("on") or k in ("src", "href") for k in attrs))
 
-    def test_text_contrast_in_both_schemes(self):
-        # A text colour under 4.5:1 on a surface it is drawn on, or a missing dark override, must fail.
+    def test_text_contrast_on_the_dark_surfaces(self):
+        # A text colour under 4.5:1 on a surface it is drawn on, or a second scheme the tokens do not cover, must fail.
         style = re.search(r"<style>(.*)</style>", dashboard.render(full_view(), NOW), re.S).group(1)
-        light_css, dark_css = style.split("@media (prefers-color-scheme: dark)", 1)
-        light = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", light_css))
-        dark = {**light, **dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", dark_css))}
-        surfaces = ("ground", "hover", "surface", "raised")
-        pairs = [(fg, bg) for fg in ("ink", "muted") for bg in surfaces]
-        pairs += [(tone, bg) for tone in ("live", "good", "warn", "bad") for bg in surfaces]
-        pairs += [("bad", "bad-bg"), ("ink", "bad-bg"), ("live", "live-bg")]  # a failed action; a moved row
-        pairs += [("on-primary", "primary"), ("on-bad", "bad")]  # filled buttons
-        for scheme, colours in (("light", light), ("dark", dark)):
-            for fg, bg in pairs:
-                with self.subTest(scheme=scheme, pair=(fg, bg)):
-                    self.assertGreaterEqual(contrast(colours[fg], colours[bg]), 4.5)
-        self.assertNotEqual(light["surface"], dark["surface"])
+        self.assertNotIn("prefers-color-scheme", style)  # dark only: no light override left half-done
+        colours = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", style.split("}", 1)[0]))
+        surfaces = ("frame", "ground", "surface", "raised", "active")
+        pairs = [(fg, bg) for fg in ("text", "muted", "faint") for bg in surfaces]
+        pairs += [(tone, bg) for tone in ("accent", "amber", "red", "ice") for bg in surfaces]
+        pairs += [("red", "red-bg"), ("text", "red-bg"), ("accent", "accent-bg"), ("amber", "amber-bg")]
+        pairs += [("frame", "text")]  # the filled button: dark words on the light fill
+        for fg, bg in pairs:
+            with self.subTest(pair=(fg, bg)):
+                self.assertGreaterEqual(contrast(colours[fg], colours[bg]), 4.5)
         # Positive control: #777 on white is just under the floor.
         self.assertLess(contrast("#777777", "#ffffff"), 4.5)
 
@@ -381,6 +390,8 @@ class DashboardTest(unittest.TestCase):
                                                     "detail": "", "created": NOW - 9}],
                   "meta": {"queued-job": {"kind": "codex-cloud", "brief": "Survey."}}}
         pages["queued-job/setup"] = dashboard.render(opened(cloudy, "queued-job"), NOW, token=TOKEN)
+        for pick in (7, 8, 9):
+            pages[f"inbox/{pick}"] = inbox(cloudy, pick)
         forms = []
         for name, page in pages.items():
             for form in Forms(page).forms:
@@ -391,7 +402,9 @@ class DashboardTest(unittest.TestCase):
             with self.subTest(form=form):
                 self.assertEqual(form["method"], "post")
                 self.assertEqual(form["fields"].get("t"), TOKEN)
-                if form["page"] != "home" and form["action"] != "/job":
+                if form["page"].startswith("inbox/"):
+                    self.assertEqual(form["fields"].get("next"), "/inbox")
+                elif form["page"] != "home" and form["action"] != "/job":
                     self.assertEqual(form["fields"].get("next"), f"/job/{form['page'].split('/')[0]}")
                 elif form["page"] == "home":
                     self.assertNotIn("next", form["fields"])
@@ -399,7 +412,9 @@ class DashboardTest(unittest.TestCase):
         def one(action, page="home", **fields):
             return [f for f in forms if f["action"] == action and f["page"] == page
                     and all(f["fields"].get(k) == v for k, v in fields.items())]
-        self.assertEqual(set(one("/inbox/resolve", id="7")[0]["fields"]), {"t", "id", "note"})
+        self.assertEqual(set(one("/inbox/resolve", "inbox/7", id="7")[0]["fields"]), {"t", "id", "note", "next"})
+        self.assertEqual(set(one("/harvest", "inbox/8", job="web-job")[0]["fields"]), {"t", "job", "text", "next"})
+        self.assertEqual(set(one("/setup", "inbox/9")[0]["fields"]), {"t", "env_id", "next"})
         self.assertEqual(set(one("/stop", route="codex-cloud")[0]["fields"]), {"t", "route", "reason", "pause"})
         self.assertEqual(one("/tick")[0]["fields"].keys(), {"t"})
         self.assertEqual(one("/checks")[0]["fields"], {"t": TOKEN, "on": "0"})
@@ -432,17 +447,19 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn('action="/setup"', ready)
 
     def test_cloud_setup_is_one_tap_from_the_job_list(self):
-        # The list's setup row pointing back at home (a dead tap on a phone, where home is the list), or the home
-        # copy losing the mark that lets a phone drop it, must fail; with no waiting cloud job to open, home keeps it.
+        # A waiting cloud job whose row does not lead to the setup form, a setup step home never points to, or an
+        # Inbox entry for it without the form, must fail.
         view = live_view()
         setup = {"id": 9, "kind": "operator-step", "job": None, "action": SETUP, "detail": "", "created": NOW - 9}
         cloudy = {**view, "inbox": view["inbox"] + [setup], "meta": {"queued-job": {"kind": "codex-cloud"}}}
-        page = dashboard.render(cloudy, NOW, token=TOKEN)
-        self.assertRegex(page, r'data-key="loose"[^>]*><a class="item" href="/job/queued-job\?t=')
-        self.assertRegex(page, r'data-key="inbox:9"[^>]*data-job="queued-job"')
-        alone = dashboard.render({**view, "inbox": view["inbox"] + [setup]}, NOW, token=TOKEN)
-        self.assertRegex(alone, r'data-key="loose"[^>]*><a class="item" href="/\?t=')
-        self.assertNotRegex(alone, r'data-key="inbox:9"[^>]*data-job=')
+        row = item(dashboard.render(cloudy, NOW, token=TOKEN), "queued-job")
+        self.assertRegex(row, r'<a class="btn gbtn" href="/job/queued-job\?t=[^"]*" data-nav data-k="r">.*Set up Codex cloud')
+        self.assertIn('action="/setup"', dashboard.render(opened(cloudy, "queued-job"), NOW, token=TOKEN))
+        alone = {**view, "inbox": view["inbox"] + [setup]}
+        home = pane(dashboard.render(alone, NOW, token=TOKEN))
+        self.assertRegex(home, r'class="g-note" href="/inbox\?t=[^"]*" data-nav>\+1 more item in the Inbox')
+        self.assertIn('data-key="inbox:9"', inbox(alone))
+        self.assertIn('action="/setup"', inbox(alone, 9))
 
     def test_composer_only_where_the_server_can_add_jobs(self):
         # A New job form the server cannot take, a missing one where it can, a refused draft that comes back
@@ -477,9 +494,9 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("set up first", text(dashboard.render(view, NOW, token=TOKEN)))
         self.assertEqual(kind(dashboard.render({**view, "cloud_ready": True}, NOW, token=TOKEN)), "codex-cloud")
 
-    def test_job_page_is_a_transcript_that_ends_in_its_receipt(self):
-        # Dropping what the job was asked, its output tail, its checks, the files it made or a line of what happened
-        # must fail.
+    def test_job_page_shows_the_work_left_and_its_record_right(self):
+        # Dropping what the job was asked, its output tail, its checks, the files it made or a line of its timeline,
+        # or moving the record into the work column, must fail.
         view = opened(live_view(), "finished-job", kind="local-shell")
         spec = view["open"]["job"]["spec"]
         spec.update(kind="local-shell", command=["sh", "-c", "date > <today>.txt"])
@@ -496,8 +513,9 @@ class DashboardTest(unittest.TestCase):
         for value in ("Write the notes", "Done", "finished-job", "This machine", "finished 10 s ago", "Done in 1 min 20 s.",
                       "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Write the notes.",
                       "Cite each source.", "notes.md exists", "runs/finished-job/",
-                      "120 min", "What happened", "Added to run in Codex cloud", "Worker output",
-                      f"Asked you: {ASK.capitalize()}31 s ago", "Mystery thing: raw zz5 s ago",
+                      "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",
+                      f"Asked you: {ASK.capitalize()}{dashboard._clock(NOW - 31, NOW)}",
+                      f"Mystery thing: raw zz{dashboard._clock(NOW - 5, NOW)}",
                       "Files in runs/finished-job/", "2.0 KB", "sub dir/a&b.txt", "# Notes <draft>"):
             with self.subTest(value=value):
                 self.assertIn(value, right)
@@ -509,16 +527,19 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('href="/job/finished-job/file?p=sub%20dir/a%26b.txt&amp;t=serve-token-1"', page)
         self.assertIn('data-open="job:finished-job"', page)
         self.assertIn("<title>Write the notes · Research harness</title>", page)
-        self.assertLess(right.index("What happened"), right.index("Output"))
-        self.assertLess(right.index("Output"), right.index("Done in"))
-        self.assertTrue(item(page, "finished-job"))
+        work, record = pane(page).split('<aside class="jd-side"', 1)
+        for value in ("Cite each source.", "<tail> & end", "# Notes <draft>"):
+            self.assertIn(value, text(work))
+        for value in ("Properties", "Receipt", "exit 1", "2.0 KB", "Pauses and stops", "Timeline", "Worker output"):
+            self.assertIn(value, text(record))
+            self.assertNotIn(value, text(work))
         # A held job's page says what to do; a job the harness does not know says so, not a crash.
         held = text(pane(dashboard.render(opened(live_view(), "queued-job"), NOW, token=TOKEN)))
         self.assertIn("On hold: Waiting for input", held)
         self.assertIn("It is rechecked on every pass.", held)
         missing = dashboard.render({**live_view(), "open": {"id": "ghost", "job": None}}, NOW, token=TOKEN)
         self.assertIn("No job named ghost", text(missing))
-        self.assertIn('data-key="job:live-job"', missing)
+        self.assertIn('<a class="p-row" role="option" href="/job/live-job?t=', missing)  # ⌘K still finds every job
         # A one-sentence brief is the title and is not repeated as a message under it.
         single = opened(live_view(), "live-job")
         single["open"]["job"]["spec"]["brief"] = "Count the words."
@@ -558,7 +579,9 @@ class DashboardTest(unittest.TestCase):
             with self.subTest(section=section, key=key):
                 view = live_view()
                 view[section][0][key] = value
-                page = dashboard.render(view, NOW, token=TOKEN)
+                page = dashboard.render(view, NOW, token=TOKEN) + inbox(view)
+                if (section, key) == ("live", "detail"):  # a job that needs you shows its ask; its page, the detail
+                    page += dashboard.render(opened(view, "live-job"), NOW, token=TOKEN)
                 self.assertIn(escaped, page)
                 self.assertNotIn(value, page)
                 self.assertIn(value, text(page))
@@ -608,10 +631,10 @@ class DashboardTest(unittest.TestCase):
         view["live"][0]["state"] = "collecting"
         after = sigs(view, NOW)
         self.assertNotEqual(before["job:queued-job"], after["job:queued-job"])
-        self.assertNotEqual(before["card:live-job"], after["card:live-job"])
-        self.assertNotEqual(before["section:needs"], after["section:needs"])
+        self.assertNotEqual(before["job:live-job"], after["job:live-job"])
+        self.assertNotEqual(before["section:g-needs"], after["section:g-needs"])
         self.assertEqual(before["job:finished-job"], after["job:finished-job"])
-        self.assertEqual(before["section:g-done"], after["section:g-done"])
+        self.assertEqual(before["section:g-ended"], after["section:g-ended"])
         record = opened(live_view(), "live-job")
         first = sigs(record, NOW)
         self.assertIn("ev:2", first)
@@ -629,21 +652,26 @@ class DashboardTest(unittest.TestCase):
         launch = opened(live_view(), "web-job")
         launch["open"]["prompt"] = "the prompt"
         page = (dashboard.render(live_view(), NOW, token=TOKEN, result="ok")
-                + dashboard.render(view, NOW, token=TOKEN) + dashboard.render(launch, NOW, token=TOKEN))
+                + dashboard.render(view, NOW, token=TOKEN) + dashboard.render(launch, NOW, token=TOKEN)
+                + inbox(live_view()) + dashboard.render({**live_view(), "live": []}, NOW, token=TOKEN))
         for in_script, in_page in (("[data-live]", " data-live "), (".toasts", 'class="toasts"'), ("#keys", 'id="keys"'),
                                    ("[data-keys]", " data-keys "), ("[data-region", " data-region="),
                                    ("dataset.sig", " data-sig="), ("[data-tk", " data-tk="), ("dataset.now", " data-now="),
                                    ("'data-act'", " data-act "), ("[data-k", " data-k="), ("#result", ' id="result"'),
                                    ("dataset.due", " data-due="), (".pane", '<main class="pane"'),
                                    ("dataset.pane", " data-pane="), ("dataset.open", " data-open="),
-                                   ("a[data-nav]", " data-nav"), (".side a.item", '<nav class="side"'),
-                                   (".s-g-needs a.item", 'class="s-g-needs group"'), (".log", 'class="log"'),
-                                   ("form.compose", 'class="compose"'), (".cards > .row", 'class="rows cards"'),
-                                   ("'.head'", 'class="head"'), ("'.body'", 'class="body"'),
+                                   ("a[data-nav]", " data-nav"), (".log", 'class="log"'),
+                                   ("'.compose'", 'class="compose composer"'), (".pane a.item", '<a class="item"'),
+                                   ("a.ib", '<a class="ib'), ("'.head'", 'class="head"'), ("'.body'", 'class="body"'),
                                    ("[data-copy]", " data-copy="), ("dataset.short", " data-short="),
                                    ("'pace'", " data-pace="), ("'jobs'", " data-jobs="),
-                                   (".s-g-running", 'class="s-g-running group"'), (".side-empty", 'class="side-empty"'),
-                                   ("dataset.say", " data-say=")):
+                                   (".s-g-live", 'class="s-g-live group"'), (".no-jobs", 'class="empty no-jobs"'),
+                                   ("dataset.say", " data-say="), ("#pal", 'id="pal"'), ("[data-pal]", " data-pal"),
+                                   ("dataset.press", " data-press="), ("[data-tank]", " data-tank"),
+                                   ("dataset.creatures", " data-creatures="), ("[data-cycle]", " data-cycle"),
+                                   ("[data-clock]", " data-clock"), ("'data-still'", " data-still"),
+                                   ("'.ibx'", 'class="page ibx"'), ("dataset.where", " data-where="),
+                                   ("dataset.kind", " data-kind="), ("'.n'", 'class="n num"')):
             with self.subTest(hook=in_script):
                 self.assertIn(in_script, dashboard.SCRIPT)
                 self.assertIn(in_page, page)
@@ -658,7 +686,7 @@ class DashboardTest(unittest.TestCase):
         view = opened(live_view(), "live-job")
         view["open"]["log"] = "out"
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
-                 + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN))
+                 + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN) + inbox(live_view()))
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())
         self.assertEqual(sorted(selected - made - rendered), [])
         self.assertIn("g-needs", {c[2:] for c in rendered if c.startswith("s-")})  # positive control for the regex
@@ -669,27 +697,28 @@ class DashboardTest(unittest.TestCase):
         view = live_view()
         page = dashboard.render(view, NOW, token=TOKEN)
         for jid, where in (("live-job", ["needs"]), ("web-job", ["needs"]), ("queued-job", ["needs"]),
-                           ("finished-job", ["done"]), ("broke-job", ["needs"])):
+                           ("finished-job", ["ended"]), ("broke-job", ["needs"])):
             with self.subTest(job=jid):
                 self.assertEqual(page.count(f'data-key="job:{jid}"'), 1)
                 self.assertEqual(group(page, jid), where)
         self.assertIn(ASK.capitalize(), item(page, "live-job"))
         self.assertIn("Failed: The command exited with code 2", item(page, "broke-job"))
         self.assertNotIn("4242", item(page, "broke-job"))
-        card = re.search(r'<li class="row" data-key="card:live-job".*?</li>', page, re.S).group(0)
-        for part in (ASK.capitalize(), CHECK, "Paused by lead:", "Worker output", "/inbox/resolve", "/job/live-job"):
-            self.assertIn(part, card)
+        self.assertIn('href="/inbox/7?t=', item(page, "live-job"))  # its Answer opens the question in the Inbox
+        detail = re.search(r'<section class="ib-detail".*?</section>', inbox(view, 7), re.S).group(0)
+        for part in (ASK.capitalize(), CHECK, 'action="/inbox/resolve"', 'href="/job/live-job?t='):
+            self.assertIn(part, detail)
         # A finished job waiting on a person leaves Done, and an emptied Done is hidden rather than claiming nothing
         # finished.
         asked = full_view()
         asked["inbox"].append({**asked["inbox"][0], "id": 8, "job": "finished-job"})
         page = dashboard.render(asked, NOW)
         self.assertEqual(group(page, "finished-job"), ["needs"])
-        self.assertNotIn("done", shown_groups(page))
+        self.assertNotIn("ended", shown_groups(page))
         view = full_view()
         view["inbox"] = []
         page = dashboard.render(view, NOW, token=TOKEN)
-        self.assertEqual(group(page, "live-job"), ["running"])
+        self.assertEqual(group(page, "live-job"), ["live"])
         self.assertNotIn('data-key="card:live-job"', page)
         self.assertIn("Paused by lead", item(page, "live-job"))
 
@@ -698,27 +727,24 @@ class DashboardTest(unittest.TestCase):
         view = live_view()
         self.assertEqual(group(dashboard.render(view, NOW, token=TOKEN), "broke-job"), ["needs"])
         rerun = {**view, "meta": {"broke-job-r2": {"prior": "broke-job"}, "broke-job": {"updated": NOW - 60}}}
-        self.assertEqual(group(dashboard.render(rerun, NOW, token=TOKEN), "broke-job"), ["done"])
+        self.assertEqual(group(dashboard.render(rerun, NOW, token=TOKEN), "broke-job"), ["ended"])
         old = {**view, "meta": {"broke-job": {"updated": NOW - 2 * 86400}}}
-        self.assertEqual(group(dashboard.render(old, NOW, token=TOKEN), "broke-job"), ["done"])
+        self.assertEqual(group(dashboard.render(old, NOW, token=TOKEN), "broke-job"), ["earlier"])
         cancelled = {**view, "recent": [dict(view["recent"][1], state="cancelled")]}
-        self.assertEqual(group(dashboard.render(cancelled, NOW, token=TOKEN), "broke-job"), ["done"])
-        # Its row on home offers Run again, posting straight to /again.
-        row = re.search(r'<li class="row" data-key="card:broke-job".*?</li>', dashboard.render(view, NOW, token=TOKEN),
-                        re.S).group(0)
+        self.assertEqual(group(dashboard.render(cancelled, NOW, token=TOKEN), "broke-job"), ["ended"])
+        # Its row offers Run again, posting straight to /again, and is marked as a failure, not in the amber of a
+        # question waiting for an answer.
+        row = item(dashboard.render(view, NOW, token=TOKEN), "broke-job")
         self.assertIn('action="/again"', row)
         self.assertIn("Run again", text(row))
-        # In the list it is marked as a failure, not in the amber of a question waiting for an answer.
-        entry = re.search(r'<li class="row" data-key="job:broke-job".*?</li>', dashboard.render(view, NOW, token=TOKEN),
-                          re.S).group(0)
-        self.assertIn('class="dot bad', entry)
-        self.assertIn('class="sub fail"', entry)
+        self.assertIn('class="st t-red"', row)
+        self.assertIn('class="sub fail"', row)
 
     def test_one_filled_button_per_page_and_destructive_actions_marked(self):
         # A page with no filled button or with two, or a pause or cancel styled like a safe action, must fail.
         home = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertEqual(len(primaries(home)), 1)
-        self.assertIn('<button class="btn primary send">Start job</button>', home)
+        self.assertIn('<button class="btn primary send" aria-label="Start job">', home)
         for jid in ("live-job", "web-job", "finished-job", "broke-job"):
             with self.subTest(job=jid):
                 right = pane(dashboard.render(opened(live_view(), jid), NOW, token=TOKEN))
@@ -743,9 +769,126 @@ class DashboardTest(unittest.TestCase):
                  dashboard.render({**live_view(), "checks": {"mode": "other", "pid": "77"}}, NOW, token=TOKEN))
         for page in pages:
             shown = re.sub(r"<(dialog|code|style)\b.*?</\1>", "", page, flags=re.S)
-            self.assertEqual(re.findall(r"\b(Run tick|Land|Stops|Routes|Supervisor|Inbox|Resolve|pid|held|"
+            self.assertEqual(re.findall(r"\b(Run tick|Land|Stops|Routes|Supervisor|Resolve|pid|held|"
                                         r"route|PAUSED|tick|preflight)\b", " ".join(Page(shown).text)), [])
         self.assertNotIn(" title=", "".join(pages))  # no CLI tooltips standing in for accessible names
+
+    def test_a_ring_names_each_state_in_its_hue(self):
+        # A failure drawn in teal, a hand launch in grey, two states sharing one shape, or a ring a screen reader
+        # cannot name, must fail.
+        states = ("ready", "held", "launching", "running", "handoff", "collecting", "done", "failed", "cancelled")
+        rings = {state: dashboard._ring(state) for state in states}
+        hue = {state: re.search(r'class="st t-(\w+)"', ring).group(1) for state, ring in rings.items()}
+        self.assertEqual(hue, {"ready": "faint", "held": "muted", "launching": "accent", "running": "accent",
+                               "handoff": "amber", "collecting": "accent", "done": "accent", "failed": "red",
+                               "cancelled": "faint"})
+        shapes = {re.sub(r'class="st t-\w+"|aria-label="[^"]*"', "", ring) for ring in rings.values()}
+        self.assertEqual(len(shapes), len(rings))
+        for state, ring in rings.items():
+            self.assertIn(f'role="img" aria-label="{dashboard._STATES[state][0]}"', ring)
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        self.assertIn(rings["failed"], item(page, "broke-job"))
+        self.assertIn(rings["done"], item(page, "finished-job"))
+
+    def test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing(self):
+        # A seat drawn teal while its job waits on you or amber while it works, an idle seat drawn lit, a seat left
+        # out of the water, a tank in the snapshot (which runs no script), or a tank that ignores reduced motion, must
+        # fail.
+        view = live_view()
+        view["seats"] = [{"name": name, "role": f"The {name} seat", "route": "codex-cloud", "model": "m-1"}
+                         for name in ("asks", "works", "rests")]
+        view["live"].append({"id": "busy-job", "state": "running", "paused": False, "detail": "", "external_id": None})
+        view["meta"] = {"live-job": {"seat": "asks"}, "busy-job": {"seat": "works"}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        found = re.search(r'<canvas class="tank-c" data-tank data-creatures="([^"]*)"', page)
+        tank = {c["name"]: c for c in json.loads(html.unescape(found.group(1)))}
+        self.assertEqual({name: c["tone"] for name, c in tank.items()},
+                         {"asks": "amber", "works": "accent", "rests": "faint"})
+        self.assertLess(tank["rests"]["alpha"], tank["works"]["alpha"])
+        self.assertLess(tank["rests"]["r"], tank["asks"]["r"])
+        self.assertLess(tank["asks"]["r"], tank["works"]["r"])
+        rail = text(re.search(r'<section class="s-r-seats".*?</section>', page, re.S).group(0))
+        for words in ("waiting on you", "working", "idle", "The rests seat"):
+            self.assertIn(words, rail)
+        self.assertNotIn("<canvas", dashboard.render(view, NOW))
+        self.assertIn("no seats.toml", text(dashboard.render(live_view(), NOW, token=TOKEN)))
+        # Under reduced motion the tank draws one still frame and never starts its animation loop.
+        tank_code = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank("):]
+        tank_code = tank_code[:tank_code.index("\n}\n")]
+        self.assertIn("if (calm.matches) { draw(", tank_code)
+        self.assertLess(tank_code.index("if (calm.matches) { draw("), tank_code.index("requestAnimationFrame("))
+
+    def test_palette_finds_every_job_every_page_and_only_this_pages_actions(self):
+        # A job missing from ⌘K, a page it cannot reach, or an action offered with no control on the page behind it,
+        # must fail.
+        for page, offered, absent in ((dashboard.render(live_view(), NOW, token=TOKEN), "t", "s"),
+                                      (dashboard.render(opened(live_view(), "live-job"), NOW, token=TOKEN), "s", "l"),
+                                      (dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN), "l", "s")):
+            pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+            for jid in ("live-job", "web-job", "queued-job", "finished-job", "broke-job"):
+                self.assertEqual(pal.count(f'href="/job/{jid}?t='), 1)
+            for path in ("/", "/inbox", "/new", "/actions"):
+                self.assertIn(f'href="{path}?t=', pal)
+            pressed = set(re.findall(r'data-press="([a-z])"', pal))
+            self.assertIn(offered, pressed)
+            self.assertNotIn(absent, pressed)
+            for key in pressed:
+                self.assertIn(f'data-k="{key}"', page.replace(pal, ""))
+        self.assertNotIn('id="pal"', dashboard.render(live_view(), NOW))
+
+    def test_inbox_lists_what_waits_newest_first_and_shows_one(self):
+        # An ask missing from the list, the list out of order, the detail showing another item than the one picked, a
+        # settled item offered its form again, or an unknown item shown as another, must fail.
+        view = {**live_view(), "settled": [{"id": 5, "kind": "decision", "job": "live-job", "action": "ship it",
+                                            "detail": "", "created": NOW - 100, "resolved": NOW - 60,
+                                            "resolution": "yes, ship"}]}
+
+        def shown(pick, picked=None):
+            page = dashboard.render({**view, "box": True, "pick": pick, "picked": picked}, NOW, token=TOKEN)
+            order = re.findall(r'<li class="ib-li[^"]*" data-key="([^"]+)"', page)
+            current = re.findall(r'<li class="ib-li[^"]*" data-key="([^"]+)"[^>]*><a[^>]*aria-current', page)
+            detail = re.search(r'<section class="ib-detail.*?</section>', page, re.S).group(0)
+            return order, current, detail
+        order, current, detail = shown(None)
+        self.assertEqual(order, ["inbox:8", "inbox:7", "launch:web-job", "settled:5"])
+        self.assertEqual(current, ["inbox:8"])
+        self.assertIn("Paste the patch from Codex", text(detail))
+        _, current, detail = shown(7)
+        self.assertEqual(current, ["inbox:7"])
+        self.assertIn(CHECK, text(detail))
+        self.assertIn('action="/inbox/resolve"', detail)
+        _, current, detail = shown(5, view["settled"][0])
+        self.assertEqual(current, ["settled:5"])
+        self.assertIn("Your note: yes, ship", text(detail))
+        self.assertNotIn("<form", detail)
+        _, current, detail = shown(99)
+        self.assertEqual(current, [])
+        self.assertIn("No inbox item 99", text(detail))
+        tabs = text(inbox(view))
+        for words in ("All 3", "Questions 1", "Launches 1", "Patches 1"):
+            self.assertIn(words, tabs)
+        # Two items asked in the same second: the later one is newer.
+        tied = {**view, "inbox": [dict(i, created=NOW - 5) for i in view["inbox"]]}
+        self.assertEqual(re.findall(r'<li class="ib-li" data-key="(inbox:\d+)"', inbox(tied)), ["inbox:8", "inbox:7"])
+
+    def test_this_mac_says_whether_a_heavy_step_may_start(self):
+        # A load or pressure the panel drops, heavy work offered over the limit, or a failed reading shown as a
+        # number, must fail.
+        def mac(host):
+            page = dashboard.render({**live_view(), "host": host}, NOW, token=TOKEN)
+            return text(re.search(r'<section class="mac".*?</section>', page, re.S).group(0))
+        calm = mac({"load1": 2.17, "level": 1, "max_load": 10.0, "ok": True, "reason": "", "lease": {"held": False}})
+        for words in ("Load, 1 min2.17 of 10", "Memory pressure1 normal", "Heavy jobsmay start", "Heavy leasefree"):
+            self.assertIn(words, calm)
+        busy = mac({"load1": 12.5, "level": 2, "max_load": 10.0, "ok": False, "reason": "load 12.50 above 10.00",
+                    "lease": {"held": True, "age_s": 95}})
+        for words in ("12.50 of 10", "Memory pressure2 warning", "Heavy jobswait", "Heavy leasein use",
+                      "Load 12.50 above 10.00."):
+            self.assertIn(words, busy)
+        broken = mac({"error": "HostReadError: sysctl failed"})
+        self.assertIn("Load and memorynot read", broken)
+        self.assertIn("HostReadError: sysctl failed", broken)
+        self.assertNotIn("This Mac", text(dashboard.render(full_view(), NOW)))
 
     def test_render_is_deterministic_and_does_not_mutate_view(self):
         # Mutating the source ledger view or consulting wall-clock time must fail.

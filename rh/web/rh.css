@@ -185,6 +185,8 @@ a.ws-btn:hover { background: var(--raised); }
 .checks { display: flex; flex-direction: column; gap: 8px; }
 .status { display: flex; flex-direction: column; gap: 6px; font-size: 13px; line-height: 18px; }
 .status .line { display: flex; align-items: center; gap: 8px; color: var(--text); }
+.status .line > span { display: flex; flex-wrap: wrap; column-gap: 8px; }  /* the time wraps whole */
+.status .line .soft { color: var(--faint); white-space: nowrap; }
 .status .line.warn { color: var(--amber); }
 .status .line.bad { color: var(--red); }
 .status .more, .status .route { color: var(--faint); font-size: 12px; line-height: 17px; }
@@ -234,10 +236,14 @@ a.ws-btn:hover { background: var(--raised); }
 .mc { grid-template-columns: minmax(0, 1fr) var(--rail); }
 .center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .tank { position: relative; flex: none; min-height: 282px; border-bottom: 1px solid var(--rule); z-index: 2; }
-.tank-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
+/* the tank's faint character grid, one 8 x 11 cell per glyph; the script draws the water over it */
+.tank-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none;
+  background-image: linear-gradient(to right, rgba(150, 190, 182, .035) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(150, 190, 182, .035) 1px, transparent 1px);
+  background-size: 8px 11px; }
 [data-clear] { width: fit-content; max-width: 100%; }
 .tank-in { position: relative; width: clamp(420px, calc(100% - 2 * var(--lane)), 600px); max-width: calc(100% - 48px);
-  margin: 0 auto; padding: 30px 0 28px; display: flex; flex-direction: column; align-items: center;
+  margin: 0 auto; padding: 30px 0 74px; display: flex; flex-direction: column; align-items: center;
   container-type: inline-size; }
 .tally { display: flex; align-items: center; gap: 8px; height: 22px; padding: 0 10px; border-radius: 11px;
   background: rgba(11, 14, 14, .72); font: 12px var(--mono); color: var(--muted); white-space: nowrap; }
@@ -290,7 +296,6 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .c-hint { margin-left: auto; color: var(--faint); white-space: nowrap; }
 .send { width: 32px; height: 32px; padding: 0; border-radius: 9px; flex: none; }
 .send .ic { stroke-width: 2; }
-.under { margin-top: 10px; text-align: center; font-size: 13px; color: var(--muted); }
 .how { width: 100%; margin-top: 18px; }
 .how .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .how .steps li { background: rgba(16, 20, 20, .86); }
@@ -361,6 +366,9 @@ a.card:hover { background: var(--surface); }
   min-width: 0; }
 .i-m.mono { display: flex; gap: 10px; color: var(--faint); font-size: 12px; }
 .i-r { color: var(--faint); white-space: nowrap; line-height: 18px; justify-self: end; }
+.card.idle { grid-template-columns: minmax(0, 1fr) auto auto; }  /* an idle seat: name, model, state */
+.card.idle .i-r { order: 1; font-size: 12px; line-height: 20px; }
+.card.idle .i-s { order: 2; }
 .rail .soft { font-size: 13px; line-height: 18px; }
 .r-sum { color: var(--muted); font-size: 13px; line-height: 20px; }
 .r-sum a { color: var(--amber); }

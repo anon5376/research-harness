@@ -115,7 +115,7 @@ class ServeTest(unittest.TestCase):
 
     def git(self, *args):
         return subprocess.run(["git", "-C", str(self.repo), *args], check=True,
-                              capture_output=True, text=True).stdout
+                              capture_output=True, text=True, encoding="utf-8").stdout
 
     @contextlib.contextmanager
     def ledger(self):
@@ -274,7 +274,7 @@ class ServeTest(unittest.TestCase):
             'owns = ["docs/"]\ndone = "it reads well"\n')
         self.assertEqual(self.serve._seats(self.cfg),
                          [{"name": "docs", "role": "Docs: the guides", "route": "codex-cloud", "model": "m-1"}])
-        self.assertIn('<span class="i-m">The guides</span>', self.request()[2])
+        self.assertIn('title="The guides"', self.request()[2])
         (self.repo / "seats.toml").write_text("[seat.docs]\nrole = 1\n")
         self.assertEqual(self.serve._seats(self.cfg), [])
         self.assertEqual(self.request()[0], 200)

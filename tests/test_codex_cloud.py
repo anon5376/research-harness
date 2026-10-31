@@ -42,7 +42,7 @@ class FakeCliTest(unittest.TestCase):
         self.cli = CodexCloud(codex=str(FAKE), run=RUN, timeout=30)
 
     def given(self, **state):
-        self.state.write_text(json.dumps(state))
+        self.state.write_text(json.dumps(state), encoding="utf-8")
 
     def calls(self):
         if not self.log.exists():

@@ -157,8 +157,8 @@ tests = ["tests.test_serve.ServeTest.test_this_mac_and_the_seats_come_from_the_l
 [[mutant]]
 name = "This Mac says heavy jobs may start while they must wait"
 file = "rh/dashboard.py"
-find = '"may start" if ok else "wait"'
-replace = '"may start"'
+find = '"Heavy jobs", "wait", "warn"'
+replace = '"Heavy jobs", "may start", ""'
 tests = ["tests.test_dashboard.DashboardTest.test_this_mac_says_whether_a_heavy_step_may_start"]
 
 [[mutant]]
@@ -382,14 +382,14 @@ tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_withou
 [[mutant]]
 name = "v3.2: the launches lose their place at the front of the cloud line"
 file = "rh/dashboard.py"
-find = "key=lambda j: 0 if j.state == \"handoff\" else rank[j.group]"
+find = "key=lambda j: 0 if j.state == \"handoff\" or j.native else rank[j.group]"
 replace = "key=lambda j: rank[j.group]"
 tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_without_repeating_the_list"]
 
 [[mutant]]
 name = "v3.2: the cloud line's launches no longer lead to the Inbox"
 file = "rh/dashboard.py"
-find = "        go = ctx[\"live\"] and word == \"to launch by hand\""
+find = "        go = ctx[\"live\"] and word in (\"to launch by hand\", \"waiting for the environment\")"
 replace = "        go = False"
 tests = ["tests.test_dashboard.DashboardTest.test_the_rail_says_who_works_without_repeating_the_list"]
 

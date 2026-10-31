@@ -266,11 +266,31 @@ def _creature(name, tone, k, busy=1, at=None):
             "b": 0.7 if faint else 1, "alpha": 0.55 if faint else 1, "sp": _SPEEDS[k % len(_SPEEDS)]}
 
 
-def _tank(creatures, key):
-    """The canvas the client draws the water on; it draws nothing without the script."""
+def _tank(creatures, key, fauna=None):
+    """The canvas the client draws the water on; it draws nothing without the script. `fauna` is the rest of the sea
+    life (see _fauna)."""
     data = _text(json.dumps(creatures, separators=(",", ":")))
-    return (f'<canvas class="tank-c" data-tank data-creatures="{data}" data-region="{key}" data-still '
-            f'data-sig="{_sig(data)}" aria-hidden="true"></canvas>')
+    life = f' data-fauna="{_text(json.dumps(fauna, separators=(",", ":")))}"' if fauna else ""
+    return (f'<canvas class="tank-c" data-tank data-creatures="{data}"{life} data-region="{key}" data-still '
+            f'data-sig="{_sig(data + life)}" aria-hidden="true"></canvas>')
+
+
+_SCHOOL, _GERMS, _BLOOM = 9, 7, 12  # at most this many fish, germs and plankton patches in the band
+
+
+def _fauna(jobs, view, ctx):
+    """The band's sea life besides the seats' jellyfish, each kind a count the page already shows: a fish for each job
+    done today, a germ for each job that failed or stopped today, a patch of plankton for each job up next, an eel
+    while something checks the harness, and the octopus on the sea floor, amber while anything needs you."""
+    ended = [j for j in jobs if j.where == "recent" and j.group in ("ended", "needs")]
+    sup = view.get("supervisor") if isinstance(view.get("supervisor"), dict) else {}
+    loop = view.get("checks") if isinstance(view.get("checks"), dict) else {}
+    fresh = _number(sup.get("age_s")) and sup["age_s"] <= _STALE
+    return {"fish": min(_SCHOOL, sum(j.state == "done" for j in ended)),
+            "germs": min(_GERMS, sum(j.state in _FAILED for j in ended)),
+            "plankton": min(_BLOOM, sum(j.group == "next" for j in jobs)),
+            "eel": bool(fresh and loop.get("mode") != "paused"),
+            "octopus": {"tone": "amber" if ctx["needs"] else "faint"}, "floor": True}
 
 
 def _state(state):
@@ -319,7 +339,7 @@ _NOT_AN_END = ("e.g.", "i.e.", "etc.", "vs.", "cf.")  # a sentence does not end 
 
 def _lead(meta):
     """A brief as its job's page shows it: the first sentence of its first paragraph, whole, for the heading, with the
-    paragraph's line breaks read as spaces (briefs are often hard-wrapped), and the rest under it as written. The
+    paragraph's line breaks read as spaces (briefs are often hard-wrapped), and the rest under it (see _reflow). The
     paragraph ends at a blank line or a list item, and a number such as the "1." of a first list item ends no
     sentence."""
     text = str((meta or {}).get("brief") or "").strip()
@@ -337,6 +357,24 @@ def _lead(meta):
             break
     head = " ".join(para[:end].split())
     return (head if head.lower().endswith(_NOT_AN_END) else head.rstrip(".")), text[end:].strip()
+
+
+_ITEM = re.compile(r"[ \t]*(?:[-*•]|\d+[.)])\s")
+
+
+def _reflow(text):
+    """A brief's text as prose: blank lines and list items keep their own lines, a line inside a ``` fence stays as
+    written, and every other line break is read as a space, since briefs are often hard-wrapped."""
+    out, fenced = [], False
+    for line in str(text or "").splitlines():
+        fence = line.lstrip().startswith("```")
+        if fenced or fence or not line.strip() or _ITEM.match(line) or not out or not out[-1].strip() or (
+                out[-1].lstrip().startswith("```")):
+            out.append(line if fenced or fence else line.rstrip())
+        else:
+            out[-1] = out[-1].rstrip() + " " + line.strip()
+        fenced ^= fence
+    return "\n".join(out)
 
 
 def _title(meta, jid):
@@ -787,9 +825,9 @@ def _checks(view, ctx):
     age = sup.get("age_s") if isinstance(sup, dict) else None
     counted = _number(age)
     quiet = counted and age > _STALE
-    last = _when(now - age, now, "tick", "Last check ") if counted else ""
     mode = loop.get("mode") if loop else None
-    btns, more, inline = [], last, ""
+    btns, more = [], ""
+    inline = (' <span class="soft mono">' + _when(now - age, now, "tick", "") + '</span>') if counted else ""
     if mode == "on":
         word, dot = ("Checking, but not lately", "warn") if quiet else ("Checking automatically", "live")
         btns = [_button(ctx, "/checks", [("on", "0")], "Pause", "", "quiet small", "Pause checks"),
@@ -800,11 +838,10 @@ def _checks(view, ctx):
                 _button(ctx, "/tick", [], "Check once", "t", "quiet small", "Check once")]
     elif mode == "other":
         word, dot = f"Checked by rh supervise (process {loop.get('pid')})", "live"
-        more = (last + ". " if last else "") + "This app watches while that process runs and takes over when it stops."
     elif sup:
         word, dot = "Harness", "warn" if quiet else "good"
-        inline = " " + _when(now - age, now, "tick", "checked ") if counted else f" checked {_text(age)} s ago"
-        more = f"Process {_text(sup.get('pid'))}." + (" It may have stopped." if quiet else "")
+        inline = inline or f" checked {_text(age)} s ago"
+        more = f"Process {_text(sup.get('pid'))} may have stopped." if quiet else ""
         if live:
             btns = [_button(ctx, "/tick", [], "Check now", "t", "quiet small", "Check now")]
     else:
@@ -821,17 +858,17 @@ def _checks(view, ctx):
         out.append(f'<p class="more">{more}</p>')
     for route in view.get("routes", []):
         name = route["route"]
+        if name.startswith("cli-env:") and ctx.get("native"):
+            continue  # Needs you already says the CLI cannot see the environment, and why
         retry = _when(route["next_try"], now, f"route:{name}:next", "retrying ", "retrying on the next check")
-        last = (f", the last {_when(route['updated'], now, f'route:{name}:updated')}"
-                if _number(route.get("updated")) else "")
         pause = ""
         if live and not any(s.get("owner") == "app" for s in ctx["scopes"].get(f"route:{name}", [])):
             pause = _popover(ctx, "/stop", [("route", name), ("pause", "on")], "Pause it", "",
                              _field("Why? (optional)", "reason", placeholder="Paused from the app"),
                              f"Pause {_text(_platform(name))}", "quiet small danger",
                              f"No new job starts on {_text(_platform(name))} until you resume it.", "up left")
-        out.append(f'<div class="route"><p>{_text(_platform(name))}: {_text(route["last_status"])} · {retry}. '
-                   f'{_text(route["failures"])} failures in a row{last}; it retries by itself.</p>{pause}</div>')
+        out.append(f'<div class="route"><p>{_text(_platform(name))}: {_text(route["last_status"])} · {retry}'
+                   f'</p>{pause}</div>')
     for stop in ctx["others"]:
         scope = str(stop["scope"])
         what = ("All launches" if scope == "*" else
@@ -850,8 +887,8 @@ def _kv(key, value, tone=""):
 
 
 def _host(view, ctx):
-    """This Mac at the sidebar foot: load and memory pressure as rh serve read them, whether a heavy job may start
-    now, and whether the heavy lease is in use."""
+    """This Mac at the sidebar foot: load and memory pressure as rh serve read them, and, only when they hold a heavy
+    job back, that heavy jobs wait and that the heavy lease is in use."""
     host = view.get("host")
     if not isinstance(host, dict):
         return ""
@@ -867,14 +904,14 @@ def _host(view, ctx):
         else:
             rows.append(_kv("Memory pressure", f'{_text(level)} <em>{_PRESSURE.get(level, "")}</em>',
                             "" if level == 1 else "bad" if _number(level) and level >= 4 else "warn"))
+        # Heavy jobs and the heavy lease only when they hold something up; free and may-start go unsaid.
         ok = host.get("ok")
-        rows.append(_kv("Heavy jobs", "may start" if ok else "wait", "" if ok else "warn"))
+        if not ok:
+            rows.append(_kv("Heavy jobs", "wait", "warn"))
         held = host.get("lease") if isinstance(host.get("lease"), dict) else {}
         if held.get("held"):
             age = held.get("age_s")
             rows.append(_kv("Heavy lease", "in use" + (f" · {_span(round(age))}" if _number(age) else "")))
-        else:
-            rows.append(_kv("Heavy lease", "free"))
         if not ok and host.get("reason"):
             rows.append(f'<p class="why">{_text(_sentence(host["reason"]))}.</p>')
         body = "".join(rows)
@@ -1034,14 +1071,14 @@ def _rail(jobs, view, ctx):
     for seat in seats:
         tone, word, job, _ = _seat_state(str(seat["name"]), jobs)
         dot = {"accent": "live", "amber": "warn"}.get(tone, "neutral")
-        # The job a seat is on goes by its id here, since the list already says what it is; an idle seat says its
-        # role without its leading label ("Testing: …").
+        # The job a seat is on goes by its id here, since the list already says what it is; an idle seat is one line,
+        # with its role (without its leading label, "Testing: …") as the card's title.
         role = _sentence(_LABEL.sub("", str(seat.get("role", ""))))
-        what = f'<span class="i-m mono">{_text(job.id)}</span>' if job else f'<span class="i-m">{_text(role)}</span>'
+        what = f'<span class="i-m mono">{_text(job.id)}</span>' if job else ""
         inner = (f'<span class="i-t mono">{_text(seat["name"])}</span><span class="i-s">{_dot(dot)}{word}</span>'
                  f'{what}<span class="i-r mono">{_text(seat.get("model", ""))}</span>')
         card = (f'<a class="card" href="{_url(ctx, "/job/" + job.id)}" data-nav>{inner}</a>' if job and ctx["live"]
-                else f'<div class="card">{inner}</div>')
+                else f'<div class="card idle" title="{_text(role)}">{inner}</div>')
         rows.append(_row(f"seat:{seat['name']}", card, "li"))
     parts = []
     if rows:
@@ -1053,13 +1090,14 @@ def _rail(jobs, view, ctx):
     cloud = [j for j in jobs if j.place == "cloud" and j.group in ("needs", "live", "next", "ended")]
     words, counts = {"live": "live", "next": "up next", "ended": "ended today"}, {}
     rank = {"needs": 1, "live": 2, "next": 3, "ended": 4}
-    for job in sorted(cloud, key=lambda j: 0 if j.state == "handoff" else rank[j.group]):
-        word = "to launch by hand" if job.state == "handoff" else words.get(job.group) or job.word.lower()
+    for job in sorted(cloud, key=lambda j: 0 if j.state == "handoff" or j.native else rank[j.group]):
+        word = ("to launch by hand" if job.state == "handoff" else "waiting for the environment" if job.native
+                else words.get(job.group) or job.word.lower())
         counts[word] = counts.get(word, 0) + 1
     said = []
     for word, n in counts.items():
         bit = f'<span class="num">{n}</span> {_text(word)}'
-        go = ctx["live"] and word == "to launch by hand"
+        go = ctx["live"] and word in ("to launch by hand", "waiting for the environment")
         said.append(f'<a href="{_url(ctx, "/inbox")}" data-nav>{bit}</a>' if go else bit)
     if said:
         line = ' <span class="sep">·</span> '.join(said)
@@ -1114,8 +1152,7 @@ def _composer(ctx, draft, ready, first):
             '<label>Time limit, minutes<input type="text" name="timeout_min" inputmode="numeric" '
             f'pattern="[0-9]{{1,5}}" value="{timeout}"></label></div></details>'
             '<span class="c-hint mono">⌘↵ start</span>'
-            f'<button class="btn primary send" aria-label="Start job">{_ic("up")}</button></div></form>'
-            '<p class="under" data-clear>Starts on the next check, usually within seconds. Nothing is pushed.</p>')
+            f'<button class="btn primary send" aria-label="Start job">{_ic("up")}</button></div></form>')
     if first:
         form += ('<div class="how"><ol class="steps">'
                  f'<li><div><p><b>Describe a job and start it.</b> A job on {HERE} runs one command in its own '
@@ -1136,7 +1173,7 @@ def _band(ctx, view, jobs, creatures, first, wait):
              else _need_word(0))
     pulse = (f'{_dot("live" if live else "neutral")}<span class="num">{live}</span> '
              f'{"job" if live == 1 else "jobs"} live <span class="sep">·</span> {waits}')
-    return ('<section class="tank" aria-labelledby="compose-title">' + _tank(creatures, "water")
+    return ('<section class="tank" aria-labelledby="compose-title">' + _tank(creatures, "water", _fauna(jobs, view, ctx))
             + '<div class="tank-in">'
             + f'<p class="tally" data-clear data-region="tally" data-still data-sig="{_sig(pulse)}">{pulse}</p>'
             + '<h1 class="sr" id="compose-title" tabindex="-1">What should run?</h1>'
@@ -1198,17 +1235,12 @@ def _snapshot_rail(jobs, loose, view, ctx):
 def _home(jobs, stop_rows, loose_cards, view, ctx, feedback):
     """Today: the composer in its band of water, the jobs by what you do next, and who is working."""
     live = ctx["live"]
-    fresh = ""
-    sup = view.get("supervisor")
-    if live and isinstance(sup, dict) and _number(sup.get("age_s")):
-        fresh = f'<span class="fresh mono">{_when(ctx["now"] - sup["age_s"], ctx["now"], "tick:top", "checked ")}</span>'
     top = _top(ctx, '<h1 tabindex="-1">Today</h1>'
-                    f'<span class="top-meta mono"><span class="when" data-clock>{_date(ctx["now"])}</span></span>', fresh)
+                    f'<span class="top-meta mono"><span class="when" data-clock>{_date(ctx["now"])}</span></span>')
     center = []
     if live and ctx["can_add"]:
         center.append(_band(ctx, view, jobs, _creatures(jobs, view), not jobs, len(ctx["needs"])))
-    jobs_head = (f'<div class="jobs-head"><h2 id="jobs-h">Jobs</h2>{_where_tabs(jobs, ctx)}'
-                 '<span class="head-r mono">ordered by what needs you</span></div>')
+    jobs_head = f'<div class="jobs-head"><h2 id="jobs-h">Jobs</h2>{_where_tabs(jobs, ctx)}</div>'
     center.append(f'<section class="jobs" aria-labelledby="jobs-h">{jobs_head}<div class="list">'
                   f'{_job_list(jobs, stop_rows, ctx)}</div></section>')
     rail = _rail(jobs, view, ctx) if live else _snapshot_rail(jobs, loose_cards, view, ctx)
@@ -1339,9 +1371,6 @@ def _props(ctx, job, spec, entry, view):
         if _number(job.get(key)) and not (key == "updated" and entry.where != "recent"):
             rows.append(("Finished" if key == "updated" else label,
                          f'<span class="mono num">{_clock(job[key], now)}</span>'))
-    ext = job.get("external_id")
-    if ext is not None and not str(ext).isdigit():
-        rows.append(("Codex task", f'<span class="mono">{_text(ext)}</span>'))
     if spec.get("prior"):
         prior = _text(spec["prior"])
         rows.append(("Runs again after", f'<a class="mono" href="{_url(ctx, "/job/" + str(spec["prior"]))}" data-nav>'
@@ -1365,7 +1394,7 @@ def _props(ctx, job, spec, entry, view):
 
 def _stops(ctx, entry):
     """Pauses and stops on this job: the app's own (its Resume is under Needs you) and anyone else's, which only they
-    can lift."""
+    can lift. Nothing when there are none."""
     parts = []
     for stop in entry.mine:
         verb = "Paused" if stop.get("kind") == "pause" else "Stopped"
@@ -1378,8 +1407,9 @@ def _stops(ctx, entry):
             parts.append(_hold(stop, entry.where == "live"))
     if entry.row.get("paused") and not any(s.get("kind") == "pause" for s in entry.stops):
         parts.append('<p class="hold"><b>Paused:</b> its platform or all launches are paused.</p>')
-    body = '<h2>Pauses and stops</h2>' + ("".join(parts) or '<p class="soft">None.</p>')
-    return _region("j-stops", body, "section")
+    if not parts:
+        return ""
+    return _region("j-stops", '<h2>Pauses and stops</h2>' + "".join(parts), "section")
 
 
 def _job_head(ctx, opened, job, spec, entry, finished, creature):
@@ -1424,7 +1454,7 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
         cut = finished or opened.get("log_cut")
         prog.append(f'<div class="pg"><span class="pg-k">Output</span><b class="num">{n}</b>'
                     f'<span class="pg-s">{"last lines" if cut else "lines so far"}</span></div>')
-    checks = _checks_of(opened, spec, finished)
+    checks = _checks_of(opened, spec, finished) if finished or state not in _PRE else []
     if checks:
         passed = sum(1 for p, _, _ in checks if p)
         sub = "run when it ends" if any(p is None for p, _, _ in checks) else "passed"
@@ -1484,7 +1514,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     work = []
     said = _lead(spec)[1]
     if said:
-        work.append(_region("j-brief", f'<div class="bubble">{_text(said)}</div>', "section", "s-j-brief",
+        work.append(_region("j-brief", f'<div class="bubble">{_text(_reflow(said))}</div>', "section", "s-j-brief",
                             ' aria-label="What it was asked"'))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
@@ -1521,11 +1551,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         if loop and loop.get("mode") == "paused":
             next_line = (next_line + " Automatic checks are paused: the app won't launch or collect it until you "
                          "resume them or press Check once.").strip()
-        detail = _plain(job.get("detail")) if state not in ("held", "handoff") else ""
+        detail = _plain(job.get("detail")) if state not in ("held", "handoff") and not entry.native else ""
         now_body = (f'<p class="now">{_dot(entry.tone, state == "running")}<span class="what">{_text(doing)}</span>'
                     + (f'<span class="soft">{_text(detail)}</span>' if detail and detail != doing else "")
                     + (f'<span class="soft">{_text(next_line)}</span>' if next_line else "") + "</p>")
-        if state != "running" or next_line or (detail and detail != doing):
+        # The head already gives the state, so this line is there only when it adds what comes next or why.
+        if next_line or (detail and detail != doing):
             work.append(_region("j-now", now_body, "section", "s-j-now", ' aria-label="Now"'))
     # A running job shows its output as it comes. A finished one leads with what it made, or, when it failed, with
     # where it stopped and the box to fix it right under that; its output (the last 200 lines) is folded away below.
@@ -1579,8 +1610,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         if made and made[0] != seen:
             seen = made[0]
             lines.append(made[1])
-    side = [_props(ctx, job, spec, entry, view), _receipt(ctx, opened, job, spec, finished, lead and finished),
-            _stops(ctx, entry)]
+    # Before it starts, its checks are its Done when and Command in the properties, so there is no receipt yet.
+    started = finished or state not in _PRE
+    side = [_props(ctx, job, spec, entry, view),
+            _receipt(ctx, opened, job, spec, finished, lead and finished) if started else "", _stops(ctx, entry)]
     if lines:
         side.append(_section("j-timeline", "Timeline", _rows(lines, "rows timeline")))
     page = (f'<div class="page jd"><div class="jd-main">{"".join(main)}</div>'
@@ -1657,8 +1690,10 @@ def _ib_detail(ctx, entry, settled, view, missing):
         about = (f'<p class="q-job" data-clear>{_dot("warn" if entry else "neutral")}<span>On “{link}”</span>'
                  f'<span class="sep">·</span><span>{_text(job.word)}</span></p>')
     tone = "amber" if entry and not (job and job.state in _FAILED) else "faint"
-    creature = _creature(job.seat if job and job.seat else "harness", tone, 1, 1, (0.9, 0.55))
-    head = (f'<div class="q-head">{_tank([creature], "q-water")}<div class="q-head-in">'
+    # An item on a job is its seat's jellyfish; one from the harness itself is the octopus.
+    water = (_tank([_creature(job.seat or "harness", tone, 1, 1, (0.9, 0.55))], "q-water") if job else
+             _tank([], "q-water", {"octopus": {"tone": tone, "at": [0.92, 0.5]}}))
+    head = (f'<div class="q-head">{water}<div class="q-head-in">'
             f'<p class="q-who" data-clear>{"".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
             f'{about}</div></div>')
     parts = [f'<div class="q-msg">{_text(detail)}</div>'] if detail else []

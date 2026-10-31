@@ -4,6 +4,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -315,17 +316,22 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(escaped, dashboard.render(view, NOW))
 
     def test_status_content_and_relative_times(self):
-        # Dropping a row field, count or relative timestamp must fail.
+        # Dropping a row field, count or relative timestamp must fail; so must a route line that grows back its
+        # failure count, or a healthy harness that names its process.
         view = full_view()
         shown = text(dashboard.render(view, NOW))
-        for value in ("Process 123", "Harness checked 12 s ago", "asked 31 s ago", "the last 5 s ago",
-                      "retrying in 40 s", "Paused by lead:", "review output", "Codex cloud", "rate-limited",
-                      "3 failures", "live-job", "Running", "Worker output", "queued-job", "On hold: Waiting for input",
-                      ASK.capitalize(), CHECK, "finished-job", "Accepted output", "Last 24 h: 2 done, 1 failed"):
+        for value in ("Harness 12 s ago", "asked 31 s ago", "Codex cloud: rate-limited · retrying in 40 s",
+                      "Paused by lead:", "review output", "live-job", "Running", "Worker output", "queued-job",
+                      "On hold: Waiting for input", ASK.capitalize(), CHECK, "finished-job", "Accepted output",
+                      "Last 24 h: 2 done, 1 failed"):
             with self.subTest(value=value):
                 self.assertIn(value, shown)
+        for value in ("failures in a row", "Process 123", "it retries by itself"):
+            self.assertNotIn(value, shown)
+        self.assertIn("Process 123 may have stopped", text(dashboard.render(
+            {**view, "supervisor": {"pid": 123, "age_s": 900}}, NOW)))
         later = text(dashboard.render(view, NOW + 10))
-        for value in ("asked 41 s ago", "the last 15 s ago", "retrying in 30 s"):
+        for value in ("asked 41 s ago", "retrying in 30 s"):
             self.assertIn(value, later)
         view["routes"][0]["next_try"] = NOW - 8
         self.assertIn("retrying on the next check", " ".join(Page(dashboard.render(view, NOW)).text))
@@ -337,11 +343,10 @@ class DashboardTest(unittest.TestCase):
             view = {**live_view(), "checks": checks, **extra}
             page = dashboard.render(view, NOW, token=TOKEN)
             part = page.split('<footer class="checks">', 1)[1].split('<div class="tools">', 1)[0]
-            return " ".join(Page(part).text), {f["fields"].get("on") for f in Forms(part).forms
+            return " ".join(" ".join(Page(part).text).split()), {f["fields"].get("on") for f in Forms(part).forms
                                                if f["action"] == "/checks"}
         said, switches = foot({"mode": "on", "pid": None, "failed": None})
-        self.assertIn("Checking automatically", said)
-        self.assertIn("Last check 12 s ago", said)
+        self.assertIn("Checking automatically 12 s ago", said)
         self.assertEqual(switches, {"0"})
         said, switches = foot({"mode": "paused", "pid": None, "failed": None})
         self.assertIn("Checks paused", said)
@@ -349,7 +354,8 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("Checking automatically", said)
         self.assertEqual(switches, {"1"})
         said, switches = foot({"mode": "other", "pid": "4242", "failed": None})
-        self.assertIn("Checked by rh supervise (process 4242)", said)
+        self.assertIn("Checked by rh supervise (process 4242) 12 s ago", said)
+        self.assertNotIn("takes over", said)
         self.assertEqual(switches, set())
         said, _ = foot({"mode": "on", "pid": None, "failed": "OSError: disk full"})
         self.assertIn("The last check failed", said)
@@ -483,11 +489,15 @@ class DashboardTest(unittest.TestCase):
         # A row per waiting job, a waiting job shown as starting, a job page without the hand launch or without the
         # CLI's own words, an Inbox entry without the way to name another environment, or a hand-launch card that
         # does not say why, must fail; so must the dashboard's copy of the step's opening drifting from the
-        # supervisor's.
+        # supervisor's. So must a sidebar line that repeats the step, or a receipt or bare state line on the page of a
+        # job that has not started.
         self.assertTrue(UNSEEN["action"].startswith(dashboard._NATIVE))
         self.assertEqual(dashboard._NATIVE, supervisor.ENV_ASK)
         view = unseen_view()
+        view["routes"] = view["routes"] + [{"route": "cli-env:research-harness", "healthy": 0, "failures": 1,
+                                            "next_try": NOW + 500, "last_status": "not found", "updated": NOW - 5}]
         home = dashboard.render(view, NOW, token=TOKEN)
+        self.assertEqual(re.findall(r'<div class="route"><p>([^:<]*):', home), ["Codex cloud"])
         needs = re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0)
         self.assertIn('data-key="need:10"', needs)
         self.assertIn("Make environment research-harness visible to the codex CLI", needs)
@@ -497,6 +507,8 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(opened(view, "cloud-job"), NOW, token=TOKEN)
         self.assertEqual([f["fields"]["job"] for f in Forms(page).forms if f["action"] == "/handoff"], ["cloud-job"])
         self.assertIn("Error: environment 'research-harness' not found", text(page))
+        self.assertNotIn('data-region="j-receipt"', page)
+        self.assertNotIn('data-region="j-now"', page)
         self.assertIn('action="/setup"', inbox(view, 10))
         self.assertNotIn('action="/handoff"', inbox(view, 10))
         why = ("the codex CLI cannot see environment 'research-harness': rh cloud prompt web-job, submit it at "
@@ -576,9 +588,17 @@ class DashboardTest(unittest.TestCase):
         work, record = pane(page).split('<aside class="jd-side"', 1)
         for value in ("Cite each source.", "<tail> & end", "# Notes <draft>"):
             self.assertIn(value, text(work))
-        for value in ("Properties", "Receipt", "exit 1", "2.0 KB", "Pauses and stops", "Timeline", "Worker output"):
+        for value in ("Properties", "Receipt", "exit 1", "2.0 KB", "Timeline", "Worker output"):
             self.assertIn(value, text(record))
             self.assertNotIn(value, text(work))
+        # Pauses and stops show only when there are some; the Codex task id is not shown.
+        self.assertNotIn("Pauses and stops", text(record))
+        paused = pane(dashboard.render(opened(live_view(), "live-job"), NOW, token=TOKEN))
+        self.assertIn("Paused by lead:", text(paused.split('<aside class="jd-side"', 1)[1]))
+        props = re.search(r'<section class="j-props".*?</section>', paused, re.S).group(0)
+        self.assertIn("Runs on", text(props))
+        self.assertNotIn("worker-123", text(paused))
+        self.assertNotIn("Codex task", text(props))
         # A held job's page says what to do; a job the harness does not know says so, not a crash.
         held = text(pane(dashboard.render(opened(live_view(), "queued-job"), NOW, token=TOKEN)))
         self.assertIn("On hold: Waiting for input", held)
@@ -859,8 +879,10 @@ class DashboardTest(unittest.TestCase):
         self.assertLess(tank["rests"]["r"], tank["asks"]["r"])
         self.assertLess(tank["asks"]["r"], tank["works"]["r"])
         rail = text(re.search(r'<section class="s-r-seats".*?</section>', page, re.S).group(0))
-        for words in ("waiting on you", "working", "idle", "The rests seat"):
+        for words in ("waiting on you", "working", "idle"):
             self.assertIn(words, rail)
+        self.assertNotIn("The rests seat", rail)
+        self.assertIn('title="The rests seat"', page)
         self.assertNotIn("<canvas", dashboard.render(view, NOW))
         self.assertIn("no seats.toml", text(dashboard.render(live_view(), NOW, token=TOKEN)))
         # Under reduced motion the tank draws one still frame and never starts its animation loop.
@@ -868,6 +890,64 @@ class DashboardTest(unittest.TestCase):
         tank_code = tank_code[:tank_code.index("\n}\n")]
         self.assertIn("if (calm.matches) { draw(", tank_code)
         self.assertLess(tank_code.index("if (calm.matches) { draw("), tank_code.index("requestAnimationFrame("))
+
+    def test_the_band_sea_life_counts_what_the_page_shows(self):
+        # A fish, germ or plankton count that drifts from the jobs it stands for, an eel that swims while checks are
+        # paused or stale, an octopus that stays calm while something needs you, a harness item without its octopus,
+        # or a tank that keeps drawing in a hidden tab or past about 20 frames a second, must fail.
+        def life(view):
+            page = dashboard.render(view, NOW, token=TOKEN)
+            found = re.search(r'<canvas class="tank-c" data-tank data-creatures="[^"]*" data-fauna="([^"]*)" '
+                              r'data-region="water"', page)
+            return json.loads(html.unescape(found.group(1)))
+        view = live_view()
+        view["recent"] += [{"id": f"ok-{n}", "state": "done", "paused": False, "detail": "", "external_id": None}
+                           for n in range(3)]
+        view["not_started"].append({"id": "next-job", "state": "ready", "paused": False, "detail": "waiting",
+                                    "external_id": None})
+        got = life(view)
+        self.assertEqual((got["fish"], got["germs"], got["plankton"]), (4, 1, 1))  # finished-job + 3; broke-job
+        self.assertTrue(got["eel"])
+        self.assertEqual(got["octopus"]["tone"], "amber")
+        self.assertTrue(got["floor"])
+        self.assertFalse(life({**view, "checks": {"mode": "paused", "pid": None, "failed": None}})["eel"])
+        self.assertFalse(life({**view, "supervisor": {"pid": 1, "age_s": dashboard._STALE + 1}})["eel"])
+        calm = {**full_view(), "can_add": True, "inbox": [], "stops": [], "recent": [], "not_started": []}
+        quiet = life(calm)
+        self.assertEqual((quiet["fish"], quiet["germs"], quiet["octopus"]["tone"]), (0, 0, "faint"))
+        crowd = {**view, "recent": [{"id": f"d-{n}", "state": "done", "paused": False, "detail": "",
+                                     "external_id": None} for n in range(40)]}
+        self.assertEqual(life(crowd)["fish"], dashboard._SCHOOL)
+        # The harness's own Inbox item is the octopus's; an item on a job keeps its jellyfish.
+        alone = {**view, "inbox": view["inbox"] + [UNSEEN]}
+        mine = re.search(r'<div class="q-head"><canvas[^>]*>', inbox(alone, 10)).group(0)
+        self.assertIn("&quot;octopus&quot;", mine)
+        self.assertNotIn("data-fauna", re.search(r'<div class="q-head"><canvas[^>]*>', inbox(alone, 7)).group(0))
+        tank_code = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank("):]
+        tank_code = tank_code[:tank_code.index("\n}\n")]
+        self.assertGreaterEqual(int(re.search(r"const FRAME = (\d+);", dashboard.SCRIPT).group(1)), 40)
+        self.assertIn("if (now - last >= FRAME)", tank_code)
+        loop = tank_code[tank_code.index("const loop = now =>"):]
+        self.assertLess(loop.index("if (document.hidden || !seen) return;"), loop.index("requestAnimationFrame(loop)"))
+        self.assertIn("document.addEventListener('visibilitychange', go)", tank_code)
+        self.assertIn("new IntersectionObserver", tank_code)
+        self.assertNotIn("ctx.stroke()", tank_code, "the grid is the canvas's CSS background, not drawn each frame")
+        self.assertIn("background-size: 8px 11px", dashboard.STYLE.split(".tank-c {", 1)[1].split("}", 1)[0])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_page_script_parses(self):
+        # A syntax error in app.js, which no Python test runs, must fail.
+        r = subprocess.run(["node", "--check", str(ROOT / "rh" / "web" / "app.js")], capture_output=True, text=True,
+                           encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_today_says_less(self):
+        # The line under the composer, the list's sort note or a second "checked" in the top bar coming back must
+        # fail.
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        for words in ("Starts on the next check", "Nothing is pushed", "ordered by what needs you"):
+            self.assertNotIn(words, text(page))
+        self.assertNotIn('class="fresh', page)
 
     def test_palette_finds_every_job_every_page_and_only_this_pages_actions(self):
         # A job missing from ⌘K, a page it cannot reach, or an action offered with no control on the page behind it,
@@ -931,8 +1011,9 @@ class DashboardTest(unittest.TestCase):
             page = dashboard.render({**live_view(), "host": host}, NOW, token=TOKEN)
             return text(re.search(r'<section class="mac".*?</section>', page, re.S).group(0))
         calm = mac({"load1": 2.17, "level": 1, "max_load": 10.0, "ok": True, "reason": "", "lease": {"held": False}})
-        for words in ("Load, 1 min2.17 of 10", "Memory pressure1 normal", "Heavy jobsmay start", "Heavy leasefree"):
+        for words in ("Load, 1 min2.17 of 10", "Memory pressure1 normal"):
             self.assertIn(words, calm)
+        self.assertNotIn("Heavy", calm, "may start and free go unsaid")
         busy = mac({"load1": 12.5, "level": 2, "max_load": 10.0, "ok": False, "reason": "load 12.50 above 10.00",
                     "lease": {"held": True, "age_s": 95}})
         for words in ("12.50 of 10", "Memory pressure2 warning", "Heavy jobswait", "Heavy leasein use",
@@ -1074,11 +1155,11 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("return [Math.floor((b.left - box.left) / CW) - 2, Math.ceil((b.right - box.left) / CW) + 2,\n"
                       "      Math.floor((b.top - box.top) / CH) - 2];", code)
         # Each side's water is the lane beside the composer and the strip above it, never the composer itself.
-        self.assertIn("const water = s && [[[0, 0, Math.max(0, s[0]), rows], [0, 0, half, top]],\n"
-                      "      [[Math.min(cols, s[1]), 0, cols, rows], [half, 0, cols, top]]];", code)
+        self.assertIn("const water = s && [[[0, 0, Math.max(0, s[0]), rows - floor], [0, 0, half, top]],\n"
+                      "      [[Math.min(cols, s[1]), 0, cols, rows - floor], [half, 0, cols, top]]];", code)
         self.assertIn("const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));\n    stack(at);\n"
                       "    spec.forEach((c, k) => creature(c, k, t, at[k]));", code)
-        self.assertIn("const box = held ? pick : [0, 0, cols, rows];", code)
+        self.assertIn("const box = held ? pick : [0, 0, cols, rows - floor];", code)
         self.assertIn("const fit = Math.max(0.3, scale(c, box));", code)
         # Down a lane, each gets room in proportion to its height.
         self.assertIn("p.slot = p.tall ? (before + p.h / 2) / total : (i + 0.5) / here.length;", code)
@@ -1137,13 +1218,16 @@ class DashboardTest(unittest.TestCase):
         view = opened(live_view(), "live-job")
         first = ("Read every nightly log from the last ninety days, list each test that timed out with its slowest "
                  "run, and flag any test that timed out more than twice")
-        view["open"]["job"]["spec"]["brief"] = first + ". Write it to timeouts.md.\nKeep it short."
+        view["open"]["job"]["spec"]["brief"] = (first + ". Write it to\ntimeouts.md.\nKeep it short.\n\nCover:\n"
+                                                "- each test\n  and its slowest run\n2) the date\n\n```\nlog --a\nb\n```")
         view["meta"] = {"live-job": {"brief": view["open"]["job"]["spec"]["brief"]}}
         page = dashboard.render(view, NOW, token=TOKEN)
         self.assertIn(f"{first}</h1>", page)
         self.assertEqual(text(pane(page).split('<aside class="jd-side"', 1)[0]).count(first), 1)
         bubble = re.search(r'<div class="bubble">(.*?)</div>', page, re.S).group(1)
-        self.assertEqual(bubble, "Write it to timeouts.md.\nKeep it short.")
+        # Hard-wrapped lines run on; a blank line, a list item and a fenced block keep their own lines.
+        self.assertEqual(html.unescape(bubble), "Write it to timeouts.md. Keep it short.\n\nCover:\n- each test and "
+                                                "its slowest run\n2) the date\n\n```\nlog --a\nb\n```")
         listed = re.search(r'href="/job/live-job\?t=[^"]*" data-nav><span class="p-ic">.*?<span class="p-t">(.*?)</span>',
                            page, re.S).group(1)
         self.assertTrue(listed.endswith("…") and len(listed) <= 100 and first.startswith(listed[:-1]), listed)
@@ -1206,9 +1290,10 @@ class DashboardTest(unittest.TestCase):
         seats = re.search(r'<section class="s-r-seats".*?</section>', page, re.S).group(0)
         self.assertIn('<span class="i-m mono">live-job</span>', seats)
         self.assertNotIn("Tally the slow tests", seats)
-        self.assertIn('<span class="i-m">The test runner</span>', seats)
+        self.assertIn('title="The test runner"', seats)
         self.assertNotIn("Testing:", seats)
-        self.assertIn('<span class="i-m">The guides</span>', seats)
+        self.assertIn('title="The guides"', seats)
+        self.assertNotIn('<span class="i-m">The guides</span>', seats, "an idle seat is one line")
         self.assertNotIn("supervisor", seats)
         cloud = re.search(r'<section class="s-r-cloud".*?</section>', page, re.S).group(0)
         self.assertEqual(cloud.count('<p class="r-sum">'), 1)

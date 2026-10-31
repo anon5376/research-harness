@@ -18,7 +18,8 @@ TASK = "task_e_" + "7" * 32
 
 
 def git(repo, *a):
-    return subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True).stdout
+    return subprocess.run(["git", "-C", str(repo), *a], check=True, capture_output=True, text=True,
+                          encoding="utf-8").stdout
 
 
 class CliTest(unittest.TestCase):

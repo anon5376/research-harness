@@ -1,8 +1,9 @@
 // The client for the live page, served same-origin at /app.js. It polls the page it shows, swaps only what changed
 // (FLIP for rows that move between groups), follows app links without reloading, posts forms with fetch and says what
 // happened in a toast, and adds the keyboard and the ⌘K palette. It also draws the tank: each seat as an ASCII
-// jellyfish on a faint character grid. Everything that moves stops under prefers-reduced-motion; the tank and the
-// prompt cycle read it when the page loads, so a change while the page is open takes a reload.
+// jellyfish on a faint character grid, with fish, germs, plankton, an eel and an octopus that count what the page
+// shows. Everything that moves stops under prefers-reduced-motion; the tank and the prompt cycle read it when the page
+// loads, so a change while the page is open takes a reload.
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -45,6 +46,15 @@ const CW = 8, CH = 11, FONT = '10px "Geist Mono", ui-monospace, monospace';
 const RAMP = [' ', '.', "'", ':', ';', 't', 'o', '%', 'S', 'X', '8', '@'];
 const TONE = { accent: [95, 207, 185], amber: [226, 166, 84], faint: [159, 176, 212] };
 const T0 = performance.now() - 6000;  // one clock for every tank, so a redrawn band carries on where it was
+const FRAME = 46;  // ms between frames: about 20 a second on a 60 or 120 Hz screen
+// The rest of the sea, as glyphs on the same grid: a fish per job done today, a germ per job that failed today, an
+// eel while the harness is being checked, and the octopus on the sea floor (amber while anything needs you).
+const FISH = [['><>', '<><'], ['><(°>', '<°)><'], ['><((°>', '<°))><']];
+const GERM = ['o~', '(=)~', 'oo', '(==)~', 'o'];
+const OCTO = ['  .---.  ', ' ( o o ) ', '  )   (  '];
+const BLINK = ' ( - - ) ';
+const ARMS = [[' //|||\\\\ ', ' ~ ~ ~ ~ '], [' \\\\|||// ', '  ~ ~ ~ ~']];
+const SEA = { fish: [140, 214, 198], germ: [229, 132, 120], sand: [150, 160, 150], weed: [95, 160, 140] };
 const hash = (a, b, c) => {
   let h = Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263) ^ Math.imul(c | 0, 1274126177);
   h = Math.imul(h ^ (h >>> 13), 1274126177);
@@ -63,12 +73,13 @@ const noise = (x, y, z) => {
 };
 
 function Tank(canvas) {
-  let spec = [];
+  let spec = [], fauna = null;
   try { spec = JSON.parse(canvas.dataset.creatures || '[]'); } catch (err) { spec = []; }
+  try { fauna = JSON.parse(canvas.dataset.fauna || 'null'); } catch (err) { fauna = null; }
   const ctx = canvas.getContext('2d');
   const host = canvas.parentElement;
   if (!ctx || !host) return;
-  let W = 0, H = 0, cols = 0, rows = 0, dens, who, specks = [];
+  let W = 0, H = 0, cols = 0, rows = 0, floor = 0, dens, who, taken, specks = [];
 
   function size() {
     const r = canvas.getBoundingClientRect();
@@ -77,9 +88,13 @@ function Tank(canvas) {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cols = Math.ceil(W / CW); rows = Math.ceil(H / CH);
-    dens = new Float32Array(cols * rows); who = new Int8Array(cols * rows);
+    // the band's sea floor: the bottom rows, under the composer, where the jellyfish do not go
+    floor = fauna && fauna.floor ? Math.min(6, Math.max(4, Math.floor(rows * 0.18))) : 0;
+    dens = new Float32Array(cols * rows); who = new Int8Array(cols * rows); taken = new Uint8Array(cols * rows);
+    // plankton: a thin drift everywhere, thicker by a patch for each job up next
     specks = [];
-    for (let i = 0; i < cols * rows * 0.018; i++) specks.push([Math.floor(hash(i, 7, 3) * cols), Math.floor(hash(i, 11, 5) * rows), hash(i, 13, 9)]);
+    const bloom = 0.014 + 0.0016 * Math.min(12, (fauna && fauna.plankton) || 0);
+    for (let i = 0; i < cols * rows * bloom; i++) specks.push([hash(i, 7, 3) * cols, hash(i, 11, 5) * rows, hash(i, 13, 9)]);
   }
   // Words sit on clear water: the creatures thin out behind every [data-clear] element. Measured on each frame, since
   // the composer grows and shrinks as you type.
@@ -115,7 +130,7 @@ function Tank(canvas) {
   function place(c, open) {
     const pick = open && open.reduce((a, b) => (scale(c, b) > scale(c, a) ? b : a));
     const held = !!pick && scale(c, pick) >= 0.1;
-    const box = held ? pick : [0, 0, cols, rows];
+    const box = held ? pick : [0, 0, cols, rows - floor];
     const fit = Math.max(0.3, scale(c, box));
     const tall = (box[3] - box[1]) * CH > (box[2] - box[0]) * CW;
     return { box, fit, held, tall, h: fit * (c.r * 0.78 + c.len * 1.05) + 4, slot: 0.5 };  // h: its height in rows
@@ -210,25 +225,23 @@ function Tank(canvas) {
     dens.fill(0);
     // Each side's open water: the lane beside the composer and the strip above it, shared by that side's seats.
     const s = solid(), half = Math.floor(cols / 2), top = s ? Math.max(0, s[2]) : 0;
-    const water = s && [[[0, 0, Math.max(0, s[0]), rows], [0, 0, half, top]],
-      [[Math.min(cols, s[1]), 0, cols, rows], [half, 0, cols, top]]];
+    const water = s && [[[0, 0, Math.max(0, s[0]), rows - floor], [0, 0, half, top]],
+      [[Math.min(cols, s[1]), 0, cols, rows - floor], [half, 0, cols, top]]];
     const at = spec.map(c => place(c, water && water[c.fx < 0.5 ? 0 : 1]));
     stack(at);
     spec.forEach((c, k) => creature(c, k, t, at[k]));
     const clear = clears();
+    // The faint character grid is the canvas's CSS background, so a frame never redraws it.
     ctx.clearRect(0, 0, W, H);
-    // the faint character grid of the reference
-    ctx.beginPath();
-    for (let i = 1; i < cols; i++) { ctx.moveTo(i * CW + 0.5, 0); ctx.lineTo(i * CW + 0.5, H); }
-    for (let j = 1; j < rows; j++) { ctx.moveTo(0, j * CH + 0.5); ctx.lineTo(W, j * CH + 0.5); }
-    ctx.strokeStyle = 'rgba(150, 190, 182, 0.035)'; ctx.lineWidth = 1; ctx.stroke();
     ctx.font = FONT;
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    // drifting specks
-    for (const [i, j, r] of specks) {
+    // plankton: rising slowly, swaying, twinkling
+    for (const [i0, j0, r] of specks) {
       const a = 0.08 + 0.14 * (0.5 + 0.5 * Math.sin(t * (0.6 + r) + r * 20));
+      const j = Math.floor(((j0 - t * (0.08 + 0.18 * r)) % rows + rows) % rows);
+      const i = Math.floor(i0 + Math.sin(t * 0.3 + r * 9) * 1.2);
       ctx.fillStyle = 'rgba(159, 176, 212, ' + a.toFixed(3) + ')';
-      ctx.fillText(r > 0.5 ? '.' : "'", i * CW + CW / 2, j * CH + CH / 2);
+      ctx.fillText(r > 0.94 ? '°' : r > 0.5 ? '.' : "'", i * CW + CW / 2, j * CH + CH / 2);
     }
     for (let j = 0; j < rows; j++) {
       for (let i = 0; i < cols; i++) {
@@ -255,6 +268,81 @@ function Tank(canvas) {
         ctx.fillText(ch, i * CW + CW / 2, j * CH + CH / 2 + 0.5);
       }
     }
+    if (fauna) sea(t, clear);
+  }
+
+  // One glyph of the rest of the sea: it fades behind words like the jellyfish do, passes behind a jellyfish, and
+  // behind whatever took its cell earlier in the frame (the octopus first, then fish, germs, the eel, the floor).
+  function glyph(ch, i, j, rgb, a, clear) {
+    if (ch === ' ' || i < 0 || j < 0 || i >= cols || j >= rows) return;
+    const n = j * cols + i;
+    if (dens[n] > 0.15 || taken[n]) return;
+    taken[n] = 1;
+    for (const [x0, y0, x1, y1] of clear) {
+      const o = Math.max(Math.max(x0 - i, 0, i - x1), Math.max(y0 - j, 0, j - y1) * 1.4);
+      if (o < 2) a *= 0.2 + 0.4 * o;
+    }
+    if (a < 0.04) return;
+    ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + a.toFixed(3) + ')';
+    ctx.fillText(ch, i * CW + CW / 2, j * CH + CH / 2 + 0.5);
+  }
+  const line = (s, i, j, rgb, a, clear) => { for (let k = 0; k < s.length; k++) glyph(s[k], i + k, j, rgb, a, clear); };
+
+  function sea(t, clear) {
+    const f = fauna, deep = rows - floor;
+    taken.fill(0);
+    // the octopus: on the sea floor in the band, or where it is put in a smaller tank; it blinks and waves its arms
+    if (f.octopus) {
+      const o = f.octopus, rgb = TONE[o.tone] || TONE.faint, w = OCTO[0].length, h = OCTO.length + 2;
+      const ox = o.at ? Math.round(o.at[0] * cols - w / 2) : Math.max(1, Math.round(cols * 0.06));
+      const oy = o.at ? Math.round(o.at[1] * rows - h / 2 + Math.sin(t * 0.5) * 0.6) : rows - h - 1;
+      const x = Math.min(Math.max(0, ox), cols - w), y = Math.min(Math.max(0, oy), rows - h);
+      const rows5 = [OCTO[0], t % 5.3 < 0.2 ? BLINK : OCTO[1], OCTO[2], ...ARMS[Math.floor(t / 0.9) % 2]];
+      rows5.forEach((s, r) => line(s, x, y + r, rgb, o.tone === 'faint' ? 0.6 : 0.85, clear));
+    }
+    // fish cross the water at their own depth and speed, their tails flicking
+    for (let n = 0; n < (f.fish || 0); n++) {
+      const dir = hash(n, 5, 1) > 0.5 ? 1 : -1, size = Math.floor(hash(n, 6, 2) * 3);
+      const body = FISH[size][dir > 0 ? 0 : 1], len = body.length;
+      const span = cols + len * 2 + 8, speed = 1.1 + 1.6 * hash(n, 7, 3);
+      const x = (((hash(n, 8, 4) * span + dir * speed * t) % span) + span) % span - len - 4;
+      const y = Math.round(2 + hash(n, 9, 5) * Math.max(1, deep - 5) + Math.sin(t * 0.4 + n * 2) * 0.8);
+      const flick = Math.floor(t * 3 + n) % 2;
+      const shown = !flick ? body : dir > 0 ? '}' + body.slice(1) : body.slice(0, -1) + '{';
+      line(shown, Math.round(x), y, SEA.fish, 0.6, clear);
+    }
+    // germs tumble slowly in the lower water
+    for (let n = 0; n < (f.germs || 0); n++) {
+      const body = GERM[n % GERM.length];
+      const x = (0.12 + 0.76 * hash(n, 12, 7)) * cols + (noise(t * 0.12, n * 3.1, 1) - 0.5) * 16;
+      const y = deep * (0.42 + 0.46 * hash(n, 13, 8)) + (noise(t * 0.1, n * 2.3, 5) - 0.5) * 6;
+      line(Math.floor(t * 2 + n) % 2 ? body.replace('~', '-') : body, Math.round(x), Math.round(y), SEA.germ, 0.5, clear);
+    }
+    // the eel weaves along the sea floor, left to right, while something checks the harness
+    if (f.eel && floor) {
+      const L = Math.max(8, Math.min(18, Math.floor(cols / 6))), span = cols + L * 2;
+      const head = (t * 1.6) % span - L / 2, base = rows - 3;
+      const at = s => Math.round(base - 0.7 * Math.sin((head - s) * 0.32 - t * 1.1));
+      for (let s = L - 1; s >= 0; s--) {
+        const y = at(s), ahead = at(s - 1);
+        const ch = s === 0 ? '>' : s === L - 1 ? '.' : s === L - 2 ? '-' : ahead < y ? '/' : ahead > y ? '\\' : '~';
+        glyph(ch, Math.round(head - s), y, TONE.accent, 0.55, clear);
+      }
+    }
+    if (floor) {
+      // sand along the bottom row, and a few stalks of weed swaying on it
+      for (let i = 0; i < cols; i++) {
+        const h = hash(i, 3, 17);
+        glyph(h > 0.8 ? ',' : h > 0.55 ? '.' : h > 0.45 ? '_' : ' ', i, rows - 1, SEA.sand, 0.24, clear);
+        if (h > 0.955 && i > 12) {
+          const tall = 2 + Math.floor(hash(i, 4, 9) * 3);
+          for (let s = 1; s <= tall; s++) {
+            const sway = Math.round(Math.sin(t * 0.7 + i + s * 0.8) * 0.6);
+            glyph((s + Math.floor(t * 0.8 + i)) % 2 ? '(' : ')', i + sway, rows - 1 - s, SEA.weed, 0.42, clear);
+          }
+        }
+      }
+    }
   }
 
   size();
@@ -262,14 +350,26 @@ function Tank(canvas) {
   const resized = () => { clearTimeout(rt); rt = setTimeout(() => { if (!canvas.isConnected) return; size(); if (calm.matches) draw(6); }, 120); };
   addEventListener('resize', resized);
   if (calm.matches) { draw(6); return; }
-  let last = 0;
+  // About 20 frames a second, and none at all while the tab is hidden or the tank is scrolled out of view.
+  let last = 0, raf = 0, seen = true;
+  const io = 'IntersectionObserver' in window
+    ? new IntersectionObserver(es => { seen = es[es.length - 1].isIntersecting; go(); }) : null;
+  const go = () => { if (!raf && !document.hidden && seen && canvas.isConnected) raf = requestAnimationFrame(loop); };
   const loop = now => {
-    // A band the live page replaced stops drawing and lets its listener go.
-    if (!canvas.isConnected) { removeEventListener('resize', resized); return; }
-    if (now - last > 40) { last = now; draw((now - T0) / 1000); }
-    requestAnimationFrame(loop);
+    raf = 0;
+    // A band the live page replaced stops drawing and lets its listeners go.
+    if (!canvas.isConnected) {
+      removeEventListener('resize', resized); document.removeEventListener('visibilitychange', go);
+      if (io) io.disconnect();
+      return;
+    }
+    if (document.hidden || !seen) return;
+    if (now - last >= FRAME) { last = now; draw((now - T0) / 1000); }
+    raf = requestAnimationFrame(loop);
   };
-  requestAnimationFrame(loop);
+  document.addEventListener('visibilitychange', go);
+  if (io) io.observe(canvas);
+  go();
 }
 
 // The composer's prompt cycles through what it is for, word by word, every 4.6 s.

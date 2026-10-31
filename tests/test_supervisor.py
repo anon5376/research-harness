@@ -216,7 +216,7 @@ class SupervisorTest(unittest.TestCase):
             self.clock.sleep(60)
         self.assertEqual({self.led.job(j)["state"] for j in ("c1", "c2")}, {"running"})
         self.assertEqual(self.led.inbox(), [], "the owner step closes itself once the CLI lists the environment")
-        prompt = (self.home / "prompts" / "c1.txt").read_text()
+        prompt = (self.home / "prompts" / "c1.txt").read_text(encoding="utf-8")
         self.assertIn(f"git checkout --detach {SHA}", prompt)
 
     def test_web_job_asks_for_a_bundle_once_its_changes_view_may_have_expired(self):

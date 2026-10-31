@@ -193,6 +193,16 @@ class CodexCloud:
             return {"ok": False, "version": version, "detail": str(e)}
         return {"ok": True, "version": version, "detail": "codex cloud list answered"}
 
+    def check_env(self, env_id) -> None:
+        """Whether `codex cloud exec --env env_id` can resolve the environment, asked without creating a task:
+        `codex cloud list --env` resolves it against the same client-side list. Returns when it can; raises
+        RouteUnavailable otherwise, with reason env-not-found and the CLI's words when the CLI does not list it."""
+        _check_arg("env_id", env_id)
+        cp = self._exec(["cloud", "list", "--env", env_id, "--limit", "1", "--json"])
+        if cp.returncode:
+            raise self._failure(cp, "cloud list --env")
+        _tasks(cp.stdout)
+
     def list(self, limit=20) -> list[dict]:
         """Recent tasks as the CLI reports them, each with an added `state` from map_status."""
         if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:

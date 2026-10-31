@@ -2,7 +2,9 @@
 """Fake `codex` CLI for tests. Replies come from the JSON file named by FAKE_CODEX_STATE:
 
     {"version": str, "exec": resp | [resp, ...], "status": {task_id: resp | [resp, ...]},
-     "diff": {task_id: resp | [resp, ...]}, "list": resp | [resp, ...]}
+     "diff": {task_id: resp | [resp, ...]}, "list": resp | [resp, ...], "list_env": {env: resp | [resp, ...]}}
+
+`cloud list --env ENV` replies from list_env[ENV] when the state has list_env, else from list.
 
 resp is {"exit": int, "stdout": str, "stderr": str}, plus an optional "sleep" in seconds before replying. A list
 replies with its first item and drops it, keeping the last one for every later call; the state file is rewritten
@@ -72,6 +74,13 @@ def main(argv):
         return reply(stderr="fake codex: unsupported command: %s\n" % " ".join(args), code=2)
     cmd = args[1]
     key = None
+    if cmd == "list" and "--env" in args[2:-1]:
+        try:
+            _, state = take(state_path, "version", None)
+        except (OSError, ValueError) as e:
+            return reply(stderr="fake codex: cannot use FAKE_CODEX_STATE: %s\n" % e, code=2)
+        if "list_env" in state:
+            cmd, key = "list_env", args[args.index("--env", 2) + 1]
     if cmd in ("status", "diff"):
         ids = [a for a in args[2:] if not a.startswith("-")]
         if not ids:

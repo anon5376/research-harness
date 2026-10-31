@@ -19,7 +19,9 @@ from rh.ledger import LIVE
 CLOUD, LOCAL = "codex-cloud", "local-shell"
 PRE = {"draft", "waiting", "held", "ready"}
 _TARGET = {"ready": "ready", "wait": "waiting", "hold": "held", "operator": "held"}
-ENV_RETRY = 86400  # after `env not found`, skip the CLI for this environment for a day
+ENV_RECHECK = 600  # while the CLI cannot see the environment, ask it again (read-only) every 10 minutes
+ENV_STEP = "make the Codex cloud environment {env!r} one the codex CLI lists, or point cloud.env_id at one it lists"
+ENV_ASK = ENV_STEP.split("{")[0]  # how that step begins, whatever the environment
 OUTAGES = {"timeout", "rate-limited", "cli-missing", "auth"}  # route-wide failures; others are about one task
 HARVEST = "harvest needed"
 NOT_CREATED = {"rate-limited", "cli-missing", "auth"}  # launch errors that certainly created no task
@@ -174,6 +176,8 @@ class Supervisor:
                     continue
                 if budget <= 0 or not self._route_open(CLOUD):
                     continue
+                if self.cfg["cloud"]["route"] != "web" and not self._env_seen():
+                    continue
                 budget -= 1
                 if self._isolated(j, self._launch_cloud):
                     s["launched"] += 1
@@ -211,18 +215,16 @@ class Supervisor:
         (pdir / f"{jid}.txt").write_text(prompt, encoding="utf-8")
         self.led.event("prompt", jid, sha256=hashlib.sha256(prompt.encode()).hexdigest(), chars=len(prompt))
         self.led.set_state(jid, "launching")
-        envroute = self.led.route(f"cli-env:{env}")
-        if self.cfg["cloud"]["route"] == "web" or (
-                envroute["last_status"] == "env-not-found" and self.clock() < envroute["next_try"]):
-            self._handoff(j, env, "web route" if self.cfg["cloud"]["route"] == "web" else "CLI cannot resolve env")
+        if self.cfg["cloud"]["route"] == "web":
+            self._handoff(j, env, "web route")
             return False
         self.launch_attempts += 1
         try:
             r = self.cloud.launch(env, prompt, self.cfg["cloud"]["branch"])
         except RouteUnavailable as e:
-            if e.reason == "env-not-found":
-                self.led.route_fail(f"cli-env:{env}", "env-not-found", retry_after=ENV_RETRY)
-                self._handoff(j, env, "CLI cannot resolve env")
+            if e.reason == "env-not-found":  # resolved before anything is created, so the job just waits
+                self._env_missing(env, e.detail)
+                self.led.set_state(jid, "ready", "launch deferred: the codex CLI cannot see the environment")
                 return False
             if e.reason not in NOT_CREATED:
                 # timeout or an unparsed reply: the task may exist, and a relaunch could duplicate it
@@ -237,10 +239,45 @@ class Supervisor:
                     None, e.detail[:200])
             return False
         self.led.route_ok(CLOUD)
-        self.led.route_ok(f"cli-env:{env}")
+        self._env_ok(env)
         self.led.set_state(jid, "running", f"launched {r['task_id']}", route="codex-cloud-cli",
                            external_id=r["task_id"], external_url=r.get("url"), started=self.clock())
         return True
+
+    def _env_seen(self):
+        """The native route launches only into an environment in the CLI's own list. While it is missing, cloud
+        jobs stay ready, one operator-step item says so, and `codex cloud list --env` (which creates nothing)
+        asks again every ENV_RECHECK seconds; the item resolves itself once the CLI sees the environment."""
+        env = self.cfg["cloud"]["env_id"]
+        r = self.led.route(f"cli-env:{env}")
+        if r["healthy"]:
+            return True
+        if self.clock() < r["next_try"]:
+            return False
+        self.probes += 1
+        try:
+            self.cloud.check_env(env)
+        except RouteUnavailable as e:
+            if e.reason == "env-not-found":
+                self._env_missing(env, e.detail)
+            else:
+                self.led.route_fail(CLOUD, e.reason, e.retry_after)
+            return False
+        self._env_ok(env)
+        return True
+
+    def _env_ok(self, env):
+        self.led.route_ok(f"cli-env:{env}")
+        for i in self.led.inbox():
+            if i["kind"] == "operator-step" and not i["job"] and i["action"].startswith(ENV_ASK):
+                self.led.inbox_resolve(i["id"], f"the codex CLI lists environment {env!r}")
+
+    def _env_missing(self, env, detail):
+        self.led.route_fail(f"cli-env:{env}", "env-not-found", retry_after=ENV_RECHECK)
+        self._inbox("operator-step", ENV_STEP.format(env=env), None,
+                    f"codex cloud answered: {detail[:200]}. Cloud jobs wait and launch by themselves once it lists "
+                    f"the environment (checked every {ENV_RECHECK // 60} min); each job can also be launched by "
+                    f"hand from its page")
 
     def _handoff(self, j, env, why):
         jid = j["id"]

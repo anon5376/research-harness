@@ -11,7 +11,7 @@ import unittest
 from html.parser import HTMLParser
 from pathlib import Path
 
-from rh import contract, dashboard
+from rh import contract, dashboard, supervisor
 from rh.ledger import Ledger
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,7 +55,20 @@ def contrast(a, b):
 
 TOKEN = "serve-token-1"
 ROUTES = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup")
+          "/checks", "/again", "/setup", "/handoff")
+UNSEEN = {"id": 10, "kind": "operator-step", "job": None, "action": supervisor.ENV_STEP.format(env="research-harness"),
+          "detail": "codex cloud answered: cloud exec exited 1: Error: environment 'research-harness' not found; run "
+                    "`codex cloud` to list available environments. Cloud jobs wait and launch by themselves",
+          "created": NOW - 9}
+
+
+def unseen_view():
+    """live_view() with a ready cloud job and the step the supervisor writes while the codex CLI cannot see the
+    environment."""
+    view = live_view()
+    view["not_started"].append({"id": "cloud-job", "state": "ready", "paused": False, "detail": "",
+                                "external_id": None})
+    return {**view, "inbox": view["inbox"] + [UNSEEN], "meta": {"cloud-job": {"kind": "codex-cloud"}}}
 
 
 def live_view():
@@ -390,6 +403,7 @@ class DashboardTest(unittest.TestCase):
                                                     "detail": "", "created": NOW - 9}],
                   "meta": {"queued-job": {"kind": "codex-cloud", "brief": "Survey."}}}
         pages["queued-job/setup"] = dashboard.render(opened(cloudy, "queued-job"), NOW, token=TOKEN)
+        pages["cloud-job"] = dashboard.render(opened(unseen_view(), "cloud-job"), NOW, token=TOKEN)
         for pick in (7, 8, 9):
             pages[f"inbox/{pick}"] = inbox(cloudy, pick)
         forms = []
@@ -464,6 +478,35 @@ class DashboardTest(unittest.TestCase):
         # With a waiting cloud job the step rides on that job's row, and its own address still opens it.
         self.assertNotIn('data-key="need:9"', dashboard.render(cloudy, NOW, token=TOKEN))
         self.assertIn('action="/setup"', inbox(cloudy, 9))
+
+    def test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why(self):
+        # A row per waiting job, a waiting job shown as starting, a job page without the hand launch or without the
+        # CLI's own words, an Inbox entry without the way to name another environment, or a hand-launch card that
+        # does not say why, must fail; so must the dashboard's copy of the step's opening drifting from the
+        # supervisor's.
+        self.assertTrue(UNSEEN["action"].startswith(dashboard._NATIVE))
+        self.assertEqual(dashboard._NATIVE, supervisor.ENV_ASK)
+        view = unseen_view()
+        home = dashboard.render(view, NOW, token=TOKEN)
+        needs = re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0)
+        self.assertIn('data-key="need:10"', needs)
+        self.assertIn("Make environment research-harness visible to the codex CLI", needs)
+        self.assertNotIn("cloud-job", needs)
+        self.assertEqual(group(home, "cloud-job"), ["next"])
+        self.assertIn("Waits for the codex CLI to see its environment", item(home, "cloud-job"))
+        page = dashboard.render(opened(view, "cloud-job"), NOW, token=TOKEN)
+        self.assertEqual([f["fields"]["job"] for f in Forms(page).forms if f["action"] == "/handoff"], ["cloud-job"])
+        self.assertIn("Error: environment 'research-harness' not found", text(page))
+        self.assertIn('action="/setup"', inbox(view, 10))
+        self.assertNotIn('action="/handoff"', inbox(view, 10))
+        why = ("the codex CLI cannot see environment 'research-harness': rh cloud prompt web-job, submit it at "
+               "chatgpt.com/codex in environment research-harness, then rh cloud attach web-job <task_id>")
+        hand = text(dashboard.render(opened(live_view(), "web-job", detail=why), NOW, token=TOKEN))
+        self.assertIn("The codex CLI on this Mac cannot see environment research-harness, so the harness cannot "
+                      "start it.", hand)
+        web = text(dashboard.render(opened(live_view(), "web-job", detail="web route: rh cloud prompt web-job, x"),
+                                    NOW, token=TOKEN))
+        self.assertIn("Cloud jobs here are set to start by hand (cloud.route is web).", web)
 
     def test_composer_only_where_the_server_can_add_jobs(self):
         # A New job form the server cannot take, a missing one where it can, a refused draft that comes back

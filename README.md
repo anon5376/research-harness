@@ -2,7 +2,7 @@
 
 research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, and a job that ends gets exactly one typed state with a receipt. A job counts as done when it finishes and, if it names an acceptance check, that check passes on your machine.
 
-Status: [in progress] v0.12.0. Python 3.11+. The harness is standard library only; the desktop app adds pywebview and is built with PyInstaller (`desktop/requirements.txt`). 384 tests pass on macOS: `python3 -I tests/run.py`. Windows support is new: local-shell jobs and the heavy-step lease run there, and one local-job test still skips on Windows. Desktop app: each release carries an Apple-silicon .dmg, an Intel .dmg and a Windows .exe, built on GitHub runners, ad-hoc signed on macOS and unsigned on Windows, each with a .sha256. All three pass a headless smoke test in the build. Devin installed and opened an Apple-silicon build on a macOS VM before v0.9.0, before the app's v2 and v3 redesigns; no release build has been opened by a person yet.
+Status: [in progress] v0.12.0. Python 3.11+. The harness is standard library only; the desktop app adds pywebview and is built with PyInstaller (`desktop/requirements.txt`). 388 tests pass on macOS: `python3 -I tests/run.py`. Windows support is new: local-shell jobs and the heavy-step lease run there, and one local-job test still skips on Windows. Desktop app: each release carries an Apple-silicon .dmg, an Intel .dmg and a Windows .exe, built on GitHub runners, ad-hoc signed on macOS and unsigned on Windows, each with a .sha256. All three pass a headless smoke test in the build. Devin installed and opened an Apple-silicon build on a macOS VM before v0.9.0, before the app's v2 and v3 redesigns; no release build has been opened by a person yet.
 
 ## What it does
 
@@ -47,7 +47,7 @@ requested = "gpt-6.1-sol"       # must be allowed by policy.toml
 speed = "fast"
 ```
 
-A goal (`rh goal add`) expands into a set of role-based jobs; the goal's acceptance card goes on its last job in dependency order. For tasks launched in the web view: `rh cloud prompt <job>` prints the exact prompt, `rh cloud attach` records the task id, and `rh cloud harvest` hands the returned patch or bundle to the supervisor.
+A goal (`rh goal add`) expands into a set of role-based jobs; the goal's acceptance card goes on its last job in dependency order. Cloud jobs launch with `codex cloud exec` and are followed, diffed and checked through the codex CLI, which works only with an environment the CLI lists; while it lists none for `cloud.env_id`, cloud jobs wait and the inbox holds one step that says so. A ready job can still be launched by hand: `rh cloud handoff <job>`, then `rh cloud prompt <job>` prints the exact prompt, `rh cloud attach` records the task id, and `rh cloud harvest` hands the returned patch or bundle to the supervisor.
 
 ## Skills
 

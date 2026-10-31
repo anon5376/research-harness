@@ -1,0 +1,117 @@
+# v4: each mutant breaks one claim of native Codex cloud or of look v4, and the named tests must catch it.
+
+[[mutant]]
+name = "a cloud job launches into an environment the CLI cannot see"
+file = "rh/supervisor.py"
+find = 'if self.cfg["cloud"]["route"] != "web" and not self._env_seen():'
+replace = 'if False:'
+tests = ["tests.test_supervisor.SupervisorTest.test_env_the_cli_cannot_see_holds_jobs_ready_and_they_launch_once_it_can"]
+
+[[mutant]]
+name = "an unseen environment hands each job off for a paste again"
+file = "rh/supervisor.py"
+find = '''                self._env_missing(env, e.detail)
+                self.led.set_state(jid, "ready", "launch deferred: the codex CLI cannot see the environment")'''
+replace = '''                self._env_missing(env, e.detail)
+                self._handoff(j, env, "CLI cannot resolve env")'''
+tests = ["tests.test_supervisor.SupervisorTest.test_env_the_cli_cannot_see_holds_jobs_ready_and_they_launch_once_it_can",
+         "tests.test_cli.CliTest.test_unseen_environment_waits_and_a_hand_launch_is_the_fallback_that_says_why"]
+
+[[mutant]]
+name = "the environment is asked again on the route backoff, not every 10 minutes"
+file = "rh/supervisor.py"
+find = 'self.led.route_fail(f"cli-env:{env}", "env-not-found", retry_after=ENV_RECHECK)'
+replace = 'self.led.route_fail(f"cli-env:{env}", "env-not-found")'
+tests = ["tests.test_supervisor.SupervisorTest.test_env_the_cli_cannot_see_holds_jobs_ready_and_they_launch_once_it_can"]
+
+[[mutant]]
+name = "the owner step stays open after the CLI lists the environment"
+file = "rh/supervisor.py"
+find = '''                self.led.inbox_resolve(i["id"], f"the codex CLI lists environment {env!r}")'''
+replace = '''                pass'''
+tests = ["tests.test_supervisor.SupervisorTest.test_env_the_cli_cannot_see_holds_jobs_ready_and_they_launch_once_it_can"]
+
+[[mutant]]
+name = "the inbox loses the CLI's own words"
+file = "rh/supervisor.py"
+find = 'f"codex cloud answered: {detail[:200]}. Cloud jobs wait and launch by themselves once it lists "'
+replace = 'f"codex cloud answered: not found. Cloud jobs wait and launch by themselves once it lists "'
+tests = ["tests.test_supervisor.SupervisorTest.test_env_the_cli_cannot_see_holds_jobs_ready_and_they_launch_once_it_can"]
+
+[[mutant]]
+name = "the env check asks the whole list, which never says not found"
+file = "rh/adapters/codex_cloud.py"
+find = 'cp = self._exec(["cloud", "list", "--env", env_id, "--limit", "1", "--json"])'
+replace = 'cp = self._exec(["cloud", "list", "--limit", "1", "--json"])'
+tests = ["tests.test_codex_cloud.ListDiffHealthTest.test_env_check_asks_the_list_and_creates_nothing"]
+
+[[mutant]]
+name = "a job can be handed off twice"
+file = "rh/cli.py"
+find = '''        if j["spec"]["kind"] != "codex-cloud" or j["state"] != "ready":'''
+replace = '''        if j["spec"]["kind"] != "codex-cloud" or j["state"] not in ("ready", "handoff"):'''
+tests = ["tests.test_cli.CliTest.test_unseen_environment_waits_and_a_hand_launch_is_the_fallback_that_says_why",
+         "tests.test_serve.ServeTest.test_launch_by_hand_moves_a_ready_cloud_job_to_the_web_route_with_its_reason"]
+
+[[mutant]]
+name = "a hand launch does not say why"
+file = "rh/cli.py"
+find = '''        led.set_state(args.id, "handoff", f"{why}: rh cloud prompt {args.id}, submit it at chatgpt.com/codex in "'''
+replace = '''        led.set_state(args.id, "handoff", f"rh cloud prompt {args.id}, submit it at chatgpt.com/codex in "'''
+tests = ["tests.test_cli.CliTest.test_unseen_environment_waits_and_a_hand_launch_is_the_fallback_that_says_why",
+         "tests.test_serve.ServeTest.test_launch_by_hand_moves_a_ready_cloud_job_to_the_web_route_with_its_reason"]
+
+[[mutant]]
+name = "doctor passes while the native route cannot see the environment"
+file = "rh/cli.py"
+find = '''            print(f"cloud env: {'FAIL ' if native else ''}{env}, not usable by the codex CLI: {e.detail}")'''
+replace = '''            print(f"cloud env: {env}, not usable by the codex CLI: {e.detail}")'''
+tests = ["tests.test_cli.CliTest.test_unseen_environment_waits_and_a_hand_launch_is_the_fallback_that_says_why"]
+
+[[mutant]]
+name = "the app's Launch by hand runs another command"
+file = "rh/serve.py"
+find = '''        return ["cloud", "handoff", "--", value("job")]'''
+replace = '''        return ["cloud", "prompt", "--", value("job")]'''
+tests = ["tests.test_serve.ServeTest.test_launch_by_hand_moves_a_ready_cloud_job_to_the_web_route_with_its_reason"]
+
+[[mutant]]
+name = "the dashboard's copy of the step's opening drifts"
+file = "rh/dashboard.py"
+find = '_NATIVE = "make the Codex cloud environment "'
+replace = '_NATIVE = "make the cloud environment "'
+tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why"]
+
+[[mutant]]
+name = "a job waiting for the environment shows as starting"
+file = "rh/dashboard.py"
+find = '''        elif where == "live" or self.state == "draft" or (self.state == "ready" and not row.get("detail")
+                                                           and not self.native):'''
+replace = '''        elif where == "live" or self.state == "draft" or (self.state == "ready" and not row.get("detail")):'''
+tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why"]
+
+[[mutant]]
+name = "a waiting cloud job's page has no hand launch"
+file = "rh/dashboard.py"
+find = '''    if entry.native:
+        cards.append(_native_card(ctx, ctx["native"], jid, lead))'''
+replace = '''    if False:
+        cards.append(_native_card(ctx, ctx["native"], jid, lead))'''
+tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why",
+         "tests.test_dashboard.DashboardTest.test_live_forms_cover_every_route"]
+
+[[mutant]]
+name = "the hand-launch card gives no reason"
+file = "rh/dashboard.py"
+find = '''    why = _why((opened.get("job") or {}).get("detail")) or "The harness cannot start this job from here."'''
+replace = '''    why = "The harness cannot start this job from here."'''
+tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why"]
+
+[[mutant]]
+name = "the Inbox entry for the environment has no way to name another"
+file = "rh/dashboard.py"
+find = '''        elif _native_item(item):
+            parts.append(_native_card(ctx, item))'''
+replace = '''        elif False:
+            parts.append(_native_card(ctx, item))'''
+tests = ["tests.test_dashboard.DashboardTest.test_unseen_environment_is_one_row_and_its_jobs_offer_a_hand_launch_that_says_why"]

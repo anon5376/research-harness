@@ -43,7 +43,7 @@ _FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / name for name in dashboar
 _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup")
+          "/checks", "/again", "/setup", "/handoff")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -105,6 +105,7 @@ def _actions(token):
         ("/inbox/resolve", "Resolve inbox item", field("id", required=True) + field("note", required=True)),
         ("/stop", "Stop", field("reason", required=True) + scopes),
         ("/resume", "Resume", scopes),
+        ("/handoff", "Launch by hand", field("job", required=True)),
         ("/attach", "Attach", field("job", required=True) + field("task_id", required=True)),
         ("/harvest", "Harvest", field("job", required=True) +
          '<label>Saved patch or bundle reply <textarea name="text" rows="12"></textarea></label>'),
@@ -267,6 +268,8 @@ def _action(cfg, path, fields):
         return ["cloud", "harvest", "--", job, str(dest)]
     if path == "/land":
         return ["land", "--", value("job")]
+    if path == "/handoff":
+        return ["cloud", "handoff", "--", value("job")]
     if path == "/job/cancel":
         return ["job", "cancel", "--reason=" + value("reason"), "--", value("job")]
     if path == "/job":
@@ -301,6 +304,7 @@ def _say(path, fields, ok, made=None):
         "/stop": f"Paused {what}." if pause else f"Stopped {what}.",
         "/resume": f"Resumed {what}.",
         "/attach": f"Linked the task to {job}. It is running.",
+        "/handoff": f"{job} is ready to launch by hand.",
         "/harvest": "Patch saved. The result is being checked.",
         "/land": f"Saved to the local branch cloud/{job}.",
         "/job/cancel": f"Cancelled {job}.",

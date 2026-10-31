@@ -31,9 +31,14 @@ class Clock:
 class FakeCloud:
     """Down until up_at; launches return a fresh task id; status follows a script per task."""
 
-    def __init__(self, clock, up_at=0.0, launch_error=None):
-        self.clock, self.up_at, self.launch_error = clock, up_at, launch_error
-        self.launches, self.health_calls, self.statuses = [], 0, {}
+    def __init__(self, clock, up_at=0.0, launch_error=None, env_at=0.0):
+        self.clock, self.up_at, self.launch_error, self.env_at = clock, up_at, launch_error, env_at
+        self.launches, self.health_calls, self.statuses, self.env_checks = [], 0, {}, []
+
+    def check_env(self, env_id):
+        self.env_checks.append(self.clock())
+        if self.clock() < self.env_at:
+            raise RouteUnavailable("env-not-found", f"Error: environment '{env_id}' not found")
 
     def health(self):
         self.health_calls += 1
@@ -43,6 +48,8 @@ class FakeCloud:
         self.launches.append(self.clock())
         if self.launch_error:
             raise self.launch_error
+        if self.clock() < self.env_at:
+            raise RouteUnavailable("env-not-found", f"Error: environment '{env_id}' not found")
         if self.clock() < self.up_at:
             raise RouteUnavailable("rate-limited", "429 Too Many Requests")
         return {"task_id": TASK[:-3] + f"{len(self.launches):03d}", "url": None, "raw": ""}
@@ -186,19 +193,31 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual([(i["kind"], i["job"]) for i in items], [("operator-step", "l1")])
         self.assertEqual(sum("operator-step" in x for x in self.sent), 1)
 
-    def test_env_not_found_hands_off_to_web_and_skips_cli_for_later_jobs(self):
-        cloud = FakeCloud(self.clock, launch_error=RouteUnavailable("env-not-found", "environment not found"))
+    def test_env_the_cli_cannot_see_holds_jobs_ready_and_they_launch_once_it_can(self):
+        visible_at = self.clock.t + 25 * 60
+        cloud = FakeCloud(self.clock, env_at=visible_at)
         self.led.add_job(cloud_spec("c1"), pinned_sha=SHA)
         self.led.add_job(cloud_spec("c2"), pinned_sha=SHA)
         s = self.sup(cloud)
-        s.tick()
-        s.tick()
-        self.assertEqual(len(cloud.launches), 1)
-        self.assertEqual({self.led.job(j)["state"] for j in ("c1", "c2")}, {"handoff"})
-        self.assertEqual(sorted(i["job"] for i in self.led.inbox() if i["kind"] == "web-launch"), ["c1", "c2"])
+        for _ in range(24):  # 24 min at 60 s ticks, all before the CLI sees the environment
+            s.tick()
+            self.clock.sleep(60)
+        self.assertEqual(len(cloud.launches), 1, "a launch into an unseen environment is tried once")
+        self.assertEqual(len(cloud.env_checks), 2, "then only a read-only check, every 10 minutes")
+        self.assertEqual({self.led.job(j)["state"] for j in ("c1", "c2")}, {"ready"})
+        self.assertEqual([(i["kind"], i["job"]) for i in self.led.inbox()], [("operator-step", None)],
+                         "one owner step, and no hand launch per job")
+        item = self.led.inbox()[0]
+        self.assertIn("'env_test'", item["action"])
+        self.assertIn("environment 'env_test' not found", item["detail"])
+        self.assertTrue(self.led.route("codex-cloud")["healthy"], "an env lookup miss is not a route outage")
+        for _ in range(10):
+            s.tick()
+            self.clock.sleep(60)
+        self.assertEqual({self.led.job(j)["state"] for j in ("c1", "c2")}, {"running"})
+        self.assertEqual(self.led.inbox(), [], "the owner step closes itself once the CLI lists the environment")
         prompt = (self.home / "prompts" / "c1.txt").read_text()
         self.assertIn(f"git checkout --detach {SHA}", prompt)
-        self.assertTrue(self.led.route("codex-cloud")["healthy"], "an env lookup miss is not a route outage")
 
     def test_web_job_asks_for_a_bundle_once_its_changes_view_may_have_expired(self):
         self.cfg["cloud"]["route"] = "web"

@@ -174,6 +174,30 @@ class CliTest(unittest.TestCase):
         self.assertEqual(show["receipt"]["diff_source"], "saved patch")
         self.assertNotIn("[harvest]", self.rh("inbox").stdout)
 
+    def test_unseen_environment_waits_and_a_hand_launch_is_the_fallback_that_says_why(self):
+        self.fake_codex("")
+        state = json.loads(Path(self.env["FAKE_CODEX_STATE"]).read_text())
+        gone = {"exit": 1, "stdout": "", "stderr": "Error: environment 'env_x' not found; run `codex cloud` to list "
+                                                   "available environments\n"}
+        state["exec"], state["list_env"] = gone, {"env_x": gone}
+        Path(self.env["FAKE_CODEX_STATE"]).write_text(json.dumps(state))
+        self.rh("config", "set", "cloud.env_id", "env_x")
+        self.rh("job", "add", self.job_file("c1", 'id = "c1"\nkind = "codex-cloud"\nbrief = "Write notes."\n'))
+        for _ in range(2):
+            self.rh("supervise", "--once")
+        self.assertEqual(self.state("c1"), "ready", "no paste step while the CLI route may still come up")
+        inbox = self.rh("inbox").stdout
+        self.assertIn("[operator-step]", inbox)
+        self.assertNotIn("[web-launch]", inbox)
+        self.assertIn("FAIL env_x, not usable by the codex CLI", self.rh("doctor", check=False).stdout)
+        self.rh("cloud", "handoff", "c1")
+        show = json.loads(self.rh("job", "show", "c1").stdout)["job"]
+        self.assertEqual((show["state"], show["route"]), ("handoff", "codex-cloud-web"))
+        self.assertTrue(show["detail"].startswith("the codex CLI cannot see environment 'env_x': rh cloud prompt c1"))
+        again = self.rh("cloud", "handoff", "c1", check=False)
+        self.assertNotEqual(again.returncode, 0)
+        self.assertIn("only a ready cloud job can be launched by hand", again.stderr)
+
     def test_web_job_takes_a_new_system_id_and_waits_for_a_harvest_without_asking_the_cli(self):
         result = {"job": "c1", "state": "done", "head": self.sha, "summary": "ok",
                   "checks": [], "outputs": [], "refusals": []}

@@ -31,7 +31,7 @@ Queue each with the exact action, then keep working on everything that does not 
 
 As of codex-cli 0.165.0 there are two:
 - **Legacy environments** are the ones the CLI sees: `codex cloud exec --env <env> --branch <branch> --attempts <1-4> "<prompt>"`, then `codex cloud diff <task> --attempt <n>`. The CLI cannot set model, effort or permission. Details: [references/harvest.md](references/harvest.md).
-- **New environments** (Settings → Codex Cloud → Environments) answer "environment not found" in the CLI. Drive them from the web composer. The rest of this skill assumes this system.
+- **New environments** (Settings → Codex Cloud → Environments) answer "environment not found" in the CLI, by label and by id, because the CLI resolves `--env` against its own environment list and they are not in it. Their tasks answer `404 Invalid task ID` to `codex cloud status` and `diff`. Drive them from the web composer. The rest of this skill assumes this system. research-harness launches natively only into a legacy environment; while it has none, its cloud jobs wait and one inbox item asks for one.
 
 ## 2. Environment
 

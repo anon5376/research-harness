@@ -65,6 +65,15 @@ _TAIL = 12  # lines of a failed job's output shown open, as where it stopped
 _CODEX = "https://chatgpt.com/codex"  # the one page outside the app a live page links to, for a hand launch
 _LABEL = re.compile(r"^[^:]{1,24}:\s+")  # a seat role's leading label of up to 24 characters, such as "Testing: "
 _SETUP = "create and publish the cloud environment"  # how the supervisor's Codex cloud setup step begins
+_NATIVE = "make the Codex cloud environment "  # how its step begins while the codex CLI cannot see the environment
+# Why a cloud job waits for a hand launch, from the reason the harness wrote before ": rh cloud prompt".
+_WHY = ((r"web route", "Cloud jobs here are set to start by hand (cloud.route is web)."),
+        (r"the codex CLI cannot see environment '([^']*)'",
+         r"The codex CLI on this Mac cannot see environment \1, so the harness cannot start it."),
+        (r"launched by hand on request", "You chose to start it by hand."),
+        (r"(launch outcome unknown|supervisor restarted mid-launch).*",
+         "Starting it from here gave no clear answer, so a task may already exist. Look in Codex before starting "
+         "another."))
 _KEYS = (("⌘K / Ctrl K", "Jump to a job, a page or an action"), ("j / ↓", "Next row"), ("k / ↑", "Previous row"),
          ("Enter", "Open it"), ("n", "New job"), ("i", "Open the Inbox"), ("r", "Answer or mark done"),
          ("a", "Link a Codex task"), ("h", "Paste a patch"), ("u", "Resume"), ("s", "Pause"),
@@ -421,6 +430,25 @@ def _setup_item(item, ready):
             and str(item.get("action") or "").startswith(_SETUP))
 
 
+def _native_item(item):
+    return item.get("kind") == "operator-step" and not item.get("job") and str(item.get("action") or "").startswith(
+        _NATIVE)
+
+
+def _env_of(item):
+    found = re.search(r"'([^']+)'", str(item.get("action") or ""))
+    return found.group(1) if found else "?"
+
+
+def _why(detail):
+    """Why a job waits for a hand launch, in the app's words; empty when the harness gave no reason."""
+    reason = str(detail or "").split(": rh cloud prompt", 1)[0].strip() if ": rh cloud prompt" in str(detail) else ""
+    for pattern, words in _WHY:
+        if re.fullmatch(pattern, reason):
+            return re.sub(pattern, words, reason)
+    return _sentence(reason) + "." if reason else ""
+
+
 def _ask_line(item):
     """(what to do, detail) for one inbox item, in plain words."""
     job, kind = item.get("job"), item.get("kind")
@@ -428,7 +456,15 @@ def _ask_line(item):
     if kind == "web-launch" and job:
         return "Launch it in Codex, then link the task", ""
     if kind == "harvest" and job:
-        return "Paste the patch from Codex", " ".join(part for part in (_sentence(action), detail) if part)
+        if "--bundle" in action:
+            return "Paste the patch from Codex", ("It ran in the Codex web app, which the codex CLI cannot read, and "
+                                                  "its Changes view may have expired. Send the bundle-export follow-up "
+                                                  "in its task, then paste the reply.")
+        return "Paste the patch from Codex", (f"The codex CLI could not export its diff ({_clause(detail)}). Save the "
+                                              "staged diff from the Codex web view and paste it.")
+    if _native_item(item):
+        return (f"Make environment {_env_of(item)} visible to the codex CLI",
+                "Cloud jobs wait for it and start by themselves once the CLI lists it.")
     if kind == "operator-step" and action.startswith(_SETUP):
         return "Set up Codex cloud", "Cloud jobs wait until Codex has an environment for this repository."
     if kind == "refusal":
@@ -468,10 +504,12 @@ class _Job:
                         and (not _number(ended) or ctx["now"] - ended < _FAILURE_WINDOW))
         self.held = self.state == "held" and not self.items
         self.setup = bool(ctx["setup"]) and self.kind == "codex-cloud" and self.state in _PRE
+        self.native = bool(ctx.get("native")) and self.kind == "codex-cloud" and self.state == "ready"
         self.count = len(self.items) + self.handoff + len(self.mine) + self.failure + self.held
         if self.count:
             self.group = "needs"
-        elif where == "live" or self.state == "draft" or (self.state == "ready" and not row.get("detail")):
+        elif where == "live" or self.state == "draft" or (self.state == "ready" and not row.get("detail")
+                                                           and not self.native):
             self.group = "live"
         elif where == "not_started":
             self.group = "next"
@@ -502,6 +540,8 @@ class _Job:
             return " · ".join(parts + [f"{self.word}: {detail}" if detail else self.word])
         if self.setup:
             return " · ".join(parts + ["Waits for Codex cloud to be set up"])
+        if self.native:
+            return " · ".join(parts + ["Waits for the codex CLI to see its environment"])
         if self.group == "live" and self.state in ("draft", "ready", "launching"):
             parts.append("Starting")
         elif self.state == "running" and self.kind in _PLACES:
@@ -603,6 +643,33 @@ def _setup_card(ctx, view, lead=True):
             f'<li><div>{form}</div></li></ol></div>')
 
 
+def _native_card(ctx, item, jid=None, lead=True):
+    """While the codex CLI cannot see the environment: why cloud jobs wait, the way to point it at one the CLI lists,
+    and on a job's page the hand launch as the fallback."""
+    env = _text(_env_of(item))
+    said = str(item.get("detail") or "").split(". Cloud jobs wait")[0]
+    why = (f'<p class="detail">This Mac starts cloud jobs with the codex CLI, and the CLI does not list environment '
+           f'<code>{env}</code>. Environments made under Settings → Codex Cloud → Environments are not in its list. '
+           f'Each waiting job starts by itself once it is (checked every 10 minutes).</p>'
+           + (f'<p class="said mono">{_text(said)}</p>' if said else ""))
+    if jid:
+        act = (_acts([_button(ctx, "/handoff", [("job", jid)], "Launch by hand instead", "a", "", "Launch by hand")])
+               if ctx["live"] else f'<p class="cli"><code>rh cloud handoff {_text(jid)}</code></p>')
+        return (f'<div class="ask-card"><p class="label">{_dot("neutral")}Waiting</p>'
+                f'<h3>Waits for the codex CLI to see environment {env}</h3>{why}{act}</div>')
+    if not ctx["live"]:
+        form = '<p class="cli"><code>rh config set cloud.env_id &lt;name or ID&gt;</code></p>'
+    else:
+        form = (f'<form method="post" action="/setup" data-act data-label="Save environment">{_hidden(ctx, [])}'
+                '<label>An environment the CLI lists<input type="text" name="env_id" required autocomplete="off" '
+                'spellcheck="false" class="mono" pattern="[A-Za-z0-9_.:\\-]{1,128}" data-k="r"></label>'
+                f'<button class="{_cls("primary" if lead else "")}">Use it</button></form>')
+    return (f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you</p>'
+            f'<h3>Make environment {env} visible to the codex CLI</h3>{why}<ol class="steps">'
+            '<li><div><p>In Codex, make an environment for this repository that <code>codex cloud</code> lists, or '
+            f'pick one it already lists.</p>{_codex_link()}</div></li><li><div>{form}</div></li></ol></div>')
+
+
 def _launch_card(ctx, jid, opened, lead, foot=""):
     """A hand launch in order: copy the prompt, open Codex, paste the task link back."""
     first = "primary" if lead else ""
@@ -611,6 +678,7 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
                 f'<p class="cli"><code>rh cloud prompt {_text(jid)}</code> · <code>rh cloud attach {_text(jid)} '
                 f'&lt;task id&gt;</code></p>{foot}</div>')
     prompt = opened.get("prompt")
+    why = _why((opened.get("job") or {}).get("detail")) or "The harness cannot start this job from here."
     env = _ENV.search(str((opened.get("job") or {}).get("detail") or ""))
     where = f" in environment <code>{_text(env.group(1))}</code>" if env else ""
     pid = f"prompt-{jid}"
@@ -627,7 +695,7 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
               'spellcheck="false" class="mono" placeholder="https://chatgpt.com/codex/tasks/task_…" data-k="a">'
               f'</label><button class="{_cls(first)}">Link task</button></form>')
     return ('<div class="ask-card launch"><p class="label">' + _dot("warn") + 'Needs you</p>'
-            '<h3>Launch it in Codex</h3><p class="detail">Codex cannot start this job from here. Start it in the Codex '
+            f'<h3>Launch it in Codex</h3><p class="detail">{_text(why)} Start it in the Codex '
             'web app, then link the task so this page can follow it.</p><ol class="steps">'
             f'<li><div><p>Copy the prompt.</p>{copy}</div></li>'
             f'<li><div><p>Open Codex, start a task{where} and paste the prompt.</p>{_codex_link()}</div></li>'
@@ -674,6 +742,8 @@ def _ask_card(ctx, item, opened, lead, view):
         return _launch_card(ctx, jid, opened, lead, f'<div class="foot">{_dismiss(ctx, iid)}</div>' if ctx["live"] else "")
     if _setup_item(item, ctx["ready"]):
         return _setup_card(ctx, view, lead)
+    if _native_item(item):
+        return _native_card(ctx, item, lead=lead)
     ask, detail = _ask_line(item)
     when = (_when(item["created"], ctx["now"], f"inbox:{iid}", "asked ") if _number(item.get("created")) else "")
     head = (f'<p class="label">{_dot("warn")}Needs you · {when}</p><h3>{_text(ask)}</h3>'
@@ -1427,6 +1497,9 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if entry.setup and not any(_setup_item(i, ctx["ready"]) for i in entry.items):
         cards.append(_setup_card(ctx, view, lead))
         lead = False
+    if entry.native:
+        cards.append(_native_card(ctx, ctx["native"], jid, lead))
+        lead = False
     if entry.mine:
         stop = entry.mine[0]
         verb, detail, when, act = _resume(ctx, stop, lead, "this job", [("job", jid)])
@@ -1444,7 +1517,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
         doing = (f"Running {_PLACES[kind]}" if state == "running" and kind in _PLACES else entry.word)
         next_line = ("It starts once Codex cloud is set up." if entry.setup
-                     else _NEXT.get(state, "").replace("{place}", _PLACES.get(kind, "on its platform")))
+                     else "" if entry.native else _NEXT.get(state, "").replace("{place}", _PLACES.get(kind, "on its platform")))
         if loop and loop.get("mode") == "paused":
             next_line = (next_line + " Automatic checks are paused: the app won't launch or collect it until you "
                          "resume them or press Check once.").strip()
@@ -1600,6 +1673,8 @@ def _ib_detail(ctx, entry, settled, view, missing):
             parts.append(_launch_card(ctx, jid, opened, True, f'<div class="foot">{_dismiss(ctx, item["id"])}</div>'))
         elif _setup_item(item, ctx["ready"]):
             parts.append(_setup_card(ctx, view, True))
+        elif _native_item(item):
+            parts.append(_native_card(ctx, item))
         else:
             parts.append(_ask_form(ctx, item, True))
     else:
@@ -1754,17 +1829,19 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     known = {row["id"] for row, _ in rows}
     meta = view.get("meta") if isinstance(view.get("meta"), dict) else {}
     ready = bool(view.get("cloud_ready"))
-    asks, setup = {}, None
+    asks, setup, native = {}, None, None
     for item in inbox:
         if _setup_item(item, ready):
             setup = setup or item
+        elif _native_item(item):
+            native = native or item
         elif item.get("job") in known:
             asks.setdefault(item["job"], []).append(item)
     # Every form on a job's page, or on the New job page, returns there; on the Inbox, to the Inbox; elsewhere home.
     named = opened["job"]["id"] if opened and isinstance(opened.get("job"), dict) else None
     back = f"/job/{named}" if named else "/new" if compose else None
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
-           "back": back, "meta": meta, "ready": ready, "setup": setup, "midnight": _midnight(now),
+           "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),
            "followed": {str(m.get("prior")) for m in meta.values() if isinstance(m, dict) and m.get("prior")},
            "others": [s for s in view.get("stops", []) if s.get("owner") != "app"
                       and not str(s["scope"]).startswith("job:")]}

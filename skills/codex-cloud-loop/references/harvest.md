@@ -24,4 +24,4 @@ The follow-up's script reads the index (`git diff --cached --raw`, then `git cat
 - The docs say the repository refresh runs automatically, yet tasks still started on the commit the environment was built on. Keep Step 0 until a probe shows otherwise.
 - Whether the GitHub token in a Full access shell is real or a placeholder the proxy swaps. Treat it as real.
 - The per-task permission modes are not documented.
-- Whether a newer CLI sees new environments.
+- Whether a newer CLI sees new environments. On 31 Oct the CLI's environment lookup (`codex-rs/cloud-tasks/src/env_detect.rs`) was the same on main as at 0.165.0, and the 0.166.0 notes name no change to it.

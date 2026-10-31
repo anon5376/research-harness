@@ -338,6 +338,17 @@ class ServeTest(unittest.TestCase):
         self.assertIn("attached " + task + " to web-job", self.request()[2])
         self.assertNotIn("attached " + task + " to web-job", self.request()[2])
 
+    def test_launch_by_hand_moves_a_ready_cloud_job_to_the_web_route_with_its_reason(self):
+        self.job("ready")
+        self.assertEqual(self.request("/handoff", {"job": "web-job"})[0], 303)
+        with self.ledger() as led:
+            j = led.job("web-job")
+        self.assertEqual((j["state"], j["route"]), ("handoff", "codex-cloud-web"))
+        self.assertTrue(j["detail"].startswith("launched by hand on request: rh cloud prompt web-job"))
+        self.assertIn("web-job is ready to launch by hand.", self.request()[2])
+        self.assertEqual(self.request("/handoff", {"job": "web-job"})[0], 303)
+        self.assertIn("only a ready cloud job can be launched by hand", self.request()[2])
+
     def test_attach_wrong_state_preserves_job_and_escapes_cli_error(self):
         self.job("ready")
         self.assertEqual(self.request("/attach", {"job": "web-job", "task_id": "task_e_" + "8" * 32})[0], 303)
@@ -406,7 +417,7 @@ class ServeTest(unittest.TestCase):
         expected = {"/inbox/resolve": {"id", "note"}, "/stop": {"reason", "job", "route", "pause"},
                     "/resume": {"job", "route", "pause"}, "/attach": {"job", "task_id"},
                     "/harvest": {"job", "text"}, "/land": {"job"}, "/job/cancel": {"job", "reason"},
-                    "/tick": set()}
+                    "/tick": set(), "/handoff": {"job"}}
         code, _, page = self.request("/actions")
         self.assertEqual(code, 200)
         forms = Forms(page).forms

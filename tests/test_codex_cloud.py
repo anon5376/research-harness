@@ -254,6 +254,19 @@ class ListDiffHealthTest(FakeCliTest):
         self.assertEqual((h["ok"], h["version"]), (False, "codex-cli 9.9.9"))
         self.assertIn("auth", h["detail"])
 
+    def test_env_check_asks_the_list_and_creates_nothing(self):
+        self.given(list=[resp(json.dumps({"tasks": [], "cursor": None})), resp(stderr=NOT_FOUND, exit=1),
+                         resp(stderr="Error: not logged in\n", exit=1)])
+        self.assertIsNone(self.cli.check_env("env_x"))
+        e = self.reason(self.cli.check_env, "x")
+        self.assertEqual(e.reason, "env-not-found")
+        self.assertIn("environment 'x' not found", e.detail, "the CLI's own words are kept for the inbox")
+        self.assertEqual(self.reason(self.cli.check_env, "x").reason, "auth")
+        self.assertEqual(self.calls(), [["cloud", "list", "--env", "env_x", "--limit", "1", "--json"]] +
+                         [["cloud", "list", "--env", "x", "--limit", "1", "--json"]] * 2)
+        with self.assertRaises(ValueError):
+            self.cli.check_env("--all")
+
     def test_health_without_cli(self):
         h = CodexCloud(codex=str(self.dir / "no-such-codex")).health()
         self.assertEqual((h["ok"], h["version"]), (False, None))

@@ -86,6 +86,8 @@ def main(argv=None):
     src.add_argument("patch", type=Path, nargs="?")
     src.add_argument("--bundle", type=Path, metavar="PARTS",
                      help="a saved bundle reply, or a directory of them (read in name order)")
+    c = cs.add_parser("handoff", help="launch a ready cloud job by hand in the web composer instead of the CLI")
+    c.add_argument("id")
     c = cs.add_parser("attach", help="record the task id of a job launched in the web composer")
     c.add_argument("id")
     c.add_argument("task_id", nargs="?")
@@ -334,6 +336,18 @@ def cmd_cloud(args, cfg):
         print(bundle.export_prompt(args.id, j["pinned_sha"], [j["spec"]["write_root"], *j["spec"]["write_paths"]]),
               end="")
         return 0
+    if args.cloud_cmd == "handoff":
+        if j["spec"]["kind"] != "codex-cloud" or j["state"] != "ready":
+            raise ValueError(f"{args.id} is {j['state']}; only a ready cloud job can be launched by hand")
+        env = cfg["cloud"]["env_id"]
+        why = (f"the codex CLI cannot see environment {env!r}" if not led.route(f"cli-env:{env}")["healthy"]
+               else "launched by hand on request")
+        led.set_state(args.id, "launching", "launching by hand")
+        led.set_state(args.id, "handoff", f"{why}: rh cloud prompt {args.id}, submit it at chatgpt.com/codex in "
+                                          f"environment {env}, then rh cloud attach {args.id} <task_id>",
+                      route="codex-cloud-web")
+        print(f"{args.id} waits for a hand launch: rh cloud prompt {args.id}, then rh cloud attach {args.id} <task_id>")
+        return 0
     seat_task = None
     if args.cloud_cmd in ("prompt", "attach") and "seat" in j["spec"]:
         seat_task, busy_job = seats.task_of(led, j["spec"]["seat"])
@@ -437,14 +451,25 @@ def cmd_env(args, cfg):
 
 
 def cmd_doctor(args, cfg):
-    from rh.adapters.codex_cloud import CodexCloud
+    from rh.adapters.codex_cloud import CodexCloud, RouteUnavailable
     ok = True
-    h = CodexCloud(codex=cfg["cloud"]["codex"], cwd=_codex_cwd(cfg)).health()
+    cloud = CodexCloud(codex=cfg["cloud"]["codex"], cwd=_codex_cwd(cfg))
+    h = cloud.health()
     print(f"codex cli: {'ok' if h.get('ok') else 'FAIL'} {h.get('version', '')} {h.get('detail', '')}".rstrip())
     ok &= bool(h.get("ok"))
     url = gitx.remote_url(cfg["repo"]["path"])
     print(f"git origin: {url or 'MISSING'}")
-    print(f"cloud env: {cfg['cloud']['env_id'] or 'not configured (operator step: rh env spec)'}")
+    env = cfg["cloud"]["env_id"]
+    if not env:
+        print("cloud env: not configured (operator step: rh env spec)")
+    elif h.get("ok"):
+        try:
+            cloud.check_env(env)
+            print(f"cloud env: {env}, listed by the codex CLI (route {cfg['cloud']['route']})")
+        except RouteUnavailable as e:
+            native = cfg["cloud"]["route"] != "web"
+            print(f"cloud env: {'FAIL ' if native else ''}{env}, not usable by the codex CLI: {e.detail}")
+            ok &= not native
     try:
         r = lease.read_host()
         allowed, why = lease.admit(r, float(cfg["lease"]["max_load"]))

@@ -149,6 +149,6 @@ tests = ["tests.test_dashboard.DashboardTest.test_finished_pages_lead_with_the_r
 [[mutant]]
 name = "a broken job's Inbox row is marked amber, not red"
 file = "rh/dashboard.py"
-find = '''    mark = _ring(job.state, "red" if job.state in _FAILED else "amber") if job else _ic(entry["icon"])'''
-replace = '''    mark = _ring(job.state, "amber") if job else _ic(entry["icon"])'''
+find = '''    mark = _ring(job.state, "red" if job.state in _FAILED else "amber", job.kind) if job else _ic(entry["icon"])'''
+replace = '''    mark = _ring(job.state, "amber", job.kind) if job else _ic(entry["icon"])'''
 tests = ["tests.test_dashboard.DashboardTest.test_finished_pages_lead_with_the_result_and_fold_the_log"]

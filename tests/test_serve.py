@@ -134,6 +134,16 @@ class ServeTest(unittest.TestCase):
                 led.set_state("web-job", "launching", route="codex-cloud")
                 led.set_state("web-job", state)
 
+    def chat_job(self):
+        """A GPT Pro chat handed to the person, as the supervisor leaves it; returns its inbox item's id."""
+        with self.ledger() as led:
+            led.add_job(contract.normalize({"id": "chat-job", "kind": "gpt-chat", "brief": "Compare two designs."}))
+            led.set_state("chat-job", "ready")
+            led.set_state("chat-job", "launching")
+            led.set_state("chat-job", "handoff", "Waiting for the reply from ChatGPT", route="chat")
+            item, _ = led.inbox_add("chat", "Ask ChatGPT: copy the prompt, paste its reply", job="chat-job")
+        return item
+
     def served(self, **kwargs):
         """A second app on this home with its own check loop, serving until the test ends."""
         server, _ = self.serve.make_server(self.cfg, token=self.token, **kwargs)
@@ -441,12 +451,7 @@ class ServeTest(unittest.TestCase):
         # D5: a page that loads a script, style, font or image from anywhere but this server, a second script, or a
         # link off the machine other than the Codex pages and ChatGPT (opened in the browser) must fail.
         self.job()
-        with self.ledger() as led:
-            led.add_job(contract.normalize({"id": "chat-job", "kind": "gpt-chat", "brief": "Compare two designs."}))
-            led.set_state("chat-job", "ready")
-            led.set_state("chat-job", "launching")
-            led.set_state("chat-job", "handoff", "Waiting for the reply from ChatGPT", route="chat")
-            item, _ = led.inbox_add("chat", "Ask ChatGPT: copy the prompt, paste its reply", job="chat-job")
+        item = self.chat_job()
         allowed = ("https://chatgpt.com/codex", "https://chatgpt.com/")
         links = set()
         for path in ("/", "/new", "/inbox", f"/inbox/{item}", "/job/web-job", "/job/chat-job", "/actions"):
@@ -468,6 +473,21 @@ class ServeTest(unittest.TestCase):
         self.assertTrue(any(u.startswith(allowed[0]) for u in links) and allowed[1] in links)
         app = self.request("/app.js", token=False)[2]
         self.assertNotRegex(app, r"https?://|fetch\(\s*['\"`]//|new WebSocket|importScripts")
+
+    def test_a_waiting_chat_reads_waiting_for_gpt_pro_to_eyes_and_screen_readers(self):
+        # A served page that names a waiting GPT Pro chat "Launch by hand" anywhere, in its text or in a ring's
+        # aria-label (the list row, the head, Properties, the Inbox entry, the palette), must fail.
+        item = self.chat_job()
+        for path in ("/", "/job/chat-job", "/inbox", f"/inbox/{item}"):
+            code, _, page = self.request(path)
+            self.assertEqual(code, 200, path)
+            self.assertNotIn("Launch by hand", page, path)
+            self.assertIn('aria-label="Waiting for GPT Pro"', page, path)
+        page = self.request("/job/chat-job")[2]
+        props = re.search(r'data-region="j-props".*?</section>', page, re.S).group(0)
+        state = re.search(r'<span class="pk">State</span><span class="pv">(.*?)</span></div>', props, re.S).group(1)
+        self.assertIn('aria-label="Waiting for GPT Pro"', state)
+        self.assertEqual(html.unescape(re.sub(r"<[^>]+>", "", state)).strip(), "Waiting for GPT Pro")
 
     def test_post_media_type_size_and_duplicate_tokens(self):
         self.assertEqual(self.request("/tick", raw=urlencode({"t": self.token}).encode(),

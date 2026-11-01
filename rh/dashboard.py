@@ -241,11 +241,11 @@ def _mark(size=18):
             f'{rects}</svg>')
 
 
-def _ring(state, hue=None):
+def _ring(state, hue=None, kind=""):
     """A job's state as one ring, named for a screen reader; `hue` overrides its colour (amber in Needs you)."""
     shape, tone = _RINGS.get(state, ("empty", "faint"))
     tone = hue or tone
-    word = _STATES.get(state, (state,))[0]
+    word = _CHAT_WAIT[0] if kind == "gpt-chat" and state == "handoff" else _STATES.get(state, (state,))[0]
     return (f'<svg class="st t-{tone}" viewBox="0 0 14 14" width="14" height="14" role="img" '
             f'aria-label="{_text(word)}">{_SHAPES[shape]}</svg>')
 
@@ -666,7 +666,7 @@ class _Job:
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
-        cells = (f'{_ring("env" if self.native else self.state, hue)}<span class="name">{_text(self.title)}</span>'
+        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{_text(self.title)}</span>'
                  f'<span class="sub">{_text(self.headline(runs))}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
@@ -1494,7 +1494,7 @@ def _props(ctx, job, spec, entry, view):
     now, kind = ctx["now"], job.get("kind") or spec.get("kind", "")
     shown = "env" if entry.native else job.get("state")
     word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]
-    rows = [("State", f'{_ring(shown)}<span>{_text(word)}</span>'),
+    rows = [("State", f'{_ring(shown, kind=kind)}<span>{_text(word)}</span>'),
             ("Runs on", f'{_ic({"local-shell": "mac", "gpt-chat": "chat"}.get(kind, "cloud"), True)}'
                         f'<span>{_text(_platform(kind))}</span>')]
     seat = str(spec.get("seat") or "")
@@ -1558,7 +1558,7 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
     word, tone = _STATES.get(shown, (shown, "neutral"))
     if kind == "gpt-chat" and state == "handoff":
         word, tone = _CHAT_WAIT
-    line = [_ring(shown)]
+    line = [_ring(shown, kind=kind)]
     if finished:
         took = (f" in {_m(_duration(ended - started))}" if state == "done"
                 else f" after {_m(_duration(ended - started))}") if _number(started) and _number(ended) else ""
@@ -1794,7 +1794,7 @@ def _ib_row(ctx, entry, picked):
            else "The app's own pause" if entry["stop"] else "The harness")
     current = ' aria-current="true"' if picked else ""
     # a job's entry wears the ring it wears on Today, so a state has one mark in both places
-    mark = _ring(job.state, "red" if job.state in _FAILED else "amber") if job else _ic(entry["icon"])
+    mark = _ring(job.state, "red" if job.state in _FAILED else "amber", job.kind) if job else _ic(entry["icon"])
     inner = (f'<span class="ib-ic">{mark}</span><span class="ib-t">{_text(head)}</span>'
              f'<span class="ib-age mono num">{age}</span><span class="ib-s">{sub}</span>')
     link = (f'<a class="ib" href="{href}" data-nav{current}>{inner}</a>' if ctx["live"]
@@ -1951,7 +1951,7 @@ def _palette(jobs, ctx, keys):
     rows = ['<p class="p-sec">Jobs</p>'] if jobs else []
     for j in sorted(jobs, key=lambda j: order[j.group]):
         rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state)}</span><span class="p-t">{_text(j.title)}</span>'
+                    f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span><span class="p-t">{_text(j.title)}</span>'
                     f'<span class="p-s"><span class="mono">{_text(j.id)}</span><span>{_text(j.word.lower())}</span></span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]

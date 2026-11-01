@@ -136,3 +136,10 @@ file = "rh/supervisor.py"
 find = 'str(cwd), str(timeout)],'
 replace = 'str(cwd), str(timeout * 1000)],'
 tests = ["tests.test_hardening.GateTest.test_heavy_gate_uses_job_timeout_and_records_exit_124"]
+
+[[mutant]]
+name = "a waiting chat's ring tells a screen reader Launch by hand"
+file = "rh/dashboard.py"
+find = '    word = _CHAT_WAIT[0] if kind == "gpt-chat" and state == "handoff" else _STATES.get(state, (state,))[0]'
+replace = '    word = _STATES.get(state, (state,))[0]'
+tests = ["tests.test_serve.ServeTest.test_a_waiting_chat_reads_waiting_for_gpt_pro_to_eyes_and_screen_readers"]

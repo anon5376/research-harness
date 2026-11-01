@@ -15,8 +15,8 @@ tests = ["tests.test_hardening.SmallItemsTest"]
 [[mutant]]
 name = "cancel allows running"
 file = "rh/cli.py"
-find = 'if j["state"] not in ("draft", "waiting", "held", "ready", "handoff"):'
-replace = 'if j["state"] not in ("draft", "waiting", "held", "ready", "handoff", "running"):'
+find = 'if j["state"] not in ("draft", "waiting", "held", "ready", "handoff", "stalled"):'
+replace = 'if j["state"] not in ("draft", "waiting", "held", "ready", "handoff", "stalled", "running"):'
 tests = ["tests.test_hardening.SmallItemsTest"]
 
 [[mutant]]

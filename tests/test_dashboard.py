@@ -463,8 +463,8 @@ class DashboardTest(unittest.TestCase):
         # Only the app's own stops get a Resume: the lead's pause on live-job cannot be lifted from here.
         self.assertFalse([f for f in forms if f["action"] == "/resume" and f["fields"].get("job") == "live-job"])
         self.assertFalse([f for f in forms if f["action"] == "/attach" and f["fields"].get("job") == "live-job"])
-        # Cancel is offered only before a job starts, a finished job cannot be paused, and a running one cannot be
-        # run again.
+        # Cancel is offered only before a job starts or once it stalls, a finished job cannot be paused, and a running
+        # one cannot be run again.
         self.assertFalse(one("/job/cancel", "live-job"))
         self.assertFalse(one("/stop", "finished-job", job="finished-job"))
         self.assertFalse(one("/again", "live-job", job="live-job"))

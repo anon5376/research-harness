@@ -383,8 +383,24 @@ class SmallItemsTest(HarnessCase):
                                   "model_served": None, "detail": "superseded"})
                 self.assertIsInstance(rec["ended"], (int, float))
 
+    def test_cancel_ends_a_stalled_job_keeps_its_route_and_closes_its_inbox(self):
+        self.led.add_job(spec(jid="stuck", model={"requested": "test-model"}))
+        for step in ("ready", "launching"):
+            self.led.set_state("stuck", step)
+        self.led.set_state("stuck", "running", "attached", route="codex-cloud-web", external_id="task-1")
+        self.led.set_state("stuck", "stalled", "no finish after 180 min")
+        self.led.inbox_add("harvest", "send the bundle-export follow-up", job="stuck")
+        self.led.inbox_add("harvest", "not this job", job="other")
+        rc, out, err = self.invoke("job", "cancel", "stuck", "--reason", "built by another seat")
+        self.assertEqual(rc, 0, err)
+        self.assertIn("nothing was stopped", out)
+        self.assertEqual(self.led.job("stuck")["state"], "cancelled")
+        rec = self.led.receipt("stuck")
+        self.assertEqual((rec["route"], rec["detail"]), ("codex-cloud-web", "built by another seat"))
+        self.assertEqual([i["job"] for i in self.led.inbox()], ["other"])
+
     def test_cancel_rejects_every_other_state_and_names_it(self):
-        for state in ("launching", "running", "stalled", "collecting", "done", "failed", "blocked",
+        for state in ("launching", "running", "collecting", "done", "failed", "blocked",
                       "capacity", "truncated", "aborted", "no_result", "cancelled"):
             with self.subTest(state=state):
                 jid = "reject-" + state

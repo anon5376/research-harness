@@ -617,17 +617,25 @@ class ServeTest(unittest.TestCase):
         self.assertNotIn("x &lt;b&gt;</textarea>", page)
         self.assertNotIn('value="fine-job"', page)
 
-    def test_cancel_only_stops_a_job_that_has_not_started(self):
+    def test_cancel_only_stops_a_job_that_has_not_started_or_has_stalled(self):
         self.local_job("queued-one", "ready")
         self.local_job("running-one", "running")
+        self.local_job("stuck-one", "running")
+        with self.ledger() as led:
+            led.set_state("stuck-one", "stalled", "no finish after 180 min")
+        cancel = 'action="/job/cancel"'
+        self.assertIn(cancel, self.request("/job/stuck-one")[2])
+        self.assertNotIn(cancel, self.request("/job/running-one")[2])
+        self.assertEqual(self.request("/job/cancel", {"job": "stuck-one", "reason": "built elsewhere"})[0], 303)
         self.assertEqual(self.request("/job/cancel", {"job": "queued-one", "reason": "not needed",
                                                       "next": "/job/queued-one"})[0], 303)
         self.assertEqual(self.request("/job/cancel", {"job": "running-one", "reason": "stop it"})[0], 303)
-        self.assertIn("only an unstarted job can be cancelled", self.request()[2])
+        self.assertIn("only an unstarted or stalled job can be cancelled", self.request()[2])
         with self.ledger() as led:
             self.assertEqual(led.job("queued-one")["state"], "cancelled")
             self.assertEqual(led.receipt("queued-one")["detail"], "not needed")
             self.assertEqual(led.job("running-one")["state"], "running")
+            self.assertEqual(led.job("stuck-one")["state"], "cancelled")
 
     def test_forms_return_to_the_page_they_came_from_and_nowhere_else(self):
         for target, expected in (("/job/web-job", "/job/web-job?t="), ("/new", "/new?t="), ("/", "/?t="),

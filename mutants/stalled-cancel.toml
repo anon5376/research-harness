@@ -1,0 +1,52 @@
+# rh job cancel ends a stalled job: what closed m7c and m8b, whose work came from other seats.
+
+[[mutant]]
+name = "a stalled job cannot be cancelled"
+file = "rh/cli.py"
+find = '("draft", "waiting", "held", "ready", "handoff", "stalled")'
+replace = '("draft", "waiting", "held", "ready", "handoff")'
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "a cancelled stalled job's receipt forgets its route"
+file = "rh/cli.py"
+find = '{"route": j["route"] or "none", "checks": [],'
+replace = '{"route": "none", "checks": [],'
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "cancel leaves the job's inbox items open"
+file = "rh/cli.py"
+find = 'led.inbox_resolve(i["id"], "job cancelled")'
+replace = 'pass'
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "cancel closes every job's inbox items"
+file = "rh/cli.py"
+find = '''            if i["job"] == args.id:
+                led.inbox_resolve(i["id"], "job cancelled")'''
+replace = '''            if True:
+                led.inbox_resolve(i["id"], "job cancelled")'''
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "cancelling a stalled job does not say nothing was stopped"
+file = "rh/cli.py"
+find = 'print("nothing was stopped: end its task or process yourself if it still runs")'
+replace = 'pass'
+tests = ["tests.test_hardening.SmallItemsTest"]
+
+[[mutant]]
+name = "a stalled job's page offers no Cancel"
+file = "rh/dashboard.py"
+find = 'state in (*_PRE, "stalled") and not finished'
+replace = 'state in _PRE and not finished'
+tests = ["tests.test_serve"]
+
+[[mutant]]
+name = "a running job's page offers Cancel"
+file = "rh/dashboard.py"
+find = 'state in (*_PRE, "stalled") and not finished'
+replace = 'state in (*_PRE, "stalled", "running") and not finished'
+tests = ["tests.test_serve"]

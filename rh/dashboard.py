@@ -41,7 +41,7 @@ _STATES = {
 }
 _PRE = ("draft", "ready", "waiting", "held", "handoff")
 _CHAT_WAIT = ("Waiting for GPT Pro", "warn")  # a chat job's handoff: its prompt is out, its reply not back yet
-_LIVE = ("launching", "handoff", "running", "stalled", "collecting")  # states rh job cancel accepts
+_LIVE = ("launching", "handoff", "running", "stalled", "collecting")  # started and not yet finished
 _FAILED = ("failed", "blocked", "capacity", "truncated", "aborted", "no_result")  # a finished job that needs a person
 _FAILURE_WINDOW = 86400  # a failure stays in Needs you this long, unless it was run again
 # What happens next to a job the harness is moving, so a quiet page still says what it is doing.
@@ -1641,7 +1641,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     acts = []
     if ctx["live"] and not finished and not entry.mine:
         acts.append(_pause(ctx, jid))
-    if ctx["live"] and state in _PRE and not finished:
+    if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
         acts.append(_cancel(ctx, jid))
     top = _top(ctx, crumbs + f'{_ic("chev", True)}<span>{group}</span>{_ic("chev", True)}'
                              f'<span class="mono">{_text(jid)}</span></nav>', "".join(acts))

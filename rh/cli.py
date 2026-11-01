@@ -31,7 +31,7 @@ def main(argv=None):
     a.add_argument("--sha", help="cloud jobs: commit to pin (default: HEAD of the repo)")
     s = js.add_parser("show", help="one job with its events and receipt")
     s.add_argument("id")
-    c = js.add_parser("cancel", help="cancel a job that has not started")
+    c = js.add_parser("cancel", help="cancel a job that has not started, or a stalled one")
     c.add_argument("id")
     c.add_argument("--reason", required=True)
 
@@ -167,12 +167,18 @@ def cmd_job(args, cfg):
         j = led.job(args.id)
         if not j:
             raise ValueError(f"no job {args.id}")
-        if j["state"] not in ("draft", "waiting", "held", "ready", "handoff"):
-            raise ValueError(f"{args.id} is {j['state']}; only an unstarted job can be cancelled")
-        led.finish(args.id, "cancelled", {"route": "none", "checks": [],
+        # A stalled job may never finish by itself (its work went elsewhere, or its task is gone), so it can end here.
+        if j["state"] not in ("draft", "waiting", "held", "ready", "handoff", "stalled"):
+            raise ValueError(f"{args.id} is {j['state']}; only an unstarted or stalled job can be cancelled")
+        led.finish(args.id, "cancelled", {"route": j["route"] or "none", "checks": [],
                    "model_requested": j["spec"].get("model", {}).get("requested"), "model_served": None,
                    "ended": time.time(), "detail": args.reason})
+        for i in led.inbox():
+            if i["job"] == args.id:
+                led.inbox_resolve(i["id"], "job cancelled")
         print(f"cancelled {args.id}: {args.reason}")
+        if j["state"] == "stalled":
+            print("nothing was stopped: end its task or process yourself if it still runs")
         return 0
     if args.job_cmd == "show":
         j = led.job(args.id)

@@ -17,3 +17,6 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -I tests/run.py
+      - name: Windows-only mutants
+        if: runner.os == 'Windows'
+        run: python -I tools/mutants.py mutants/d8-windows.toml

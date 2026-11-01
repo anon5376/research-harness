@@ -83,3 +83,14 @@ class MutantsTest(unittest.TestCase):
         result = self.run_mutants([self.entry("IGNORED = 1", "IGNORED = 2", tests=["slow"])], timeout=0.1)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ["KILLED  caught", "MUTANTS KILLED n=1/1"])
+
+    def test_windows_only_lists_run_on_the_windows_ci_jobs(self):
+        # Their tests skip on macOS and Linux, so the Mac runs cannot kill them; CI on Windows is the only place.
+        root = TOOL.parents[1]
+        windows = sorted(p.relative_to(root).as_posix() for p in (root / "mutants").glob("*.toml")
+                         if p.read_text(encoding="utf-8").startswith("# Windows-only"))
+        ci = (root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        self.assertEqual(windows, ["mutants/d8-windows.toml"])
+        for name in windows:
+            self.assertIn(f"python -I tools/mutants.py {name}", ci)
+        self.assertIn("if: runner.os == 'Windows'", ci)

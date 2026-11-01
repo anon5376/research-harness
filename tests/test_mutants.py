@@ -72,15 +72,18 @@ class MutantsTest(unittest.TestCase):
 
     def test_tests_that_fail_or_hang_without_the_mutant_are_errors(self):
         # A renamed or missing test fails on the clean tree; counting that as a kill gave a false 21/21.
-        result = self.run_mutants([self.entry(name="no test", tests=["fails"]),
-                                   self.entry(name="hangs", tests=["stuck"])], timeout=0.1)
+        # Each case gets its own timeout: at 0.1 s, a slow runner's Python start-up alone read as a hang (Intel CI).
+        result = self.run_mutants([self.entry(name="no test", tests=["fails"])])
         self.assertEqual(result.returncode, 1)
-        self.assertEqual(result.stdout.splitlines(), ["ERROR  no test", "ERROR  hangs", "MUTANTS KILLED n=0/2"])
+        self.assertEqual(result.stdout.splitlines(), ["ERROR  no test", "MUTANTS KILLED n=0/1"])
         self.assertIn("fail without the mutant", result.stderr)
+        result = self.run_mutants([self.entry(name="hangs", tests=["stuck"])], timeout=1)
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout.splitlines(), ["ERROR  hangs", "MUTANTS KILLED n=0/1"])
         self.assertIn("time out without the mutant", result.stderr)
 
     def test_timeout_is_killed(self):
-        result = self.run_mutants([self.entry("IGNORED = 1", "IGNORED = 2", tests=["slow"])], timeout=0.1)
+        result = self.run_mutants([self.entry("IGNORED = 1", "IGNORED = 2", tests=["slow"])], timeout=1)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.splitlines(), ["KILLED  caught", "MUTANTS KILLED n=1/1"])
 

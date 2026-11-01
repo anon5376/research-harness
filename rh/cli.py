@@ -204,7 +204,7 @@ def cmd_chat(args, cfg):
         print(chat.prompt(job["spec"]), end="")
     else:
         if args.file == "-":
-            text = sys.stdin.read()
+            text = sys.stdin.buffer.read().decode("utf-8")  # UTF-8 like a reply file, whatever the locale (cp1252 on Windows)
         else:
             with Path(args.file).open(encoding="utf-8", newline="") as file:
                 text = file.read()

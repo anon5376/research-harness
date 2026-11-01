@@ -143,3 +143,18 @@ file = "rh/dashboard.py"
 find = '    word = _CHAT_WAIT[0] if kind == "gpt-chat" and state == "handoff" else _STATES.get(state, (state,))[0]'
 replace = '    word = _STATES.get(state, (state,))[0]'
 tests = ["tests.test_serve.ServeTest.test_a_waiting_chat_reads_waiting_for_gpt_pro_to_eyes_and_screen_readers"]
+
+[[mutant]]
+name = "a reply on stdin is read in the locale's encoding"
+file = "rh/cli.py"
+find = '            text = sys.stdin.buffer.read().decode("utf-8")  # UTF-8 like a reply file, whatever the locale (cp1252 on Windows)'
+replace = '            text = sys.stdin.read()'
+tests = ["tests.test_chat.ChatTest.test_stdin_reply_is_utf8_whatever_the_locale"]
+
+[[mutant]]
+name = "a reply keeps its CRLF and lone CR line endings"
+file = "rh/chat.py"
+find = '    text = text.replace("\r\n", "\n").replace("\r", "\n")'
+replace = '    text = text'
+tests = ["tests.test_chat.ChatTest.test_cli_prompt_and_file_reply_complete_with_receipt_and_inbox_resolution",
+         "tests.test_chat.ChatTest.test_stdin_reply_is_utf8_whatever_the_locale"]

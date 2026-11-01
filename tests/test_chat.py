@@ -1,5 +1,7 @@
 """Chat jobs through the contract, supervisor, real CLI and authenticated loopback server."""
+import contextlib
 import http.client
+import io
 import os
 from pathlib import Path
 import subprocess
@@ -10,7 +12,7 @@ import unittest
 from unittest.mock import patch
 from urllib.parse import urlencode
 
-from rh import chat, config, contract, serve
+from rh import chat, cli, config, contract, serve
 from rh.ledger import Ledger
 from rh.supervisor import Supervisor
 
@@ -139,12 +141,12 @@ class ChatTest(unittest.TestCase):
         self.assertEqual((printed.returncode, printed.stdout), (0, BRIEF))
         reply = "The evidence is mixed — uncertain.\nA second sentence adds detail.\n"
         path = self.home / "incoming.md"
-        path.write_text(reply, encoding="utf-8")
+        path.write_bytes(reply.replace("\n", "\r\n").encode("utf-8"))  # a reply saved by a Windows editor
         result = self.rh("chat", "reply", "chat-job", str(path))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.led.job("chat-job")["state"], "done")
         self.assertEqual(chat.reply_path(self.cfg, "chat-job"), self.home / "runs/chat-job/reply.md")
-        self.assertEqual(chat.reply_path(self.cfg, "chat-job").read_text(encoding="utf-8"), reply)
+        self.assertEqual(chat.reply_path(self.cfg, "chat-job").read_bytes(), reply.encode("utf-8"))  # stored with \n
         receipt = self.led.receipt("chat-job")
         self.assertIsInstance(receipt["ended"], (float, int))
         self.assertEqual({**receipt, "ended": 123.0},
@@ -189,6 +191,20 @@ class ChatTest(unittest.TestCase):
         self.assertEqual(chat.read_reply(self.cfg, "chat-job"), text)
         self.assertEqual(chat.read_reply(self.cfg, "chat-job", limit=5), "é" * 5)
         self.assertEqual(self.led.receipt("chat-job")["detail"], "é" * 200)
+
+    def test_stdin_reply_is_utf8_whatever_the_locale(self):
+        # A reply on stdin decoded in the locale's encoding (cp1252 on Windows), or a lone CR or CRLF kept in the
+        # saved reply, must fail.
+        self.handoff()
+        text = "Design B wins — it keeps one clock.\r\nSecond line.\rThird.\n"
+        stdin = io.TextIOWrapper(io.BytesIO(text.encode("utf-8")), encoding="latin-1", newline="")
+        with patch.object(cli.config, "load", return_value=self.cfg), patch.object(cli, "_ledger", return_value=self.led), \
+                patch.object(sys, "stdin", stdin), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(cli.main(["chat", "reply", "chat-job", "-"]), 0)
+        saved = "Design B wins — it keeps one clock.\nSecond line.\nThird.\n"
+        self.assertEqual(chat.reply_path(self.cfg, "chat-job").read_bytes(), saved.encode("utf-8"))
+        self.assertEqual([e["data"] for e in self.led.events("chat-job") if e["kind"] == "reply"],
+                         [{"chars": len(saved)}])
 
     def test_rename_failure_leaves_job_waiting_and_no_partial_reply(self):
         self.handoff()

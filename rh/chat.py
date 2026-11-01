@@ -30,6 +30,8 @@ def save_reply(cfg, led, job_id: str, text: str, now: float) -> None:
         raise ValueError("only a gpt-chat job takes a reply")
     if job["state"] != "handoff":
         raise ValueError(f"{job_id} is {job['state']}; a reply needs handoff")
+    # One rule for every route in: a browser's textarea sends CRLF on every OS, a Windows file may carry it too.
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
     if not text.strip():
         raise ValueError("a reply must not be empty")
     dest = reply_path(cfg, job_id)

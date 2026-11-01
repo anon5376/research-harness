@@ -48,6 +48,27 @@ class LocalShellTest(unittest.TestCase):
                 if local_shell._alive(pid):
                     taskkill(pid, tree=True)
 
+    def test_a_finished_process_is_not_alive_while_a_handle_keeps_it_known(self):
+        # Windows keeps an exited process's object while any handle to it is open, so OpenProcess still succeeds and
+        # only the exit code says it finished. Without a handle, OpenProcess fails and the exit code is never read.
+        kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        kernel.OpenProcess.restype = wintypes.HANDLE
+        kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+        p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                             creationflags=subprocess.CREATE_NO_WINDOW)
+        handle = kernel.OpenProcess(0x1000, False, p.pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        self.assertTrue(handle, ctypes.WinError(ctypes.get_last_error()))
+        try:
+            self.assertTrue(local_shell._alive(p.pid))
+            p.kill()
+            p.wait(15)
+            self.assertFalse(local_shell._alive(p.pid))
+        finally:
+            if p.poll() is None:
+                p.kill()
+            kernel.CloseHandle(handle)
+
 
 @unittest.skipUnless(os.name == "nt", "native Windows behavior")
 class WindowsHostTest(unittest.TestCase):

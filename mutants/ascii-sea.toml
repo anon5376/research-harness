@@ -1,0 +1,108 @@
+# The sea in characters, moving like water, and Options opening inside the window. Each mutant brings back a creature
+# that steps cell by cell, jumps, stays rigid or is cut by the tank's edge, or an Options panel cut off by the window,
+# and the named test must catch it.
+
+[[mutant]]
+name = "a swimmer snaps to whole cells"
+file = "rh/web/app.js"
+find = "  return { x: (dir > 0 ? e : 1 - e) * span, dir: out ? dir : -dir };"
+replace = "  return { x: Math.round((dir > 0 ? e : 1 - e) * span), dir: out ? dir : -dir };"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "a jellyfish steps sideways a cell at a time"
+file = "rh/web/app.js"
+find = "    x0 = Math.max(0, Math.min(cols - JW, x0 + Math.sin(t * 0.22 * sp + ph) * slack));"
+replace = "    x0 = Math.max(0, Math.min(cols - JW, x0 + Math.round(Math.sin(t * 0.22 * sp + ph) * slack)));"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "a jellyfish bobs a whole row at a time"
+file = "rh/web/app.js"
+find = "    y0 = Math.max(0, Math.min(rows - JH, y0 + Math.sin(t * 0.35 * sp + ph) * 0.7 - 0.3 * pulse));"
+replace = "    y0 = Math.max(0, Math.min(rows - JH, y0 + Math.round(Math.sin(t * 0.35 * sp + ph) * 0.7 - 0.3 * pulse)));"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "a fish's depth jumps a row when the jellyfish above it bob"
+file = "rh/web/app.js"
+find = "Math.min(rows - h - 2, top + hash(n, 9, 5) * Math.max(0, bottom - top - h)));"
+replace = "Math.min(rows - h - 2, Math.round(top + hash(n, 9, 5) * Math.max(0, bottom - top - h))));"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "a fish's body stays rigid"
+file = "rh/web/app.js"
+find = "  return Math.sin(beat - back * 3.2) * amp * back * back;"
+replace = "  return 0;"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "a dot between cells puts all its weight in one"
+file = "rh/web/app.js"
+find = "    add(i, j, (1 - fx) * (1 - fy)); add(i + 1, j, fx * (1 - fy));"
+replace = "    add(i, j, 1); add(i + 1, j, 0);"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "characters grow lighter as the weight grows"
+file = "rh/web/app.js"
+find = "  return RAMP[Math.max(0, Math.min(n - 1, k))];"
+replace = "  return RAMP[Math.max(0, Math.min(n - 1, n - 1 - k))];"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_moves_in_fractions_of_a_cell"]
+
+[[mutant]]
+name = "the octopus's arms reach past the tank's left edge"
+file = "rh/web/app.js"
+find = "        put(x + 2.4 + m * 2.1 + out * s * 0.5"
+replace = "        put(x + 1.4 + m * 2.1 + out * s * 0.5"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "a weed sways past the tank's right edge"
+file = "rh/web/app.js"
+find = "    if (h > 0.93 && i > OW + 1 && i < cols - 2) {"
+replace = "    if (h > 0.93 && i > OW + 1) {"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "Options always opens under its button"
+file = "rh/web/app.js"
+find = "  const up = h > below && above > below;"
+replace = "  const up = false;"
+tests = ["tests.test_dashboard.DashboardTest.test_options_opens_inside_the_window"]
+
+[[mutant]]
+name = "Options runs past the right edge of a narrow window"
+file = "rh/web/app.js"
+find = "  return { up, right: at.left + w > room.right && at.right - w >= room.left,"
+replace = "  return { up, right: false,"
+tests = ["tests.test_dashboard.DashboardTest.test_options_opens_inside_the_window"]
+
+[[mutant]]
+name = "Options is as tall as it likes"
+file = "rh/web/app.js"
+find = "max: Math.max(80, Math.floor(up ? above : below) - 8) };"
+replace = "max: Math.max(80, h) };"
+tests = ["tests.test_dashboard.DashboardTest.test_options_opens_inside_the_window"]
+
+[[mutant]]
+name = "the page never places Options"
+file = "rh/web/app.js"
+find = "  if (d instanceof HTMLDetailsElement && d.open && d.matches('.opts')) place(d);\n"
+replace = ""
+tests = ["tests.test_dashboard.DashboardTest.test_options_opens_inside_the_window"]
+
+[[mutant]]
+name = "an Options panel opened upward still hangs below"
+file = "rh/web/rh.css"
+find = ".opts-body.up { top: auto; bottom: calc(100% + 6px); }"
+replace = ".opts-body.up { }"
+tests = ["tests.test_dashboard.DashboardTest.test_options_opens_inside_the_window"]
+
+[[mutant]]
+name = "the composer row runs past a narrow detail"
+file = "rh/web/rh.css"
+find = "  .c-row { flex-wrap: wrap; row-gap: 8px; }"
+replace = "  .c-row { row-gap: 8px; }"
+tests = ["tests.test_dashboard.DashboardTest.test_options_opens_inside_the_window"]

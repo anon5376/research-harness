@@ -1,9 +1,9 @@
 // The client for the live page, served same-origin at /app.js. It polls the page it shows, swaps only what changed
 // (FLIP for rows that move between groups), follows app links without reloading, posts forms with fetch and says what
-// happened in a toast, and adds the keyboard and the ⌘K palette. It also draws the sea: each seat as a jellyfish of
-// dots, with fish, bacteria, plankton, an eel and an octopus that count what the page shows. Everything that moves
-// stops under prefers-reduced-motion; the sea reads it when the page loads, so a change while the page is open takes a
-// reload.
+// happened in a toast, and adds the keyboard and the ⌘K palette. It also draws the sea in characters: each seat as
+// a jellyfish, with fish, bacteria, plankton, an eel and an octopus that count what the page shows. Everything that
+// moves stops under prefers-reduced-motion; the sea reads it when the page loads, so a change while the page is open
+// takes a reload.
 (() => {
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
@@ -42,10 +42,13 @@ const busy = el => !!((el.matches && el.matches('dialog[open]'))
   || (el.contains(document.activeElement) && document.activeElement.matches('input, textarea')));
 const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' ');
 
-// ───────── the sea: dot creatures on one lattice of tall cells ─────────
-// Drawn the way 0xSero's ascii-art skill draws dot art: every creature is dots on one fixed grid of cells about 1.9
-// times as tall as wide, in two tones (a big bright dot, and a small dim one nudged down), lit from the upper left, and
-// red only on what moves. Plankton are a finer grain, a different substance from the creatures.
+// ───────── the sea: creatures drawn in characters on one lattice of tall cells ─────────
+// Every creature is weight laid on one fixed grid of cells about 1.9 times as tall as wide, and each cell shows a
+// character as heavy as the weight it holds, so the sea reads as ASCII. It moves the way water does: a creature keeps
+// the fractions of its position and spreads its weight over the cells around it, so it glides across them rather than
+// stepping; a bell swells and contracts as it swims; tentacles and fish bodies bend in waves that run to their tips.
+// Parts lit from the upper left weigh more than shaded ones, and red is only on what moves. Plankton are a finer
+// grain, dots rather than characters.
 // Each creature stands for something the page shows: a jellyfish per seat (teal while it works, amber while it waits
 // on you, dim while idle), a fish per job running (at most 9), a school of up to 9 small fish for the jobs done today,
 // a colony of bacteria per job that failed today (at most 7), a cloud of plankton per job up next (at most 12), the
@@ -55,10 +58,12 @@ const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' 
 // <sea> From here to </sea> the code touches no page, so a test runs it in node.
 const FRAME = 46;  // ms between frames: about 20 a second on a 60 or 120 Hz screen
 const LATTICE = 1.887;  // a cell's height over its width, the skill's 19 x 36 lattice
-const BRIGHT = 2, DIM = 1, RING = 3, FINE = 0;  // a big dot, a small one, an eye (a big dot with a hollow), a speck
+const BRIGHT = 2, DIM = 1, RING = 3, FINE = 0;  // a lit part, a shaded one, an eye, a speck of plankton
+const WEIGHT = [0, 0.55, 1, 1];  // what a dot of each kind lays on the cells under it
+const RAMP = ".':;tox%SX8#@";  // the characters, from the lightest weight a cell can hold to the heaviest
 const TONES = { accent: [95, 207, 185], amber: [226, 166, 84], faint: [159, 176, 212], red: [239, 107, 115],
   sand: [150, 160, 150], weed: [95, 160, 140] };
-// Dot maps: '#' a bright dot, '.' a dim one, 'o' an eye, anything else water. Fish face right; a map is mirrored to
+// Dot maps: '#' a lit part, '.' a shaded one, 'o' an eye, anything else water. Fish face right; a map is mirrored to
 // swim left.
 const FISH = ['##.   .######.  ', ' .##.#########o#', '##.   .######.  '];  // a forked tail and a whole body
 const MINNOW = ['#. .###. ', '.#.####o#', '#. .###. '];
@@ -89,14 +94,11 @@ function seaGrid(W, H, n, sea) {
   return { P, Q, cols: Math.floor(W / P), rows: Math.floor(H / Q) };
 }
 
-// A dot's radius in px. A bright dot fills 0.8 of its column, but stays GAP px from its neighbour: on a phone's strip
-// the column is about 3 px, and dots 0.7 px apart run together into dashes that flatten every creature into stripes.
-const GAP = 1.2;
-function dotRadius(kind, P) {
-  if (kind === DIM) return P * 0.19;
-  if (kind === FINE) return Math.max(0.8, P * 0.16);
-  return Math.min(P * 0.4, (P - GAP) / 2);
-}
+// A character's size in px: nearly the cell's height, but no wider than its column (a mono character is ADVANCE of
+// its size wide), so neighbours never touch. A speck of plankton stays at least a pixel clear of the next column.
+const ADVANCE = 0.6;
+const glyphSize = (P, Q) => Math.min(Q * 0.9, P * 0.95 / ADVANCE);
+const speck = P => Math.max(0.8, P * 0.16);
 
 // Where each seat's jellyfish lives: [x, y, slack], the top-left cell of its box and how far it may drift sideways
 // without touching its neighbour. In the reef the seats take up to three lanes, the middle one set half a jellyfish
@@ -126,26 +128,34 @@ function seaLayout(spec, fauna, cols, rows) {
   });
 }
 
-// One swimmer's way back and forth across [0, cols - width): where it is at time t and which way it faces. It turns
-// round at each wall, so it is always drawn whole.
+// One swimmer's way back and forth across [0, cols - width): where it is at time t and which way it faces. It slows
+// into each wall and turns round there, so it is always drawn whole.
 function lap(n, t, cols, width, speed) {
   const span = Math.max(1, cols - width), f = (hash(n, 8, 4) + (t * speed) / (2 * span)) % 1;
   const out = f < 0.5, p = out ? f * 2 : 2 - f * 2, dir = hash(n, 2, 6) > 0.5 ? 1 : -1;
-  return { x: Math.round((dir > 0 ? p : 1 - p) * span), dir: out ? dir : -dir };
+  const e = p + Math.sin(2 * Math.PI * p) * -0.08;  // eased at both walls, still 0 at one and 1 at the other
+  return { x: (dir > 0 ? e : 1 - e) * span, dir: out ? dir : -dir };
 }
+
+// A swimmer's body bends in a wave that runs from its head to its tail, and the tail swings most: the lift of column
+// i of a body `len` long with its head at column `head`.
+const ripple = (len, head, beat, amp) => i => {
+  const back = Math.abs(i - head) / (len - 1);
+  return Math.sin(beat - back * 3.2) * amp * back * back;
+};
 
 // Every dot of the sea at time t, in cells: [x, y, kind, tone, alpha]; the seats' names to write under their
 // jellyfish; and each creature's box, for the test that checks every creature is drawn whole.
 function seaDots(spec, fauna, cols, rows, t) {
   const dots = [], labels = [], parts = [];
   const put = (x, y, kind, tone, a) => { dots.push([x, y, kind, tone, a]); };
-  const map = (rowsOf, x0, y0, tone, a, part) => {
+  const map = (rowsOf, x0, y0, tone, a, part, bend) => {
     rowsOf.forEach((row, j) => {
       for (let i = 0; i < row.length; i++) {
-        const ch = row[i];
-        if (ch === '#') put(x0 + i, y0 + j, BRIGHT, tone, a);
-        else if (ch === '.') put(x0 + i, y0 + j, DIM, tone, a);
-        else if (ch === 'o') put(x0 + i, y0 + j, RING, tone, a);
+        const ch = row[i], y = y0 + j + (bend ? bend(i) : 0);
+        if (ch === '#') put(x0 + i, y, BRIGHT, tone, a);
+        else if (ch === '.') put(x0 + i, y, DIM, tone, a);
+        else if (ch === 'o') put(x0 + i, y, RING, tone, a);
       }
     });
     parts.push({ ...part, box: [x0, y0, x0 + rowsOf[0].length, y0 + rowsOf.length] });
@@ -154,39 +164,38 @@ function seaDots(spec, fauna, cols, rows, t) {
   let below = 0;
   spec.forEach((c, k) => {
     const sp = c.sp || 1, ph = k * 1.7, tone = TONES[c.tone] ? c.tone : 'faint', a = tone === 'faint' ? 0.78 : 0.95;
-    // it bobs about its slot, never past its own box's edge
+    // it swims in pulses: the bell contracts and lifts it a little, then opens while it sinks back; it drifts about
+    // its slot, never past its own box's edge
+    const beat = t * (tone === 'accent' ? 1.7 : 0.9) * sp + ph, pulse = Math.sin(beat);
     let [x0, y0, slack] = slots[k];
-    x0 = Math.max(0, Math.min(cols - JW, x0 + Math.round(Math.sin(t * 0.22 * sp + ph) * slack)));
-    y0 = Math.max(0, Math.min(rows - JH, y0 + Math.round(Math.sin(t * 0.35 * sp + ph))));
+    x0 = Math.max(0, Math.min(cols - JW, x0 + Math.sin(t * 0.22 * sp + ph) * slack));
+    y0 = Math.max(0, Math.min(rows - JH, y0 + Math.sin(t * 0.35 * sp + ph) * 0.7 - 0.3 * pulse));
     below = Math.max(below, y0 + JH);
-    // the bell: a solid dome, lit on its upper left and dim on its shaded side, over a frilled lip; it opens and
-    // closes as it swims
-    const pulse = Math.sin(t * (tone === 'accent' ? 1.7 : 0.9) * sp + ph);
-    const cx = x0 + 7, cy = y0 + 3.7, rx = 6.6 * (1 + 0.04 * pulse), ry = 3.8 * (1 - 0.05 * pulse);
+    // the bell: a dome lit on its upper left and shaded on the other side, over a frilled lip, with a soft edge that
+    // follows it as it swells and contracts
+    const cx = x0 + 7, cy = y0 + 3.7, rx = 6.6 * (1 + 0.07 * pulse), ry = 3.8 * (1 - 0.07 * pulse);
     for (let j = 0; j <= 4; j++) {
       for (let i = 0; i < JW; i++) {
         const dx = (x0 + i - cx) / rx, dy = (y0 + j - cy) / ry;
         if (dy > 0.1) continue;
-        const d = Math.hypot(dx, dy);
-        if (d > 1.04) continue;
-        const kind = j === 4 ? ((i + Math.floor(t * 0.8 * sp)) % 2 ? BRIGHT : DIM)
-          : dx * 0.55 + dy * 0.85 < -0.12 || (d > 0.8 && dy < -0.5) ? BRIGHT : DIM;
-        put(x0 + i, y0 + j, kind, tone, a);
+        const d = Math.hypot(dx, dy), soft = Math.min(1, (1.08 - d) / 0.2);
+        if (soft <= 0) continue;
+        if (j === 4) put(x0 + i, y0 + j, BRIGHT, tone, a * soft * (0.55 + 0.45 * Math.sin(i * 1.6 - beat * 1.3)));
+        else put(x0 + i, y0 + j, dx * 0.55 + dy * 0.85 < -0.12 || (d > 0.8 && dy < -0.5) ? BRIGHT : DIM, tone, a * soft);
       }
     }
-    // tentacles: a wave runs from root to tip, and the tips swing most
+    // tentacles: a wave runs from root to tip, the tips swing most, and they trail longer as the bell opens
     for (let q = 0; q < 5; q++) {
-      const len = 4 + Math.round(2 * hash(q, k, 1));
+      const len = 4 + 1.6 * hash(q, k, 1) - 0.4 * pulse;
       for (let s = 0; s < len; s++) {
-        const sway = Math.sin(t * 1.1 * sp - s * 0.8 + q * 1.3 + ph) * (0.3 + s * 0.28);
-        put(Math.round(cx - 5 + q * 2.5 + sway), y0 + 5 + s, s === len - 1 && q % 2 ? BRIGHT : DIM, tone,
-          a * (1 - s / (len * 2)));
+        const sway = Math.sin(beat * 0.65 - s * 0.8 + q * 1.3) * (0.3 + s * 0.3);
+        put(cx - 5 + q * 2.5 + sway, y0 + 5 + s, s >= len - 1 && q % 2 ? BRIGHT : DIM, tone, a * (1 - s / (len * 2)));
       }
     }
     // two heavier oral arms in the middle, the lit one bright
     for (let m = 0; m < 2; m++) {
       for (let s = 0; s < 5; s++) {
-        put(Math.round(cx - 1 + m * 2 + Math.sin(t * 0.7 * sp - s * 0.6 + m * 2 + ph) * (0.2 + s * 0.22)), y0 + 5 + s,
+        put(cx - 1 + m * 2 + Math.sin(beat * 0.4 - s * 0.6 + m * 2) * (0.2 + s * 0.22), y0 + 5 + s,
           m ? DIM : BRIGHT, tone, a * (1 - s / 7));
       }
     }
@@ -209,19 +218,20 @@ function seaDots(spec, fauna, cols, rows, t) {
     }
     parts.push({ kind: 'plankton', box: [cx, cy, cx, cy] });
   }
-  // the octopus on the sea floor, or where the page puts it in a small tank; it blinks and curls its arms
+  // the octopus on the sea floor, or where the page puts it in a small tank; it breathes, blinks and curls its arms
   if (f.octopus) {
     const o = f.octopus, tone = TONES[o.tone] ? o.tone : 'faint', a = tone === 'faint' ? 0.55 : 0.95;
     const ox = o.at ? Math.round(o.at[0] * cols - OW / 2) : 0;
     const oy = o.at ? Math.round(o.at[1] * rows - OH / 2) : rows - OH - floor;
     const x = Math.max(0, Math.min(cols - OW, ox)), y = Math.max(0, Math.min(rows - OH, oy));
+    const lift = 0.3 * (0.5 + 0.5 * Math.sin(t * 0.8));
     const head = t % 5.3 < 0.18 ? OCTOPUS.map(r => r.replace(/o/g, '.')) : OCTOPUS;
-    map(head, x + 1, y, tone, a, { kind: 'octopus' });
+    map(head, x + 1, y + lift, tone, a, { kind: 'octopus' }, i => 0.06 + Math.sin(t * 0.8 + i * 0.5) * 0.06);
     parts[parts.length - 1].box = [x, y, x + OW, y + OH];
     for (let m = 0; m < 5; m++) {
       const out = m < 2 ? -1 : m > 2 ? 1 : 0;
       for (let s = 0; s < 4; s++) {
-        put(Math.round(x + 2 + m * 2.2 + out * s * 0.5 + Math.sin(t * 0.9 - s * 0.9 + m * 1.7) * s * 0.3), y + 4 + s,
+        put(x + 2.4 + m * 2.1 + out * s * 0.5 + Math.sin(t * 0.9 - s * 0.9 + m * 1.7) * s * 0.2, y + 4 + s,
           s ? DIM : BRIGHT, tone, a * (1 - s * 0.15));
       }
     }
@@ -232,21 +242,24 @@ function seaDots(spec, fauna, cols, rows, t) {
   // The open water under the jellyfish and above the octopus, when there is room, else the whole water: the fish, the
   // school and the bacteria all swim there, so the middle of the reef is never empty while there is anything to show.
   const top = below + 4 < rows - OH - 6 ? below + 1 : 1, bottom = rows - OH - 3;
-  const depth = (n, h) => Math.max(1, Math.min(rows - h - 2, Math.round(top + hash(n, 9, 5) * Math.max(0, bottom - top - h))));
+  const depth = (n, h) => Math.max(1, Math.min(rows - h - 2, top + hash(n, 9, 5) * Math.max(0, bottom - top - h)));
   for (let n = 0; n < Math.min(9, f.fish || 0); n++) {  // a fish for each job running
     const w = FISH[0].length, { x, dir } = lap(n, t, cols, w, 2.2 + 1.4 * hash(n, 7, 3));
-    const y = depth(n, 3) + Math.round(Math.sin(t * 0.4 + n * 2) * 0.6);
-    map(dir > 0 ? FISH : flip(FISH), x, Math.max(0, Math.min(rows - 3, y)), 'accent', 0.95, { kind: 'fish' });
+    const y = depth(n, 3) + Math.sin(t * 0.4 + n * 2) * 0.6;
+    map(dir > 0 ? FISH : flip(FISH), x, Math.max(0.5, Math.min(rows - 3.5, y)), 'accent', 0.95, { kind: 'fish' },
+      ripple(w, dir > 0 ? w - 1 : 0, t * 6 + n, 0.45));
   }
   const school = Math.min(SCHOOL.length, f.school || 0);
-  if (school) {  // the jobs done today swim together, the first one leading
+  if (school) {  // the jobs done today swim together, the first one leading, each holding its place loosely
     const crew = SCHOOL.slice(0, school), lo = Math.min(...crew.map(([, dy]) => dy));
     const high = Math.max(...crew.map(([, dy]) => dy)) - lo + 3;
-    const back = Math.max(...crew.map(([dx]) => -dx)), w = back + MINNOW[0].length;
+    const back = Math.max(...crew.map(([dx]) => -dx)), w = back + MINNOW[0].length, mw = MINNOW[0].length;
     const { x, dir } = lap(31, t, cols, w, 1.1), y = Math.min(depth(31, high), Math.max(1, bottom - high)) - lo;
-    crew.forEach(([dx, dy]) => {
-      const mx = dir > 0 ? x + back + dx : x - dx;
-      map(dir > 0 ? MINNOW : flip(MINNOW), mx, Math.max(0, Math.min(rows - 3, y + dy)), 'accent', 0.75, { kind: 'minnow' });
+    crew.forEach(([dx, dy], m) => {
+      const mx = (dir > 0 ? x + back + dx : x - dx) + Math.sin(t * 0.9 + m * 2.1) * 0.8;
+      const my = y + dy + Math.sin(t * 0.7 + m * 1.3) * 0.5;
+      map(dir > 0 ? MINNOW : flip(MINNOW), Math.max(0, Math.min(cols - mw, mx)), Math.max(0.5, Math.min(rows - 3.5, my)),
+        'accent', 0.75, { kind: 'minnow' }, ripple(mw, dir > 0 ? mw - 1 : 0, t * 7 + m * 1.9, 0.35));
     });
   }
   // a colony for each job that failed today: red, the one thing that moves on its own here. Rods (a lit capsule of
@@ -277,7 +290,7 @@ function seaDots(spec, fauna, cols, rows, t) {
   if (f.eel) {  // the eel weaves back and forth just above the sand while the harness is being checked
     const lane = lap(47, t, cols - OW, EEL, 2.6), x = lane.x + OW, dir = lane.dir, base = rows - 3;
     for (let s = 0; s < EEL; s++) {
-      const ex = dir > 0 ? x + EEL - 1 - s : x + s, ey = base + Math.round(0.9 * Math.sin(s * 0.5 - t * 2.2));
+      const ex = dir > 0 ? x + EEL - 1 - s : x + s, ey = base + 0.9 * Math.sin(s * 0.5 - t * 2.2);
       put(ex, ey, s === 1 ? RING : s < 6 ? BRIGHT : DIM, 'accent', s < 6 ? 0.85 : 0.85 - s * 0.03);
       if (s > 3 && s < EEL - 2 && s % 2 === 0) put(ex, ey - 1, DIM, 'accent', 0.45);
     }
@@ -292,14 +305,42 @@ function seaFloor(dots, cols, rows, t, labels, parts) {
   for (let i = 0; i < cols; i++) {
     const h = hash(i, 3, 17);
     if (h > 0.45) put(i, rows - 1, DIM, 'sand', 0.35);
-    if (h > 0.93 && i > OW + 1) {
+    if (h > 0.93 && i > OW + 1 && i < cols - 2) {
       const tall = 2 + Math.floor(hash(i, 4, 9) * 3);
       for (let s = 1; s <= tall; s++) {
-        put(i + Math.round(Math.sin(t * 0.7 + i + s * 0.8) * 0.6 * s / tall), rows - 1 - s, s === tall ? BRIGHT : DIM, 'weed', 0.5);
+        put(i + Math.sin(t * 0.7 + i + s * 0.8) * 0.6 * s / tall, rows - 1 - s, s === tall ? BRIGHT : DIM, 'weed', 0.5);
       }
     }
   }
   return { dots, labels, parts };
+}
+
+// The weight each cell holds, per tone: a dot spreads its weight over the four cells around where it is, each share as
+// big as the dot is near that cell, so a creature half a cell along lights both cells by half and glides rather than
+// steps. Also the cells that hold an eye, and the specks of plankton, which are drawn as dots.
+function seaCells(dots, cols, rows) {
+  const cells = new Map(), eyes = new Map(), specks = [];
+  for (const [x, y, kind, tone, a] of dots) {
+    if (kind === FINE) { specks.push([x, y, tone, a]); continue; }
+    let m = cells.get(tone);
+    if (!m) cells.set(tone, m = new Map());
+    const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, w = WEIGHT[kind] * a;
+    const add = (ci, cj, share) => {
+      if (share <= 0 || ci < 0 || cj < 0 || ci >= cols || cj >= rows) return;
+      const at = cj * cols + ci;
+      m.set(at, (m.get(at) || 0) + w * share);
+    };
+    add(i, j, (1 - fx) * (1 - fy)); add(i + 1, j, fx * (1 - fy)); add(i, j + 1, (1 - fx) * fy); add(i + 1, j + 1, fx * fy);
+    if (kind === RING) eyes.set(Math.round(y) * cols + Math.round(x), tone);
+  }
+  return { cells, eyes, specks };
+}
+
+// The character for a cell's weight. `grain`, from 0 to 1 and steady for a while in each cell, moves it a step up or
+// down now and then, so a body of even weight keeps the texture of hand-set ASCII.
+function glyph(w, grain) {
+  const n = RAMP.length, k = Math.floor(Math.min(0.999, w / 1.2) * n) + (grain > 0.82 ? 1 : grain < 0.18 ? -1 : 0);
+  return RAMP[Math.max(0, Math.min(n - 1, k))];
 }
 // </sea>
 
@@ -312,15 +353,14 @@ function Tank(canvas) {
   const host = canvas.parentElement;
   if (!ctx || !host) return;
   let W = 0, H = 0, P = 6, Q = 11, cols = 0, rows = 0;
-  // The water and the dots' colours come from the page's theme (rh.css --ground and --sea-*), and change with it.
-  let ground = '#0b0e0e', tones = TONES, label = [128, 139, 136];
+  // The creatures' colours come from the page's theme (rh.css --sea-*), and change with it.
+  let tones = TONES, label = [128, 139, 136];
   function paint() {
     const css = getComputedStyle(document.documentElement);
     const rgb = (name, or) => {
       const v = css.getPropertyValue(name).trim().split(/\s+/).map(Number);
       return v.length === 3 && v.every(n => n >= 0 && n <= 255) ? v : or;
     };
-    ground = css.getPropertyValue('--ground').trim() || '#0b0e0e';
     tones = Object.fromEntries(Object.entries(TONES).map(([k, v]) => [k, rgb('--sea-' + k, v)]));
     label = rgb('--sea-label', [128, 139, 136]);
   }
@@ -344,41 +384,63 @@ function Tank(canvas) {
   function draw(t) {
     if (!cols || !rows) return;
     const { dots, labels } = seaDots(spec, fauna, cols, rows, t);
+    const { cells, eyes, specks } = seaCells(dots, cols, rows);
     const clear = clears();
-    ctx.clearRect(0, 0, W, H);
-    // one path per tone, size and alpha, so a frame is a few dozen fills however many dots it has
-    const groups = new Map(), rings = [];
-    for (const [x, y, kind, tone, alpha] of dots) {
-      let a = alpha;
+    const fade = (x, y) => {
+      let k = 1;
       for (const [x0, y0, x1, y1] of clear) {
         const o = Math.max(Math.max(x0 - x, 0, x - x1), Math.max(y0 - y, 0, y - y1) * 1.6);
-        if (o < 2) a *= 0.15 + 0.4 * o;
+        if (o < 2) k *= 0.15 + 0.4 * o;
       }
-      if (a < 0.04) continue;
-      const key = tone + '|' + kind + '|' + Math.round(a * 20);
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push([x, y]);
-      if (kind === RING) rings.push([x, y]);
+      return k;
+    };
+    const rgba = (rgb, a) => 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + a.toFixed(2) + ')';
+    ctx.clearRect(0, 0, W, H);
+    // One fill colour per tone and alpha, so a frame sets a few dozen colours however many cells it lights. A few of
+    // the heaviest cells sit in a faint lit square, as hand-set ASCII art does.
+    const groups = new Map(), lit = [];
+    for (const [tone, m] of cells) {
+      for (const [at, w] of m) {
+        if (w < 0.06) continue;
+        const x = at % cols, y = (at - x) / cols, eye = eyes.get(at) === tone;
+        const grain = hash(x, y, Math.floor(t * 0.7 + hash(x, y, 1) * 4));
+        const a = (eye ? 1 : Math.min(1, 0.3 + 0.7 * w)) * fade(x, y);
+        if (a < 0.04) continue;
+        const key = tone + '|' + Math.round(a * 20);
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push([x, y, eye ? 'o' : glyph(w, grain)]);
+        if (w > 0.95 && grain > 0.88) lit.push([x, y, tone, a]);
+      }
     }
+    for (const [x, y, tone, a] of lit) {
+      ctx.fillStyle = rgba(tones[tone], a * 0.14);
+      ctx.fillRect(x * P + 0.5, y * Q + 0.5, P - 1, Q - 1);
+    }
+    ctx.font = glyphSize(P, Q).toFixed(1) + 'px "Geist Mono", ui-monospace, monospace';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     for (const [key, list] of groups) {
-      const [tone, k, a] = key.split('|'), kind = +k, rgb = tones[tone];
-      ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + (a / 20).toFixed(2) + ')';
-      const r = dotRadius(kind, P);
-      ctx.beginPath();
-      for (const [x, y] of list) {
-        const px = kind === FINE ? x * P : (x + 0.5) * P, py = kind === FINE ? y * Q : (y + 0.5) * Q + (kind === DIM ? Q * 0.19 : 0);
-        ctx.moveTo(px + r, py); ctx.arc(px, py, r, 0, Math.PI * 2);
-      }
-      ctx.fill();
+      const [tone, a] = key.split('|');
+      ctx.fillStyle = rgba(tones[tone], a / 20);
+      for (const [x, y, ch] of list) ctx.fillText(ch, (x + 0.5) * P, (y + 0.5) * Q);
     }
-    if (rings.length) {  // an eye is a bright dot with the water showing through its middle
-      ctx.fillStyle = ground; ctx.beginPath();
-      for (const [x, y] of rings) { const px = (x + 0.5) * P, py = (y + 0.5) * Q; ctx.moveTo(px + P * 0.15, py); ctx.arc(px, py, P * 0.15, 0, Math.PI * 2); }
+    // plankton: specks, one path per alpha
+    const fine = new Map(), r = speck(P);
+    for (const [x, y, tone, alpha] of specks) {
+      const a = alpha * fade(x, y);
+      if (a < 0.04) continue;
+      const key = tone + '|' + Math.round(a * 20);
+      if (!fine.has(key)) fine.set(key, []);
+      fine.get(key).push([x, y]);
+    }
+    for (const [key, list] of fine) {
+      const [tone, a] = key.split('|');
+      ctx.fillStyle = rgba(tones[tone], a / 20);
+      ctx.beginPath();
+      for (const [x, y] of list) { ctx.moveTo(x * P + r, y * Q); ctx.arc(x * P, y * Q, r, 0, Math.PI * 2); }
       ctx.fill();
     }
     if (labels.length) {
       ctx.font = Math.max(9, Math.min(11, Q * 0.8)) + 'px "Geist Mono", ui-monospace, monospace';
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (const [x, y, name, tone] of labels) {
         ctx.fillStyle = 'rgba(' + (tone === 'faint' ? label : tones[tone]).join(', ') + ', .9)';
         ctx.fillText(name, x * P, y * Q);
@@ -929,6 +991,33 @@ function move(step) {
   list[i].focus({ preventScroll: true });
   (list[i].closest('.row, .ib-li') || list[i]).scrollIntoView({ block: 'nearest', behavior: calm.matches ? 'auto' : 'smooth' });
 }
+// <place> From here to </place> the code touches no page, so a test runs it in node.
+// Where a popover opens, given its button's box `at`, the box `room` it must stay inside (both {top, right, bottom,
+// left} in px), its size and its gap from the button: under the button when it fits there, else over it when there is
+// more room above; lined up with the button's left edge unless that runs past the room's right, then with its right
+// edge; and never taller than the side it opens on.
+function placePop(at, room, w, h, gap) {
+  const below = room.bottom - at.bottom - gap, above = at.top - room.top - gap;
+  const up = h > below && above > below;
+  return { up, right: at.left + w > room.right && at.right - w >= room.left, max: Math.max(80, Math.floor(up ? above : below) - 8) };
+}
+// </place>
+// Options opens inside what shows of the page: over its button when the composer sits low, as it does docked at the
+// foot of the sea, and scrolling within itself when even that side is short.
+function place(d) {
+  const body = $('.opts-body', d), s = $('summary', d);
+  if (!body || !s) return;
+  body.classList.remove('up', 'right'); body.style.maxHeight = '';
+  let room = { top: 0, right: innerWidth, bottom: innerHeight, left: 0 };
+  for (let el = d.parentElement; el && el !== document.body; el = el.parentElement) {
+    if (getComputedStyle(el).overflow === 'visible') continue;
+    const b = el.getBoundingClientRect();
+    room = { top: Math.max(room.top, b.top), right: Math.min(room.right, b.right), bottom: Math.min(room.bottom, b.bottom),
+      left: Math.max(room.left, b.left) };
+  }
+  const p = placePop(s.getBoundingClientRect(), room, body.offsetWidth, body.scrollHeight, 6);
+  body.classList.toggle('up', p.up); body.classList.toggle('right', p.right); body.style.maxHeight = p.max + 'px';
+}
 function closeOthers(keep) { for (const d of $$('details.act[open]')) if (d !== keep) d.open = false; }
 const field = d => $('input:not([type="hidden"]):not([type="checkbox"]), textarea', d);
 function activate(c) {
@@ -938,6 +1027,7 @@ function activate(c) {
 }
 document.addEventListener('toggle', e => {
   const d = e.target;
+  if (d instanceof HTMLDetailsElement && d.open && d.matches('.opts')) place(d);
   if (!(d instanceof HTMLDetailsElement) || !d.open || !d.matches('.act')) return;
   closeOthers(d);
   // Opened by mouse or key, the popover's first field takes focus so typing lands in it.

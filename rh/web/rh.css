@@ -276,7 +276,7 @@ a.ws-btn:hover { background: var(--raised); }
 .mc { grid-template-columns: minmax(0, 1fr) var(--rail); }
 .reef-page { grid-template-columns: minmax(0, 1fr) var(--reef); }
 .center { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-/* the sea: dark water the script draws its creatures on, in dots */
+/* the sea: dark water the script draws its creatures on, in characters */
 .reef { position: relative; border-left: 1px solid var(--rule); min-height: 0; overflow: hidden; }
 .tank-c { position: absolute; inset: 0; width: 100%; height: 100%; display: block; pointer-events: none; }
 [data-clear] { width: fit-content; max-width: 100%; }
@@ -330,7 +330,10 @@ a.ws-btn:hover { background: var(--raised); }
 .opts[open] > summary { background: var(--raised); color: var(--text); }
 .opts-body { position: absolute; z-index: 30; top: calc(100% + 6px); left: 0; width: 320px; display: grid; gap: 12px;
   padding: 14px; background: var(--raised); border: 1px solid var(--control); border-radius: var(--r-card);
-  animation: rise .16s var(--ease); }
+  animation: rise .16s var(--ease); overflow: auto; }
+/* the script opens it over the button when the composer sits low, and against its right edge near the window's */
+.opts-body.up { top: auto; bottom: calc(100% + 6px); }
+.opts-body.right { left: auto; right: 0; }
 .needs { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; }
 .needs label { display: flex; align-items: center; gap: 5px; font: 12px var(--mono); color: var(--text); }
 input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
@@ -345,6 +348,9 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 /* Under 640 px the first-run steps stack. */
 @container (max-width: 640px) {
   .c-hint { display: none; }
+  /* a narrow composer (the detail at the smallest window) puts its name, Options and send on a second line */
+  .c-row { flex-wrap: wrap; row-gap: 8px; }
+  .compose .name { flex: 1 1 140px; }
   .how .steps { grid-template-columns: minmax(0, 1fr); }
 }
 /* the /new page: the same composer, opened up */

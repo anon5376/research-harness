@@ -1,37 +1,38 @@
-# The phone's sea strip: each mutant brings back a way the strip's creatures ran together into flat stripes, or a cure
-# that changes the reef beside a desktop list, and the named tests must catch it.
-
-[[mutant]]
-name = "a bright dot fills 0.8 of its column at any size, so dots touch on a phone"
-file = "rh/web/app.js"
-find = "  return Math.min(P * 0.4, (P - GAP) / 2);"
-replace = "  return P * 0.4;"
-tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+# The sea's cells: each mutant brings back a way a strip's creatures ran together or flattened, or characters that do
+# not fit their cells, and the named test must catch it. (The dot-size mutants left with the dots, when the sea moved
+# to characters.)
 
 [[mutant]]
 name = "rows stretch to fill the strip's height"
 file = "rh/web/app.js"
 find = "  const P = seaPitch(W, H, n, sea), Q = P * LATTICE;"
 replace = "  const P = seaPitch(W, H, n, sea), Q = H / Math.max(1, Math.floor(H / (P * LATTICE)));"
-tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_seas_characters_fit_their_cells"]
 
 [[mutant]]
 name = "square cells: the row pitch is the column pitch"
 file = "rh/web/app.js"
 find = "  const P = seaPitch(W, H, n, sea), Q = P * LATTICE;"
 replace = "  const P = seaPitch(W, H, n, sea), Q = P;"
-tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+tests = ["tests.test_dashboard.DashboardTest.test_the_seas_characters_fit_their_cells"]
 
 [[mutant]]
-name = "a dim dot as big as a bright one"
+name = "characters wider than their column run together"
 file = "rh/web/app.js"
-find = "  if (kind === DIM) return P * 0.19;"
-replace = "  if (kind === DIM) return P * 0.4;"
-tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+find = "const glyphSize = (P, Q) => Math.min(Q * 0.9, P * 0.95 / ADVANCE);"
+replace = "const glyphSize = (P, Q) => Q * 0.9;"
+tests = ["tests.test_dashboard.DashboardTest.test_the_seas_characters_fit_their_cells"]
 
 [[mutant]]
-name = "a gap so wide that the reef's dots shrink too"
+name = "characters too small to read beside the list"
 file = "rh/web/app.js"
-find = "const GAP = 1.2;"
-replace = "const GAP = 3;"
-tests = ["tests.test_dashboard.DashboardTest.test_a_phone_draws_the_sea_smaller_not_flatter"]
+find = "const glyphSize = (P, Q) => Math.min(Q * 0.9, P * 0.95 / ADVANCE);"
+replace = "const glyphSize = (P, Q) => Math.min(Q * 0.6, P * 0.95 / ADVANCE);"
+tests = ["tests.test_dashboard.DashboardTest.test_the_seas_characters_fit_their_cells"]
+
+[[mutant]]
+name = "specks of plankton as wide as their column"
+file = "rh/web/app.js"
+find = "const speck = P => Math.max(0.8, P * 0.16);"
+replace = "const speck = P => P * 0.5;"
+tests = ["tests.test_dashboard.DashboardTest.test_the_seas_characters_fit_their_cells"]

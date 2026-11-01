@@ -978,13 +978,20 @@ for (const [W, H] of [[320, 760], [320, 1100], [860, 112], [390, 112]]) {
   const { cols, rows } = seaGrid(W, H, spec.length, true);
   for (const t of [0, 2.7, 9.4, 31.1, 77.7]) {
     const { dots, parts } = seaDots(spec, fauna, cols, rows, t);
-    const outside = dots.filter(d => d[2] !== FINE && (d[0] < 0 || d[1] < 0 || d[0] >= cols || d[1] >= rows)).length;
+    // a dot's weight reaches the cell after the one it is in, so the last cell it may stand in is cols - 1
+    const outside = dots.filter(d => d[2] !== FINE && (d[0] < 0 || d[1] < 0 || d[0] > cols - 1 || d[1] > rows - 1)).length;
     const red = dots.filter(d => d[3] === 'red' && d[2] !== FINE).length;
     out.push({ W, H, cols, rows, t, parts, outside, red, first: dots.slice(0, 60) });
   }
 }
 const one = seaDots([spec[0]], null, 40, 20, 3);
-console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.parts }));
+// a floor whose last column grows a weed: its sway must stay inside the tank
+const edge = Array.from({ length: 400 }, (_, c) => c).find(c => c > 40 && hash(c - 1, 3, 17) > 0.93);
+let weeds = 0;
+for (const t of [0, 1.3, 2.6, 3.9]) {
+  weeds += seaFloor([], edge, 40, t, [], []).dots.filter(d => d[0] < 0 || d[0] > edge - 1).length;
+}
+console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.parts, weeds }));
 """
         r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -992,6 +999,7 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
         for name, rows in got["maps"].items():
             self.assertEqual(len({len(row) for row in rows}), 1, name)
         self.assertEqual([p["kind"] for p in got["alone"]], ["jelly"])  # a job's head: its seat, nothing else
+        self.assertEqual(got["weeds"], 0)
         for frame in got["out"]:
             kinds = [p["kind"] for p in frame["parts"]]
             with self.subTest(size=(frame["W"], frame["H"]), t=frame["t"]):
@@ -1000,7 +1008,7 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
                 if frame["rows"] > 30:  # the reef has the whole sea; a strip, the seats and the octopus
                     self.assertEqual([kinds.count(k) for k in ("fish", "minnow", "bacteria", "eel")], [3, 5, 2, 1])
                     # Big enough to read as animals: a fish 16 cells long, a colony at least 8 lit dots.
-                    self.assertTrue(all(p["box"][2] - p["box"][0] >= 16 for p in frame["parts"] if p["kind"] == "fish"))
+                    self.assertTrue(all(p["box"][2] - p["box"][0] >= 16 - 1e-9 for p in frame["parts"] if p["kind"] == "fish"))
                     self.assertGreaterEqual(frame["red"], 8 * 2)
                     # They swim in the open water between the lowest jellyfish and the octopus.
                     floor = min(p["box"][1] for p in frame["parts"] if p["kind"] == "octopus")
@@ -1021,16 +1029,15 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
         self.assertGreater(len({json.dumps(f["first"]) for f in got["out"] if f["W"] == 320}), 1)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
-    def test_a_phone_draws_the_sea_smaller_not_flatter(self):
-        # A phone's strip (357 x 111 px under a 375 px screen) once drew bright dots 0.7 px apart, and each creature
-        # ran together into flat stripes. Rows stretched to fill the strip, or dots that touch, must fail; so must a
-        # cure that shrinks the dots of the reef beside a desktop list.
+    def test_the_seas_characters_fit_their_cells(self):
+        # Rows stretched to fill a tank, characters wider than their column (neighbours run together), characters too
+        # small to read beside the list, or specks of plankton that touch, must fail.
         block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <sea>"):dashboard.SCRIPT.index("// </sea>")]
         probe = block + """
 const out = [];
-for (const [W, H] of [[357, 111], [390, 112], [860, 112], [320, 760], [320, 1100]]) {
+for (const [W, H] of [[357, 111], [390, 112], [860, 112], [320, 760], [320, 1100], [1100, 900]]) {
   const { P, Q } = seaGrid(W, H, 6, true);
-  out.push({ W, H, P, Q, bright: dotRadius(BRIGHT, P), dim: dotRadius(DIM, P), fine: dotRadius(FINE, P), LATTICE });
+  out.push({ W, H, P, Q, size: glyphSize(P, Q), speck: speck(P), ADVANCE, LATTICE });
 }
 console.log(JSON.stringify(out));
 """
@@ -1039,11 +1046,81 @@ console.log(JSON.stringify(out));
         for g in json.loads(r.stdout):
             with self.subTest(size=(g["W"], g["H"])):
                 self.assertAlmostEqual(g["Q"] / g["P"], g["LATTICE"], places=9)  # one cell shape at every size
-                for kind in ("bright", "dim", "fine"):  # a dot clear of the dot beside it, by at least 1 px
-                    self.assertGreaterEqual(g["P"] - 2 * g[kind], 1, kind)
-                self.assertGreater(g["bright"], g["dim"])
-                if g["H"] > 700:  # the reef: dots as big as before
-                    self.assertAlmostEqual(g["bright"], g["P"] * 0.4, places=9)
+                self.assertLessEqual(g["size"] * g["ADVANCE"], g["P"] * 0.95 + 1e-9)  # a character within its column
+                self.assertLessEqual(g["size"], g["Q"] * 0.9 + 1e-9)  # and within its row
+                self.assertGreaterEqual(g["P"] - 2 * g["speck"], 1)  # a speck clear of the next by a pixel
+                if g["H"] > 700:  # the reef: characters big enough to read
+                    self.assertGreaterEqual(g["size"], 10)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_sea_moves_in_fractions_of_a_cell(self):
+        # A creature that snaps to whole cells (it steps rather than glides), one that jumps a cell or more between two
+        # frames, a fish whose body stays rigid, weight that a dot between cells loses or puts in only one cell, or
+        # characters that do not grow heavier with weight, must fail.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <sea>"):dashboard.SCRIPT.index("// </sea>")]
+        probe = block + """
+const spec = ['a', 'b', 'c'].map((name, k) => ({ name, tone: ['faint', 'accent', 'amber'][k], fx: 0.5, fy: 0.5, sp: 1 }));
+const fauna = { fish: 2, school: 4, bacteria: 1, plankton: 1, eel: true, octopus: { tone: 'amber' }, floor: true };
+const { cols, rows } = seaGrid(900, 900, 3, true);
+const frames = [];
+for (let k = 0; k < 44; k++) frames.push(seaDots(spec, fauna, cols, rows, 10 + k * FRAME / 1000).parts);
+const lone = [];
+for (const t of [1, 2.5, 4]) {
+  lone.push(seaDots([], { fish: 1, floor: true }, 120, 60, t).dots.filter(d => d[3] === 'accent' && d[2] !== FINE)
+    .map(d => d[1]));
+}
+const split = seaCells([[3.25, 2, BRIGHT, 'accent', 1]], 10, 10).cells.get('accent');
+const ramp = [0.06, 0.2, 0.4, 0.6, 0.8, 1, 1.2].map(w => RAMP.indexOf(glyph(w, 0.5)));
+console.log(JSON.stringify({ frames, lone, split: [...split.entries()], ramp }));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        swimmers = ("jelly", "fish", "eel")
+        for before, after in zip(got["frames"], got["frames"][1:]):
+            self.assertEqual([p["kind"] for p in before], [p["kind"] for p in after])
+            for p, q in zip(before, after):
+                if p["kind"] in swimmers:
+                    self.assertLess(abs(q["box"][0] - p["box"][0]), 0.5, (p, q))
+                    self.assertLess(abs(q["box"][1] - p["box"][1]), 0.5, (p, q))
+        for kind in (*swimmers, "minnow"):
+            corners = [c for parts in got["frames"] for p in parts if p["kind"] == kind for c in p["box"][:2]]
+            self.assertTrue(any(abs(c - round(c)) > 0.05 for c in corners), kind)  # between cells, not on them
+            self.assertGreater(len({json.dumps(c) for c in corners}), 2, kind)  # and it moves
+        for ys in got["lone"]:  # one fish's body: its columns lifted by different amounts
+            self.assertGreater(len({round(y - int(y), 3) for y in ys}), 3)
+        self.assertEqual(sorted((at, round(w, 9)) for at, w in got["split"]), [(23, 0.75), (24, 0.25)])
+        self.assertEqual(got["ramp"], sorted(got["ramp"]))
+        self.assertLess(got["ramp"][0], got["ramp"][-1])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_options_opens_inside_the_window(self):
+        # Options opening under a composer docked at the window's foot (cut off by the bottom edge), past the right
+        # edge of a narrow window, or taller than the side it opens on; a script that never places it; or a composer
+        # row that runs past a narrow detail instead of wrapping, must fail.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <place>"):dashboard.SCRIPT.index("// </place>")]
+        probe = block + """
+const win = { top: 0, right: 1024, bottom: 640, left: 0 };
+console.log(JSON.stringify([
+  placePop({ top: 600, bottom: 630, left: 900, right: 970 }, win, 320, 250, 6),
+  placePop({ top: 100, bottom: 130, left: 100, right: 170 }, win, 320, 250, 6),
+  placePop({ top: 140, bottom: 170, left: 100, right: 170 }, { ...win, bottom: 300 }, 320, 250, 6),
+]));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        foot, head, short = json.loads(r.stdout)
+        self.assertEqual(foot, {"up": True, "right": True, "max": 586})  # over the button, against its right edge
+        self.assertEqual(head, {"up": False, "right": False, "max": 496})  # under it, from its left edge
+        self.assertEqual(short, {"up": True, "right": False, "max": 126})  # the roomier side, scrolling within
+        rule = lambda sel: dashboard.STYLE.split(sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("bottom: calc(100% + 6px)", rule(".opts-body.up"))
+        self.assertIn("top: auto", rule(".opts-body.up"))
+        self.assertIn("right: 0", rule(".opts-body.right"))
+        self.assertIn("overflow: auto", rule(".opts-body"))
+        self.assertIn("d.matches('.opts')) place(d);", dashboard.SCRIPT)
+        narrow = dashboard.STYLE.split("@container (max-width: 640px) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("flex-wrap: wrap", narrow.split(".c-row {", 1)[1].split("}", 1)[0])
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):

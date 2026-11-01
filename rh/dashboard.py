@@ -274,8 +274,8 @@ def _creature(name, tone, k, busy=1, at=None):
 
 
 def _tank(creatures, key, fauna=None):
-    """The canvas the client draws the sea on, in dots; it draws nothing without the script. `fauna` is the rest of the
-    sea life (see _fauna)."""
+    """The canvas the client draws the sea on, in characters; it draws nothing without the script. `fauna` is the rest
+    of the sea life (see _fauna)."""
     data = _text(json.dumps(creatures, separators=(",", ":")))
     life = f' data-fauna="{_text(json.dumps(fauna, separators=(",", ":")))}"' if fauna else ""
     return (f'<canvas class="tank-c" data-tank data-creatures="{data}"{life} data-region="{key}" data-still '

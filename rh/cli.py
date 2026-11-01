@@ -12,7 +12,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from rh import __version__, bundle, collect, config, contract, envspec, gitx, lease, protocol, seats
+from rh import __version__, bundle, chat, collect, config, contract, envspec, gitx, lease, protocol, seats
 from rh.ledger import LIVE, TERMINAL, Ledger, LedgerError
 
 # legacy CLI task ids (task_e_...) and the UUIDs the new environment system shows in its task URLs
@@ -91,6 +91,14 @@ def main(argv=None):
     c = cs.add_parser("attach", help="record the task id of a job launched in the web composer")
     c.add_argument("id")
     c.add_argument("task_id", nargs="?")
+
+    p = sub.add_parser("chat", help="prompts and replies for GPT Pro jobs handed to a person")
+    cs = p.add_subparsers(dest="chat_cmd", required=True)
+    c = cs.add_parser("prompt", help="print the brief to paste into ChatGPT")
+    c.add_argument("id")
+    c = cs.add_parser("reply", help="save ChatGPT's reply as the job's result")
+    c.add_argument("id")
+    c.add_argument("file", help="a UTF-8 reply file, or - for stdin")
 
     p = sub.add_parser("land", help="commit a done cloud job's diff on local branch cloud/<job> (never pushes)")
     p.add_argument("id")
@@ -182,6 +190,26 @@ def cmd_job(args, cfg):
             raise ValueError("--sha must be a full 40-hex commit")
     led.add_job(spec, pinned_sha=sha)
     print(f"added {spec['id']} ({spec['kind']}); the supervisor preflights it on its next tick")
+    return 0
+
+
+def cmd_chat(args, cfg):
+    led = _ledger(cfg)
+    if args.chat_cmd == "prompt":
+        job = led.job(args.id)
+        if job is None:
+            raise ValueError(f"no job {args.id}")
+        if job["spec"]["kind"] != "gpt-chat":
+            raise ValueError("only a gpt-chat job has a chat prompt")
+        print(chat.prompt(job["spec"]), end="")
+    else:
+        if args.file == "-":
+            text = sys.stdin.read()
+        else:
+            with Path(args.file).open(encoding="utf-8", newline="") as file:
+                text = file.read()
+        chat.save_reply(cfg, led, args.id, text, time.time())
+        print(f"saved reply for {args.id}; done")
     return 0
 
 
@@ -558,4 +586,4 @@ def cmd_config(args, cfg):
 COMMANDS = {"job": cmd_job, "goal": cmd_goal, "status": cmd_status, "inbox": cmd_inbox, "stop": cmd_stop, "resume": cmd_resume,
             "supervise": cmd_supervise, "cloud": cmd_cloud, "land": cmd_land, "env": cmd_env, "doctor": cmd_doctor,
             "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve,
-            "seats": cmd_seats}
+            "seats": cmd_seats, "chat": cmd_chat}

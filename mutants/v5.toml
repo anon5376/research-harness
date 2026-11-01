@@ -1,14 +1,8 @@
 # v5: each mutant breaks one claim of look v5 (a compact Today, the sea beside the list, one word for a job held for
 # its environment, the failed check first), and the named tests must catch it.
 
-[[mutant]]
-name = "the composer stops being the only thing above Needs you"
-file = "rh/dashboard.py"
-find = '''    return (_top(ctx, when, _tally(ctx, jobs)) + feedback + f'<div class="page reef-page"><div class="center">{strip}'
-            f'<section class="jobs" aria-label="Jobs">{listed}</section></div>{_reef(ctx, view, jobs)}</div>')'''
-replace = '''    return (_top(ctx, when, _tally(ctx, jobs)) + feedback + f'<div class="page reef-page"><div class="center">{strip}'
-            f'{_reef(ctx, view, jobs)}<section class="jobs" aria-label="Jobs">{listed}</section></div></div>')'''
-tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+# Look v6 (1 Nov): the founder dropped the phone layout and narrow windows, and the lane cuts long titles
+# to one line; the mutants for those claims went with them: the composer stops being the only thing above Needs you; below 1180 px the sea goes back over the list.
 
 [[mutant]]
 name = "the composer opens three lines tall"
@@ -22,13 +16,6 @@ name = "the composer box is drawn three lines tall before you type"
 file = "rh/web/rh.css"
 find = "min-height: 30px; height: 30px;"
 replace = "min-height: 74px; height: 74px;"
-tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
-
-[[mutant]]
-name = "below 1180 px the sea goes back over the list"
-file = "rh/web/rh.css"
-find = "  .reef { position: relative; height: 112px; border-left: 0; border-top: 1px solid var(--rule); }"
-replace = "  .reef { order: -1; position: relative; height: 112px; border-left: 0; border-top: 1px solid var(--rule); }"
 tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
 
 [[mutant]]

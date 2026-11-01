@@ -16,7 +16,7 @@ from rh.adapters.codex_cloud import RouteUnavailable
 from rh.config import REPO
 from rh.ledger import LIVE
 
-CLOUD, LOCAL = "codex-cloud", "local-shell"
+CLOUD, LOCAL, CHAT = "codex-cloud", "local-shell", "gpt-chat"
 PRE = {"draft", "waiting", "held", "ready"}
 _TARGET = {"ready": "ready", "wait": "waiting", "hold": "held", "operator": "held"}
 ENV_RECHECK = 600  # while the CLI cannot see the environment, ask it again (read-only) every 10 minutes
@@ -88,7 +88,9 @@ class Supervisor:
     def recover(self):
         """Jobs left in `launching` by a supervisor that died mid-launch. Call only while holding single_instance."""
         for j in self.led.jobs(states={"launching"}):
-            if j["spec"]["kind"] == LOCAL:
+            if j["spec"]["kind"] == CHAT:
+                self._chat_handoff(j)
+            elif j["spec"]["kind"] == LOCAL:
                 runner = self.home / "jobs" / j["id"] / "runner.json"
                 pid = json.loads(runner.read_text(encoding="utf-8"))["pid"] if runner.is_file() else None
                 if pid:
@@ -181,6 +183,9 @@ class Supervisor:
                 budget -= 1
                 if self._isolated(j, self._launch_cloud):
                     s["launched"] += 1
+            elif route == CHAT:
+                self.led.set_state(j["id"], "launching")
+                self._isolated(j, self._chat_handoff)
             elif self._isolated(j, self._launch_local) is not None:
                 s["launched"] += 1
 
@@ -285,6 +290,12 @@ class Supervisor:
                                            f"environment {env}, then rh cloud attach {jid} <task_id>",
                            route="codex-cloud-web")
         self._inbox("web-launch", f"launch {jid} in the web composer, then rh cloud attach {jid} <task_id>", jid, why)
+
+    def _chat_handoff(self, j):
+        detail = "Waiting for the reply from ChatGPT"
+        self.led.set_state(j["id"], "handoff", detail, route="chat")
+        model = j["spec"]["model"]["requested"]
+        self._inbox("chat", f"Ask ChatGPT ({model}): copy the prompt, paste its reply", j["id"], detail)
 
     def _launch_local(self, j):
         jid, spec = j["id"], j["spec"]

@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 
 from rh import seats
 
-KINDS = ("codex-cloud", "local-shell")
+KINDS = ("codex-cloud", "local-shell", "gpt-chat")
 CAPABILITIES = ("commit", "push", "git", "python", "net", "loopback", "sysctl", "gpu", "browser")
 JOB_ID_RE = re.compile(r"^(?!.*\.\.)(?!.*(?:\.|\.lock)$)[a-z0-9][a-z0-9._-]{0,62}\Z")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
@@ -85,8 +85,9 @@ def normalize(raw):
     spec.setdefault("write_root", f"runs/{jid}/")
     if not spec["write_root"].endswith("/"):
         spec["write_root"] += "/"
-    if spec["kind"] == "codex-cloud" and spec["write_root"] != f"runs/{jid}/":
-        raise ContractError("cloud jobs write to runs/<id>/; put other paths in write_paths")
+    if spec["kind"] in ("codex-cloud", "gpt-chat") and spec["write_root"] != f"runs/{jid}/":
+        label = "cloud" if spec["kind"] == "codex-cloud" else "chat"
+        raise ContractError(f"{label} jobs write to runs/<id>/; put other paths in write_paths")
     spec.setdefault("write_paths", [])
     spec.setdefault("after", [])
     spec.setdefault("inputs", [])
@@ -105,7 +106,14 @@ def normalize(raw):
     spec.setdefault("operator_facing", False)
     spec.setdefault("card", {})
     spec.setdefault("model", {})
-    spec.setdefault("accept", "")
+    if spec["kind"] == "gpt-chat":
+        if "command" in spec:
+            raise ContractError("a chat job has no command")
+        if "accept" in spec:
+            raise ContractError("a chat job has no check: its reply is the result")
+        spec["model"] = {"requested": "gpt-6.1-sol-pro", **spec["model"]}
+    else:
+        spec.setdefault("accept", "")
     spec.setdefault("timeout_min", 120)
     if spec["kind"] == "local-shell":
         cmd = spec.get("command")
@@ -139,7 +147,7 @@ def preflight(spec, caps, policy, view):
         except ValueError as e:
             holds.append(f"seats.toml: {e}")
     holds += _root_holds(spec, view)
-    steps = operator_steps(spec["brief"]) + operator_steps(spec["accept"])  # accept runs here for every kind
+    steps = operator_steps(spec["brief"]) + operator_steps(spec.get("accept", ""))
     if kind == "local-shell":
         steps += operator_steps(" ".join(spec["command"]))
     for up in spec["after"]:

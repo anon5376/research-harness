@@ -1,5 +1,8 @@
 # Look v3: each mutant breaks one claim the new look makes, and the named tests must catch it.
 
+# Look v6 (1 Nov): the founder dropped the phone layout and narrow windows, and the lane cuts long titles
+# to one line; the mutants for those claims went with them: the phone hides the reason; phone controls are 32 px tall; the toast's close button left out of the phone rule; the folded output's summary left out of the phone rule.
+
 [[mutant]]
 name = "the serif route serves the mono file"
 file = "rh/serve.py"
@@ -40,7 +43,7 @@ name = "faint text falls under 4.5:1"
 file = "rh/web/rh.css"
 find = "--faint: #808b88;"
 replace = "--faint: #6c7673;"
-tests = ["tests.test_dashboard.DashboardTest.test_text_contrast_on_the_dark_surfaces"]
+tests = ["tests.test_dashboard.DashboardTest.test_text_contrast_in_both_schemes"]
 
 [[mutant]]
 name = "a failure is drawn in teal"
@@ -223,20 +226,6 @@ replace = ".row .sub { grid-column: 3; grid-row: 1;"
 tests = ["tests.test_dashboard.DashboardTest.test_rows_say_why_under_the_title"]
 
 [[mutant]]
-name = "the phone hides the reason"
-file = "rh/web/rh.css"
-find = "  .row .where { display: none; }"
-replace = "  .row .where, .row .sub { display: none; }"
-tests = ["tests.test_dashboard.DashboardTest.test_rows_say_why_under_the_title"]
-
-[[mutant]]
-name = "phone controls are 32 px tall"
-file = "rh/web/rh.css"
-find = '  details.fold summary { min-height: 44px; }'
-replace = '  details.fold summary { min-height: 32px; }'
-tests = ["tests.test_dashboard.DashboardTest.test_phone_controls_are_a_thumb_tall"]
-
-[[mutant]]
 name = "a done job's log is left open"
 file = "rh/dashboard.py"
 find = """        body = (f'<details class="fold"><summary>"""
@@ -284,23 +273,6 @@ file = "rh/dashboard.py"
 find = '            hit = next((i for i in view.get("inbox", []) if i.get("id") == pick), None)'
 replace = '            hit = None'
 tests = ["tests.test_dashboard.DashboardTest.test_cloud_setup_is_one_tap_from_the_job_list"]
-
-[[mutant]]
-name = "the toast's close button left out of the phone rule"
-file = "rh/web/rh.css"
-find = '.icon-btn, .send, .toast .x { min-width: 44px; min-height: 44px; }'
-replace = '.icon-btn, .send { min-width: 44px; min-height: 44px; }'
-tests = ["tests.test_dashboard.DashboardTest.test_phone_controls_are_a_thumb_tall"]
-
-[[mutant]]
-name = "the folded output's summary left out of the phone rule"
-file = "rh/web/rh.css"
-find = """.tabs [role="tab"],
-  details.fold summary { min-height: 44px; }"""
-replace = """.tabs [role="tab"] { min-height: 44px; }"""
-tests = ["tests.test_dashboard.DashboardTest.test_phone_controls_are_a_thumb_tall"]
-
-# Look v3.2: the five critique findings left open, and the jellyfish beside the composer.
 
 [[mutant]]
 name = "v3.2: the job's heading is cut at 100 characters again"

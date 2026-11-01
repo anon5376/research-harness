@@ -1,7 +1,7 @@
 [[mutant]]
 name = "accept is not scanned"
 file = "rh/contract.py"
-find = 'operator_steps(spec["brief"]) + operator_steps(spec["accept"])'
+find = 'operator_steps(spec["brief"]) + operator_steps(spec.get("accept", ""))'
 replace = 'operator_steps(spec["brief"])'
 tests = ["tests.test_hardening.OperatorTest", "tests.test_contract.PreflightTest"]
 

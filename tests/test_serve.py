@@ -437,6 +437,38 @@ class ServeTest(unittest.TestCase):
             self.assertNotIn(forbidden, app)
         self.assertEqual(app.count("<script"), 1)
 
+    def test_no_served_page_loads_anything_from_off_the_machine(self):
+        # D5: a page that loads a script, style, font or image from anywhere but this server, a second script, or a
+        # link off the machine other than the Codex pages and ChatGPT (opened in the browser) must fail.
+        self.job()
+        with self.ledger() as led:
+            led.add_job(contract.normalize({"id": "chat-job", "kind": "gpt-chat", "brief": "Compare two designs."}))
+            led.set_state("chat-job", "ready")
+            led.set_state("chat-job", "launching")
+            led.set_state("chat-job", "handoff", "Waiting for the reply from ChatGPT", route="chat")
+            item, _ = led.inbox_add("chat", "Ask ChatGPT: copy the prompt, paste its reply", job="chat-job")
+        allowed = ("https://chatgpt.com/codex", "https://chatgpt.com/")
+        links = set()
+        for path in ("/", "/new", "/inbox", f"/inbox/{item}", "/job/web-job", "/job/chat-job", "/actions"):
+            code, _, page = self.request(path)
+            self.assertEqual(code, 200, path)
+            for tag in re.findall(r"<script\b[^>]*>", page):
+                self.assertEqual(re.findall(r'src="([^"]*)"', tag), ["/app.js"], path)
+            self.assertLessEqual(page.count("<script"), 1, path)
+            for attr, url in re.findall(r'\b(src|href|action|srcset|poster|data)="([^"]*)"', page):
+                if not url.startswith(("/", "#", "?")) and url:
+                    self.assertEqual(attr, "href", (path, url))
+                    self.assertTrue(url == allowed[1] or url.startswith(allowed[0]), (path, url))
+                    links.add(url)
+            self.assertNotRegex(page, r"url\(\s*['\"]?(https?:)?//", path)
+            self.assertNotRegex(page, r"@import", path)
+            for url in re.findall(r"https?://[^\s\"'<>)]+", page):
+                self.assertTrue(url.startswith(allowed), (path, url))
+        self.assertEqual({u.split("/")[2] for u in links}, {"chatgpt.com"})  # both outside links were on show
+        self.assertTrue(any(u.startswith(allowed[0]) for u in links) and allowed[1] in links)
+        app = self.request("/app.js", token=False)[2]
+        self.assertNotRegex(app, r"https?://|fetch\(\s*['\"`]//|new WebSocket|importScripts")
+
     def test_post_media_type_size_and_duplicate_tokens(self):
         self.assertEqual(self.request("/tick", raw=urlencode({"t": self.token}).encode(),
                                      headers={"Content-Type": "application/json"})[0], 415)

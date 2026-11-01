@@ -48,12 +48,12 @@ v1.0.0 is the first release that passes every check below. Until then: local com
   - On this Mac, the installed .dmg app takes one web-route job through its forms alone: add, prompt, attach, harvest (one by patch, one by bundle), collect, land. The job ends `done` on a `cloud/<job>` branch.
   - On Windows, the CI smoke run starts the frozen .exe headless, and `rh serve` answers `/` with 200 when given the token and 403 without it.
   - `rh --version` equals the tag; a CI step fails the release otherwise.
-- **Designed**
+- **Designed** (the founder's ruling of 1 Nov wins over this plan where they differ: v1.0.0 is a desktop app; phones and narrow windows are out of it; the layout is look v6, recorded in `briefs/v6-look.md`)
   - Claude's design pass covers the dashboard and every app screen.
-  - Screenshots exist at 375 px and 1280 px, in light and dark.
-  - At 375 px there is no horizontal scroll (scrollWidth ≤ clientWidth, measured in a browser).
-  - Body text contrast is at least 4.5:1, computed.
-  - The pages carry no scripts and no external URLs.
+  - Screenshots exist at 1280 px and 1600 px wide, in light and dark. Desktop only.
+  - The light theme is the dark one inverted: the same steps of grey turned over and each hue darkened.
+  - Body text contrast is at least 4.5:1 in both themes, computed.
+  - The pages load nothing from off the machine: no third-party scripts, styles or fonts, and no requests beyond 127.0.0.1. The one script is the same-origin /app.js. The only external links are the user's Codex task pages and ChatGPT (for GPT Pro chats), which open in the browser. A test scans every served page for it.
   - The founder looks at the screenshots and says yes. That one is a manual gate: "designed" is the founder's call. design-critic is not used, because it runs Astra.
 - **Shipped**
   - The release carries two .dmg files, one .exe and the source archive.

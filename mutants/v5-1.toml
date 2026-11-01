@@ -3,6 +3,9 @@
 # by the job's title, bigger creatures in the open water, one left edge for the check loop), and the named tests must
 # catch it.
 
+# Look v6 (1 Nov): the founder dropped the phone layout and narrow windows, and the lane cuts long titles
+# to one line; the mutants for those claims went with them: a long title is cut in the list; below 1180 px the sea keeps a column beside the list; the phone's composer shows all its controls before it is used; the phone's composer folds the moment focus leaves it.
+
 [[mutant]]
 name = "every run of a repeated failure is its own row again"
 file = "rh/dashboard.py"
@@ -94,34 +97,6 @@ name = "the send arrow is lit with nothing to send"
 file = "rh/web/rh.css"
 find = ".composer:has(.c-text:placeholder-shown) .send { background: var(--raised); border-color: var(--control); }"
 replace = ".composer:has(.c-text:placeholder-shown) .send { background: var(--text); border-color: var(--text); }"
-tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
-
-[[mutant]]
-name = "a long title is cut in the list"
-file = "rh/web/rh.css"
-find = ".row .name { grid-column: 2; grid-row: 1; color: var(--text); line-height: 20px; overflow-wrap: anywhere; }"
-replace = ".row .name { grid-column: 2; grid-row: 1; color: var(--text); line-height: 20px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }"
-tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
-
-[[mutant]]
-name = "below 1180 px the sea keeps a column beside the list"
-file = "rh/web/rh.css"
-find = "  .reef-page { grid-template-columns: minmax(0, 1fr); }  /* the sea leaves"
-replace = "  .reef-page { grid-template-columns: minmax(0, 1fr) 248px; }  /* the sea leaves"
-tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
-
-[[mutant]]
-name = "the phone's composer shows all its controls before it is used"
-file = "rh/web/rh.css"
-find = "  .c-strip .composer:not(:focus-within):not([data-open]):has(.c-text:placeholder-shown) > :is(.c-row, .cmd) { display: none; }"
-replace = ""
-tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
-
-[[mutant]]
-name = "the phone's composer folds the moment focus leaves it"
-file = "rh/web/app.js"
-find = "  if (form) { clearTimeout(form.shut); form.dataset.open = ''; }"
-replace = "  if (form) clearTimeout(form.shut);"
 tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
 
 [[mutant]]

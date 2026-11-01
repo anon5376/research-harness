@@ -264,7 +264,7 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("@font-face", page)
         self.assertIn("color-scheme: dark", page)
         self.assertIn("overflow-wrap", page)
-        self.assertIn("max-width: 860px", page)
+        self.assertIn("min-width: 1024px", page)
         parsed = Page(page)
         tags = [tag for tag, _ in parsed.tags]
         for tag in ("html", "head", "title", "style", "body", "aside", "main"):
@@ -278,19 +278,25 @@ class DashboardTest(unittest.TestCase):
         for _, attrs in parsed.tags:
             self.assertFalse(any(k.startswith("on") or k in ("src", "href") for k in attrs))
 
-    def test_text_contrast_on_the_dark_surfaces(self):
-        # A text colour under 4.5:1 on a surface it is drawn on, or a second scheme the tokens do not cover, must fail.
+    def test_text_contrast_in_both_schemes(self):
+        # A text colour under 4.5:1 on a surface it is drawn on, in the dark scheme or the light one, or a light scheme
+        # that leaves a token dark, must fail.
         style = re.search(r"<style>(.*)</style>", dashboard.render(full_view(), NOW), re.S).group(1)
-        self.assertNotIn("prefers-color-scheme", style)  # dark only: no light override left half-done
-        colours = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", style.split("}", 1)[0]))
+        dark = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", style.split("}", 1)[0]))
+        light_block = re.search(r"@media \(prefers-color-scheme: light\) \{\s*:root \{(.*?)\}", style, re.S)
+        self.assertIsNotNone(light_block)
+        light = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", light_block.group(1)))
+        self.assertIn("color-scheme: light", light_block.group(1))
+        self.assertEqual(set(light), set(dark))  # every colour token has a light value
         surfaces = ("frame", "ground", "surface", "raised", "active")
         pairs = [(fg, bg) for fg in ("text", "muted", "faint") for bg in surfaces]
         pairs += [(tone, bg) for tone in ("accent", "amber", "red", "ice") for bg in surfaces]
         pairs += [("red", "red-bg"), ("text", "red-bg"), ("accent", "accent-bg"), ("amber", "amber-bg")]
-        pairs += [("frame", "text")]  # the filled button: dark words on the light fill
-        for fg, bg in pairs:
-            with self.subTest(pair=(fg, bg)):
-                self.assertGreaterEqual(contrast(colours[fg], colours[bg]), 4.5)
+        pairs += [("frame", "text")]  # the filled button: the frame's colour on the text's fill
+        for scheme, colours in (("dark", dark), ("light", light)):
+            for fg, bg in pairs:
+                with self.subTest(scheme=scheme, pair=(fg, bg)):
+                    self.assertGreaterEqual(contrast(colours[fg], colours[bg]), 4.5)
         # Positive control: #777 on white is just under the floor.
         self.assertLess(contrast("#777777", "#ffffff"), 4.5)
 
@@ -342,7 +348,7 @@ class DashboardTest(unittest.TestCase):
         def foot(checks, **extra):
             view = {**live_view(), "checks": checks, **extra}
             page = dashboard.render(view, NOW, token=TOKEN)
-            part = page.split('<footer class="checks">', 1)[1].split('<div class="tools">', 1)[0]
+            part = page.split('<div class="coord-panel">', 1)[1].split('<h2 class="side-h">Codex cloud</h2>', 1)[0]
             return " ".join(" ".join(Page(part).text).split()), {f["fields"].get("on") for f in Forms(part).forms
                                                if f["action"] == "/checks"}
         said, switches = foot({"mode": "on", "pid": None, "failed": None})
@@ -461,7 +467,7 @@ class DashboardTest(unittest.TestCase):
         # run again.
         self.assertFalse(one("/job/cancel", "live-job"))
         self.assertFalse(one("/stop", "finished-job", job="finished-job"))
-        self.assertFalse(one("/again", "live-job"))
+        self.assertFalse(one("/again", "live-job", job="live-job"))
         # Codex cloud is set up once it is ready; the waiting job's page then asks for nothing.
         ready = dashboard.render(opened({**cloudy, "cloud_ready": True}, "queued-job"), NOW, token=TOKEN)
         self.assertNotIn('action="/setup"', ready)
@@ -1162,8 +1168,8 @@ console.log(JSON.stringify(out));
         self.assertIn("nothing needs you", text(box))
 
     def test_rows_say_why_under_the_title(self):
-        # A Needs you row whose reason sits beside the control instead of under the title, a reason coloured like an
-        # alarm, or a phone layout that hides it, must fail.
+        # A Needs you row whose reason sits beside the control instead of under the title, or a reason coloured like
+        # an alarm, must fail.
         row = item(dashboard.render(live_view(), NOW, token=TOKEN), "live-job")
         link = re.search(r'<a class="item".*?</a>', row, re.S).group(0)
         self.assertRegex(link, rf'<span class="name">live-job</span><span class="sub">{re.escape(ASK.capitalize())}</span>')
@@ -1171,23 +1177,6 @@ console.log(JSON.stringify(out));
         rules = dict(re.findall(r"\.row \.(\w+) \{([^}]*)\}", dashboard.STYLE))
         self.assertIn("grid-row: 2", rules["sub"])
         self.assertIn("color: var(--muted)", rules["sub"])
-        phone = dashboard.STYLE.split("@media (max-width: 860px)", 1)[1].split("\n}\n", 1)[0]
-        self.assertNotRegex(phone, r"\.sub[^{]*\{[^}]*display: none")
-        self.assertIn(".row .do { grid-column: 2 / 4; grid-row: 3;", phone)
-
-    def test_phone_controls_are_a_thumb_tall(self):
-        # A control under 44 px tall at 480 px wide or less, or one left out of the rule, must fail.
-        phone = dashboard.STYLE.split("@media (max-width: 480px) {", 1)[1].split("\n}\n", 1)[0]
-        tall = {}
-        for selectors, body in re.findall(r"([^{}]+)\{([^}]*)\}", phone):
-            height = re.search(r"min-height: (\d+)px", body)
-            for selector in selectors.split(","):
-                if height:
-                    tall[selector.strip()] = int(height.group(1))
-        for control in (".btn", ".gbtn", ".chip", ".seg", ".compose .name", ".nav a", 'input[type="text"]',
-                        '.tabs [role="tab"]', ".icon-btn", ".send", ".k-pill", ".toast .x", "details.fold summary"):
-            with self.subTest(control=control):
-                self.assertGreaterEqual(tall.get(control, 0), 44)
 
     def test_finished_pages_lead_with_the_result_and_fold_the_log(self):
         # A done page that leads with its log, a log left open, a failed page whose fix box is not right under where
@@ -1260,43 +1249,122 @@ console.log(JSON.stringify(out));
         self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
 
     def test_today_opens_on_what_needs_you(self):
-        # Anything but the composer between the top bar and Needs you (a band, a headline, the sea), a brief that
-        # shares its line with the composer's controls (so its placeholder is cut), a brief taller than one line
-        # before you type, a send arrow lit while there is nothing to send, the sea anywhere but beside the list (or
-        # under it below 1180 px), a phone composer that shows its controls before it is used, a list title cut
-        # short, or a first Needs you row below the middle of a 1440 x 900 window, must fail. The heights come from
-        # the stylesheet.
+        # Look v6 (founder, 1 Nov: one desktop workspace). Anything between the lane's head and Needs you, the list
+        # anywhere but the lane beside the detail, Today's detail without the sea or without the composer docked at its
+        # foot, a brief taller than one line before you type, a send arrow lit while there is nothing to send, a lane
+        # title that wraps, a layout that rearranges for narrow windows, or a first Needs you row lower than 100 px
+        # under the panel's top, must fail. The heights come from the stylesheet.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
-        center = page[page.index('<div class="center">'):page.index('<aside class="reef"')]
-        ahead = center[:center.index('<section class="s-g-needs group"')]
-        self.assertNotIn("<canvas", center)
-        self.assertEqual(re.findall(r'<section class="([^"]+)"', ahead), ["c-strip", "jobs"])
-        self.assertIn('<textarea class="c-text" id="brief" name="brief" rows="1"', ahead)
-        self.assertRegex(page, r'</div><aside class="reef" aria-label="Who is working"><canvas class="tank-c"')
+        self.assertIn('<div class="split"><section class="jobs lane" aria-label="Jobs"><div class="lane-head">', page)
+        lane = page[page.index('<section class="jobs lane"'):page.index('<div class="detail">')]
+        ahead = lane[lane.index('<div class="list">'):lane.index('<section class="s-g-needs group"')]
+        self.assertNotIn("<section", ahead.replace('<p class="empty no-jobs"', ""))
+        self.assertNotIn("<canvas", lane)
+        detail = page[page.index('<div class="detail">'):page.index("</main>")]
+        self.assertRegex(detail, r'<div class="page sea-page"><aside class="reef" aria-label="Who is working">'
+                                 r'<canvas class="tank-c"')
+        dock = detail[detail.index('<div class="dock">'):]
+        self.assertIn('<textarea class="c-text" id="brief" name="brief" rows="1"', dock)
         style = dashboard.STYLE
         rule = lambda sel, within=style: within.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         px = lambda sel, prop: int(re.search(prop + r": (\d+)px", rule(sel)).group(1))  # noqa: E731
-        media = lambda w: style.split(f"@media (max-width: {w}px) {{", 1)[1].split("\n}", 1)[0]  # noqa: E731
         self.assertIn("height: 30px", rule(".composer textarea.c-text"))
         self.assertRegex(rule(".compose.composer"), r'grid-template-columns: minmax\(0, 1fr\); grid-template-areas: '
                                                     r'"text" "cmd" "row";')
-        self.assertNotIn("grid-template-areas", media(860) + style.split("@container (max-width: 640px) {", 1)[1])
-        composer = (2 * px(".compose.composer", "padding") + 2 + px(".composer textarea.c-text", "height")
-                    + px(".compose.composer > .c-row", "margin-top") + max(px(".send", "height"), px(".seg", "height")))
-        top = px(".top", "height") + 1 + 2 * px(".c-strip", "padding") + composer + 1
-        self.assertLess(top + px(".group .head", "height"), 450)
+        self.assertIn("position: absolute", rule(".dock"))
+        self.assertIn("bottom: 18px", rule(".dock"))
         idle = rule(".composer:has(.c-text:placeholder-shown) .send")
         self.assertNotIn("var(--text)", idle)
         self.assertIn("background: var(--raised)", idle)
-        self.assertNotRegex(rule(".row .name"), r"nowrap|ellipsis")
-        self.assertIn("--reef: 320px;", style)
-        self.assertIn(".reef { position: relative; height: 112px; border-left: 0; border-top: 1px solid var(--rule); }",
-                      media(1180))
-        self.assertIn(".reef-page { grid-template-columns: minmax(0, 1fr); }", media(1180))
-        self.assertNotRegex(media(1180) + media(860), r"\.reef \{[^}]*\border:")
-        self.assertIn(".c-strip .composer:not(:focus-within):not([data-open]):has(.c-text:placeholder-shown) > "
-                      ":is(.c-row, .cmd) { display: none; }", media(860))
-        self.assertIn("form.dataset.open = ''", dashboard.SCRIPT)
+        self.assertRegex(rule(".lane .row .name"), r"nowrap.*ellipsis")
+        self.assertIn("--lane: 400px;", style)
+        self.assertIn("body { min-width: 1024px; }", style)
+        self.assertNotIn("@media (max-width", style)
+        self.assertLess(px(".lane-head", "height") + px(".lane .group .head", "height"), 100)
+
+    def test_the_composer_offers_three_workers(self):
+        # A composer without GPT Pro, Codex cloud and This Mac as the three workers, in that order, or one whose GPT
+        # Pro choice posts another kind, must fail.
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        form = re.search(r'<form class="compose composer".*?</form>', page, re.S).group(0)
+        self.assertEqual(re.findall(r'<input type="radio" name="kind" value="([a-z-]+)"', form),
+                         ["gpt-chat", "codex-cloud", "local-shell"])
+        self.assertRegex(form, r'value="gpt-chat"[^>]*>.*?GPT Pro</label>')
+
+    def test_a_gpt_pro_chat_hands_off_and_reads_its_reply(self):
+        # A chat job waiting on you without its prompt, a Copy, the way to ChatGPT and a /reply form for that job;
+        # a Codex launch card on a chat job; a chat row that does not say to ask GPT Pro or is not filed under the
+        # GPT Pro worker; or a saved reply that does not read as GPT Pro's message, must fail.
+        view = live_view()
+        view["live"].append({"id": "deep-dive", "state": "handoff", "paused": False,
+                             "detail": "Waiting for the reply from ChatGPT", "external_id": None})
+        view["inbox"].append({"id": 21, "kind": "chat", "job": "deep-dive", "created": NOW - 4, "resolved": None,
+                              "action": "Ask ChatGPT (gpt-6.1-sol-pro): copy the prompt, paste its reply",
+                              "detail": "Waiting for the reply from ChatGPT", "resolution": None})
+        view["meta"] = {"deep-dive": {"kind": "gpt-chat", "brief": "Compare the three pacing designs.",
+                                      "created": NOW - 5}}
+        home = dashboard.render(view, NOW, token=TOKEN)
+        row = item(home, "deep-dive")
+        self.assertIn('data-where="chat"', row)
+        self.assertIn("Ask GPT Pro, then paste its reply", text(row))
+        self.assertIn(">Ask GPT Pro</a>", row)
+        self.assertRegex(home, r'data-filter="chat"[^>]*>.*?GPT Pro</span><b class="count soft num">1</b>')
+        spec = {"id": "deep-dive", "kind": "gpt-chat", "brief": "Compare the three pacing designs.",
+                "model": {"requested": "gpt-6.1-sol-pro"}, "write_root": "runs/deep-dive/"}
+        page = dashboard.render(opened(view, "deep-dive", kind="gpt-chat", spec=spec), NOW, token=TOKEN)
+        self.assertIn('data-key="job:deep-dive" aria-current="page"', page)  # its row is lit in the lane
+        self.assertIn("Waiting for GPT Pro", text(page.split('<div class="detail">', 1)[1]))
+        self.assertNotIn("Launch by hand", text(page.split('<div class="detail">', 1)[1]))  # head and properties alike
+        card = re.search(r'<div class="ask-card chat-card">.*?</form></div>', page, re.S).group(0)
+        self.assertIn('<pre class="prompt" id="prompt-deep-dive" tabindex="0">Compare the three pacing designs.</pre>',
+                      card)
+        self.assertIn('data-copy="prompt-deep-dive"', card)
+        self.assertIn(f'href="{dashboard._CHATGPT}" target="_blank" rel="noopener noreferrer"', card)
+        self.assertIn("gpt-6.1-sol-pro", card)
+        reply = [f for f in Forms(card).forms if f["action"] == "/reply"]
+        self.assertEqual(len(reply), 1)
+        self.assertEqual(set(reply[0]["fields"]), {"t", "job", "text", "next"})
+        self.assertEqual(reply[0]["fields"]["job"], "deep-dive")
+        self.assertNotIn('action="/attach"', page.split('<div class="detail">', 1)[1])
+        boxed = dashboard.render({**view, "box": True, "pick": 21}, NOW, token=TOKEN)  # the Inbox answers it the same way
+        self.assertEqual([f["fields"]["job"] for f in Forms(boxed).forms if f["action"] == "/reply"], ["deep-dive"])
+        self.assertIn("Waiting for GPT Pro", text(re.search(r'<p class="q-job".*?</p>', boxed, re.S).group(0)))
+        self.assertNotIn('action="/inbox/resolve"', re.search(r'data-region="ib-detail".*', boxed, re.S).group(0))
+        done = opened({**view, "inbox": [i for i in view["inbox"] if i["id"] != 21]}, "deep-dive", kind="gpt-chat",
+                      spec=spec, state="done")
+        done["open"]["reply"] = "Design B wins.\n\nIt keeps one clock."
+        done["open"]["job"]["detail"] = "Design B wins."  # the reply's first sentence, as rh.chat records it
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn("Design B wins.</span>", page)
+        self.assertNotIn("wins..", page)
+        said = re.search(r'<section class="msg ai".*?</section>', page, re.S).group(0)
+        self.assertIn("GPT Pro", text(said))
+        self.assertIn("Design B wins.", said)
+        self.assertNotIn('class="ask-card chat-card"', page)
+
+    def test_coordination_sits_behind_one_control(self):
+        # The check loop, this Mac or the seats on show outside the coordination control, a control that does not
+        # say whether checks run and how many jobs are live, or a panel without Check now and Pause for the loop and
+        # Pause for Codex cloud, must fail.
+        view = {**live_view(), "seats": [{"name": "backend", "role": "Backend: the core"}],
+                "host": {"load1": 1.5, "level": 1, "max_load": 10, "ok": True}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        side = page[page.index('<aside class="side"'):page.index("</aside>", page.index('<aside class="side"'))]
+        coord = side[side.index('<details class="coord">'):]
+        outside = side[:side.index('<details class="coord">')]
+        for region in ('data-region="checks"', 'data-region="host"', 'class="seat-list"'):
+            self.assertNotIn(region, outside)
+            self.assertIn(region, coord)
+        summary = coord[:coord.index("</summary>")]
+        self.assertIn("Checks on", text(summary))
+        live = re.search(r'<span class="num">(\d+)</span> jobs? live', page).group(1)  # the top bar's count
+        self.assertIn(f"· {live} live", text(summary))
+        self.assertNotIn("seat", text(summary))  # the pill fits the sidebar; the seats are in the panel
+        self.assertIn("backend", text(coord[coord.index("</summary>"):]))
+        forms = Forms(coord).forms
+        self.assertTrue(any(f["action"] == "/tick" for f in forms))
+        self.assertTrue(any(f["action"] == "/checks" and f["fields"].get("on") == "0" for f in forms))
+        self.assertTrue(any(f["action"] == "/stop" and f["fields"].get("route") == "codex-cloud" for f in forms))
 
     def test_a_failure_repeated_by_its_brief_is_one_row_until_it_is_run_again(self):
         # Runs of one brief that failed the same way listed as separate rows or Inbox entries, a row that does not

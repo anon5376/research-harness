@@ -20,7 +20,7 @@ import tomllib
 import urllib.parse
 import webbrowser
 
-from rh import cli, contract, dashboard, lease, oslock, seats
+from rh import chat, cli, contract, dashboard, lease, oslock, seats
 from rh.ledger import TERMINAL, Ledger
 from rh.supervisor import AlreadyRunning, single_instance
 
@@ -43,7 +43,7 @@ _FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / name for name in dashboar
 _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup", "/handoff")
+          "/checks", "/again", "/setup", "/handoff", "/reply")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -258,6 +258,12 @@ def _action(cfg, path, fields):
         task = value("task_id").strip()
         found = _TASK.search(task) if task.startswith(("http://", "https://")) else None
         return ["cloud", "attach", "--", value("job"), found.group(0) if found else task]
+    if path == "/reply":
+        job = value("job")
+        if not contract.JOB_ID_RE.fullmatch(job):
+            raise ValueError("invalid job id")
+        dest = _upload(cfg, job, ".txt", value("text"))
+        return ["chat", "reply", "--", job, str(dest)]
     if path == "/harvest":
         job, text = value("job"), value("text")
         if not contract.JOB_ID_RE.fullmatch(job):
@@ -295,7 +301,7 @@ def _say(path, fields, ok, made=None):
     if not ok:
         return {"/job": "The job was not added.", "/again": "The job did not start again.",
                 "/setup": "Codex cloud was not set up.", "/tick": "The check did not finish.",
-                "/attach": "The task was not linked."}.get(path, "That did not work.")
+                "/attach": "The task was not linked.", "/reply": "The reply was not saved."}.get(path, "That did not work.")
     pause = "pause" in fields
     return {
         "/job": f"Added {made or get('id')}.",
@@ -306,6 +312,7 @@ def _say(path, fields, ok, made=None):
         "/attach": f"Linked the task to {job}. It is running.",
         "/handoff": f"{job} is ready to launch by hand.",
         "/harvest": "Patch saved. The result is being checked.",
+        "/reply": f"Saved the reply. {job} is done.",
         "/land": f"Saved to the local branch cloud/{job}.",
         "/job/cancel": f"Cancelled {job}.",
         "/tick": "Checked.",
@@ -679,7 +686,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             meta, settled, items = _meta(cfg)
             view.update({"can_add": True, "compose": draft or {}, "meta": meta, "settled": settled,
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
-                         "host": machine(), **(extra or {})})
+                         "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
+                         **(extra or {})})
             if view.get("box") and view.get("pick") is None:
                 # The Inbox opens on its newest waiting item, as the page lists it.
                 waiting = sorted((i for i in items.values() if not i.get("resolved")),
@@ -738,7 +746,9 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     self.page({"open": {"id": jid, "job": None}}, 404)
                     return
                 shown["log"], shown["log_cut"] = _log(cfg, jid)
-                if shown["job"]["state"] == "handoff":
+                if shown["job"]["kind"] == "gpt-chat":
+                    shown["reply"] = chat.read_reply(cfg, jid)  # the job's result, read as the next message
+                elif shown["job"]["state"] == "handoff":
                     # The prompt a person pastes into the Codex web composer, so the launch needs no terminal.
                     code, prompt, _ = _call(cfg, ["cloud", "prompt", "--", jid], split=True)
                     shown["prompt"] = prompt if code == 0 else None

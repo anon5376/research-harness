@@ -15,7 +15,7 @@ TRANSITIONS = {
     "held": _PRE,
     "ready": _PRE | {"launching"},
     "launching": {"running", "ready", "held", "handoff", "failed", "blocked", "cancelled"},
-    "handoff": {"launching", "cancelled"},  # a person or browser session must launch it (web route), then attach
+    "handoff": {"launching", "cancelled", "done"},  # only a chat job's saved reply takes it to done
     "running": {"running", "stalled", "collecting"} | TERMINAL,
     "stalled": {"running", "stalled", "collecting"} | TERMINAL,
     "collecting": {"collecting"} | TERMINAL,

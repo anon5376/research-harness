@@ -1,0 +1,138 @@
+# Look v6 and GPT Pro chats (1 Nov): each mutant breaks one claim (a chat job handed to a person and finished by its
+# reply, the reply read as GPT Pro's message, three workers in the composer, the lane beside the detail with the open
+# job lit, the coordination system behind one control, Waiting for GPT Pro), and the named tests must catch it.
+
+[[mutant]]
+name = "a ready chat job is never handed off"
+file = "rh/supervisor.py"
+find = "                self._isolated(j, self._chat_handoff)"
+replace = "                pass"
+tests = ["tests.test_chat.ChatTest.test_tick_hands_off_once_without_codex_pacing_or_stalling"]
+
+[[mutant]]
+name = "a reply ends a cloud job"
+file = "rh/chat.py"
+find = '    if job["spec"]["kind"] != "gpt-chat":'
+replace = '    if False:'
+tests = ["tests.test_chat.ChatTest.test_cli_refuses_empty_wrong_kind_and_wrong_state_without_changes"]
+
+[[mutant]]
+name = "the ledger refuses a reply's handoff to done"
+file = "rh/ledger.py"
+find = '"handoff": {"launching", "cancelled", "done"},'
+replace = '"handoff": {"launching", "cancelled"},'
+tests = ["tests.test_chat.ChatTest.test_cli_prompt_and_file_reply_complete_with_receipt_and_inbox_resolution"]
+
+[[mutant]]
+name = "the job page drops the saved reply"
+file = "rh/serve.py"
+find = '                    shown["reply"] = chat.read_reply(cfg, jid)'
+replace = '                    shown["reply"] = None'
+tests = ["tests.test_chat.ChatTest.test_real_server_reply_requires_form_token_then_saves_through_cli"]
+
+[[mutant]]
+name = "a chat item gets the generic Mark done card"
+file = "rh/dashboard.py"
+find = '        cards.append(_chat_card(ctx, jid, spec, item, lead) if item.get("kind") == "chat"'
+replace = '        cards.append(_chat_card(ctx, jid, spec, item, lead) if False'
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "the Inbox answers a chat item with Mark done"
+file = "rh/dashboard.py"
+find = '        elif kind == "chat" and jid:'
+replace = '        elif False:'
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "the reply is not shown as GPT Pro's message"
+file = "rh/dashboard.py"
+find = '    answer = opened.get("reply")'
+replace = '    answer = None'
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "a chat job in handoff says Launch by hand"
+file = "rh/dashboard.py"
+find = '''        elif self.kind == "gpt-chat" and self.state == "handoff":
+            self.word, self.tone = _CHAT_WAIT'''
+replace = '''        elif False:
+            self.word, self.tone = _CHAT_WAIT'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "the composer posts GPT Pro as a cloud job"
+file = "rh/dashboard.py"
+find = '''value="gpt-chat"{picked["gpt-chat"]}>'''
+replace = '''value="codex-cloud"{picked["gpt-chat"]}>'''
+tests = ["tests.test_dashboard.DashboardTest.test_the_composer_offers_three_workers"]
+
+[[mutant]]
+name = "the list leaves the lane beside the detail"
+file = "rh/dashboard.py"
+find = "        pane = f'<div class=\"split\">{_lane(jobs, stop_rows, ctx, named)}<div class=\"detail\">{pane}</div></div>'"
+replace = "        pane = pane"
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "the open job's row is not lit"
+file = "rh/dashboard.py"
+find = '''        listed = listed.replace(mark, mark + ' aria-current="page"', 1)'''
+replace = '''        listed = listed'''
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "this Mac shows outside the coordination control"
+file = "rh/dashboard.py"
+find = "        foot = f'<div class=\"side-foot\">{tools}{_coord(view, ctx, ctx[\"jobs\"])}</div>'"
+replace = "        foot = f'<div class=\"side-foot\">{_host(view, ctx)}{tools}{_coord(view, ctx, ctx[\"jobs\"])}</div>'"
+tests = ["tests.test_dashboard.DashboardTest.test_coordination_sits_behind_one_control"]
+
+[[mutant]]
+name = "the coordination control does not say how many jobs are live"
+file = "rh/dashboard.py"
+find = '''<span class="soft num">· {live} live</span>'''
+replace = '''<span class="soft num"></span>'''
+tests = ["tests.test_dashboard.DashboardTest.test_coordination_sits_behind_one_control"]
+
+[[mutant]]
+name = "the window rearranges for narrow screens again"
+file = "rh/web/rh.css"
+find = "body { min-width: 1024px; }"
+replace = "@media (max-width: 1180px) { .split { grid-template-columns: minmax(0, 1fr); } }"
+tests = ["tests.test_dashboard.DashboardTest.test_today_opens_on_what_needs_you"]
+
+[[mutant]]
+name = "a light token stays dark"
+file = "rh/web/rh.css"
+find = "    --faint: #5a6664;"
+replace = "    --faint: #808b88;"
+tests = ["tests.test_dashboard.DashboardTest.test_text_contrast_in_both_schemes"]
+
+[[mutant]]
+name = "a waiting chat job's properties say Launch by hand"
+file = "rh/dashboard.py"
+find = '    word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]'
+replace = '    word = _STATES.get(shown, (shown,))[0]'
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "a reply's first sentence ends in two periods"
+file = "rh/dashboard.py"
+find = '        why = _clause(_plain(receipt.get("detail") or job.get("detail")))'
+replace = '        why = _plain(receipt.get("detail") or job.get("detail"))'
+tests = ["tests.test_dashboard.DashboardTest.test_a_gpt_pro_chat_hands_off_and_reads_its_reply"]
+
+[[mutant]]
+name = "the ChatGPT link leaves for another host"
+file = "rh/dashboard.py"
+find = '_CHATGPT = "https://chatgpt.com/"  # and a GPT Pro chat'
+replace = '_CHATGPT = "https://chat.example.com/"  # and a GPT Pro chat'
+tests = ["tests.test_serve.ServeTest.test_no_served_page_loads_anything_from_off_the_machine"]
+
+[[mutant]]
+name = "the heavy gate stretches the job timeout a thousandfold"
+file = "rh/supervisor.py"
+find = 'str(cwd), str(timeout)],'
+replace = 'str(cwd), str(timeout * 1000)],'
+tests = ["tests.test_hardening.GateTest.test_heavy_gate_uses_job_timeout_and_records_exit_124"]

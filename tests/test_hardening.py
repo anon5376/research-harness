@@ -1,5 +1,6 @@
 """Regression tests for the eight M5h hardening items; external delivery is always faked."""
 import contextlib
+import functools
 import io
 import json
 import os
@@ -7,11 +8,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from rh import cli, collect, config, contract, protocol
+from rh import cli, collect, config, contract, lease, protocol
 from rh.adapters.codex_cloud import RouteUnavailable
 from rh.ledger import Ledger
 from rh.supervisor import Supervisor
@@ -255,8 +257,11 @@ class GateTest(HarnessCase):
         self.assertEqual(self.led.receipt("j1")["checks"][-1]["exit"], 124)
 
     def test_heavy_gate_uses_job_timeout_and_records_exit_124(self):
+        # The lease reads this Mac's memory pressure; pin it calm so the test checks the timeout, not the host.
+        calm = lambda: lease.Reading(level=1, load1=0.0, taken=time.time())
         j = self.local_exited(heavy=True, accept="sleep 0.3", timeout_min=0.001)
-        self.s._poll_local(j, {"finished": 0})
+        with patch("rh.supervisor.lease.run", functools.partial(lease.run, reader=calm)):
+            self.s._poll_local(j, {"finished": 0})
         self.assertEqual(self.led.job("j1")["state"], "failed")
         self.assertEqual(self.led.receipt("j1")["checks"][-1]["exit"], 124)
 

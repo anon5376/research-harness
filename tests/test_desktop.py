@@ -1,6 +1,9 @@
 """Desktop packaging contracts, without third-party imports."""
 import ast
+import contextlib
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import importlib.util
+import io
 import os
 from pathlib import Path
 import socket
@@ -25,7 +28,33 @@ class DesktopTest(unittest.TestCase):
                 capture_output=True, text=True, timeout=30,
             )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "smoke ok 200")
+        self.assertEqual(result.stdout.strip(), "smoke ok 200 403")
+
+    def test_smoke_rejects_unauthenticated_success(self):
+        spec = importlib.util.spec_from_file_location("desktop_app", ROOT / "desktop/app.py")
+        app = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(app)
+        paths = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                paths.append(self.path)
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *args):
+                pass
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        url = f"http://127.0.0.1:{server.server_port}/launch?t=smoke"
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, RH_HOME=home), \
+                patch.object(app.serve, "make_server", return_value=(server, url)), \
+                contextlib.redirect_stdout(output):
+            result = app.main(["--smoke"])
+        self.assertEqual(result, 1)
+        self.assertEqual(output.getvalue(), "smoke failed 200 200\n")
+        self.assertEqual(paths, ["/launch?t=smoke", "/"])
 
     def test_window_and_shutdown(self):
         spec = importlib.util.spec_from_file_location("desktop_app", ROOT / "desktop/app.py")
@@ -35,7 +64,7 @@ class DesktopTest(unittest.TestCase):
 
         def create_window(title, url, **options):
             self.assertEqual(title, "Research Harness")
-            self.assertEqual(options, {"width": 1100, "height": 760, "min_size": (375, 600)})
+            self.assertEqual(options, {"width": 1280, "height": 800, "min_size": (1024, 640)})
             with urlopen(url, timeout=5) as response:
                 self.assertEqual(response.status, 200)
             parsed = urlsplit(url)

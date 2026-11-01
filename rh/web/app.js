@@ -9,6 +9,7 @@
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
+const light = matchMedia('(prefers-color-scheme: light)');
 const byKey = (k, r = document) => r.querySelector('[data-key="' + CSS.escape(k) + '"]');
 let skew = 0, inflight = 0, failures = 0, timer = 0, stash = null, ended = false, moving = 0, show = '', kind = '';
 
@@ -311,7 +312,19 @@ function Tank(canvas) {
   const host = canvas.parentElement;
   if (!ctx || !host) return;
   let W = 0, H = 0, P = 6, Q = 11, cols = 0, rows = 0;
-  const ground = getComputedStyle(document.documentElement).getPropertyValue('--ground').trim() || '#0b0e0e';
+  // The water and the dots' colours come from the page's theme (rh.css --ground and --sea-*), and change with it.
+  let ground = '#0b0e0e', tones = TONES, label = [128, 139, 136];
+  function paint() {
+    const css = getComputedStyle(document.documentElement);
+    const rgb = (name, or) => {
+      const v = css.getPropertyValue(name).trim().split(/\s+/).map(Number);
+      return v.length === 3 && v.every(n => n >= 0 && n <= 255) ? v : or;
+    };
+    ground = css.getPropertyValue('--ground').trim() || '#0b0e0e';
+    tones = Object.fromEntries(Object.entries(TONES).map(([k, v]) => [k, rgb('--sea-' + k, v)]));
+    label = rgb('--sea-label', [128, 139, 136]);
+  }
+  paint();
   function size() {
     const r = canvas.getBoundingClientRect();
     const dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -348,7 +361,7 @@ function Tank(canvas) {
       if (kind === RING) rings.push([x, y]);
     }
     for (const [key, list] of groups) {
-      const [tone, k, a] = key.split('|'), kind = +k, rgb = TONES[tone];
+      const [tone, k, a] = key.split('|'), kind = +k, rgb = tones[tone];
       ctx.fillStyle = 'rgba(' + rgb[0] + ', ' + rgb[1] + ', ' + rgb[2] + ', ' + (a / 20).toFixed(2) + ')';
       const r = dotRadius(kind, P);
       ctx.beginPath();
@@ -367,7 +380,7 @@ function Tank(canvas) {
       ctx.font = Math.max(9, Math.min(11, Q * 0.8)) + 'px "Geist Mono", ui-monospace, monospace';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       for (const [x, y, name, tone] of labels) {
-        ctx.fillStyle = tone === 'faint' ? 'rgba(128, 139, 136, .9)' : 'rgba(' + TONES[tone].join(', ') + ', .9)';
+        ctx.fillStyle = 'rgba(' + (tone === 'faint' ? label : tones[tone]).join(', ') + ', .9)';
         ctx.fillText(name, x * P, y * Q);
       }
     }
@@ -377,6 +390,8 @@ function Tank(canvas) {
   let rt = 0;
   const resized = () => { clearTimeout(rt); rt = setTimeout(() => { if (!canvas.isConnected) return; size(); if (calm.matches) draw(6); }, 120); };
   addEventListener('resize', resized);
+  const themed = () => { if (!canvas.isConnected) return; paint(); if (calm.matches) draw(6); };
+  light.addEventListener('change', themed);
   if (calm.matches) { draw(6); return; }
   // About 20 frames a second, and none at all while the tab is hidden or the tank is scrolled out of view.
   let last = 0, raf = 0, seen = true;
@@ -388,6 +403,7 @@ function Tank(canvas) {
     // A tank the live page replaced stops drawing and lets its listeners go.
     if (!canvas.isConnected) {
       removeEventListener('resize', resized); document.removeEventListener('visibilitychange', go);
+      light.removeEventListener('change', themed);
       if (io) io.disconnect();
       return;
     }
@@ -527,6 +543,12 @@ function filter() {
     if (show) jobs.dataset.show = show; else delete jobs.dataset.show;
     for (const t of $$('[role="tab"][data-where]')) t.setAttribute('aria-selected', String(t.dataset.where === show));
   }
+  for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === show));
+  // The open job's row in the lane is lit; the server marks it, and this keeps it right as pages swap.
+  const here = document.body.dataset.here || '';
+  for (const r of $$('.lane .row[data-key]')) {
+    if (here && r.dataset.key === here) r.setAttribute('aria-current', 'page'); else r.removeAttribute('aria-current');
+  }
   const box = $('.ibx');
   if (box) {
     if (kind) box.dataset.show = kind; else delete box.dataset.show;
@@ -537,8 +559,8 @@ function filter() {
 function apply(doc, nav) {
   const now = +doc.body.dataset.now;
   if (now) skew = now - Date.now() / 1000;
-  for (const k of ['open', 'pace', 'jobs']) document.body.dataset[k] = doc.body.dataset[k] || '';
-  if (nav) { document.title = doc.title; show = ''; kind = ''; }
+  for (const k of ['open', 'pace', 'jobs', 'here']) document.body.dataset[k] = doc.body.dataset[k] || '';
+  if (nav) { document.title = doc.title; kind = ''; }  // the worker filter stays as you move between jobs
   const before = new Map($$('[data-key]').map(el => [el.dataset.key, el.getBoundingClientRect()]));
   const focused = document.activeElement;
   const focusKey = focused && focused.closest && focused.closest('[data-key]') ? focused.closest('[data-key]').dataset.key : null;
@@ -831,9 +853,11 @@ document.addEventListener('click', e => {
   if (d && e.target === d) { closePal(); return; }  // a click on the backdrop
   const row = e.target.closest && e.target.closest('#pal .p-row');
   if (row) { e.preventDefault(); run(row); return; }
-  const tab = e.target.closest && e.target.closest('[role="tab"][data-where], [role="tab"][data-kind]');
+  const tab = e.target.closest && e.target.closest('[role="tab"][data-where], [role="tab"][data-kind], [data-filter]');
   if (tab) {
-    if ('where' in tab.dataset) show = tab.dataset.where; else kind = tab.dataset.kind;
+    // A worker in the sidebar filters the lane as its tab does; pressed again, it shows every job.
+    if ('filter' in tab.dataset) show = show === tab.dataset.filter ? '' : tab.dataset.filter;
+    else if ('where' in tab.dataset) show = tab.dataset.where; else kind = tab.dataset.kind;
     filter();
     return;
   }

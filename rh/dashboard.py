@@ -39,8 +39,9 @@ _STATES = {
     # not a ledger state: a ready cloud job while the codex CLI cannot see its environment, named once for every place
     "env": ("Waiting for environment", "warn"),
 }
-_PRE = ("draft", "ready", "waiting", "held", "handoff")  # states rh job cancel accepts
-_LIVE = ("launching", "handoff", "running", "stalled", "collecting")
+_PRE = ("draft", "ready", "waiting", "held", "handoff")
+_CHAT_WAIT = ("Waiting for GPT Pro", "warn")  # a chat job's handoff: its prompt is out, its reply not back yet
+_LIVE = ("launching", "handoff", "running", "stalled", "collecting")  # states rh job cancel accepts
 _FAILED = ("failed", "blocked", "capacity", "truncated", "aborted", "no_result")  # a finished job that needs a person
 _FAILURE_WINDOW = 86400  # a failure stays in Needs you this long, unless it was run again
 # What happens next to a job the harness is moving, so a quiet page still says what it is doing.
@@ -57,14 +58,16 @@ _NEXT = {
 # The machine rh serve runs on has one name in the app, as its owner calls it.
 HERE = {"darwin": "This Mac", "win32": "This PC"}.get(sys.platform, "This computer")
 # Platforms (routes and job kinds in the CLI) as people name them; anything else is shown as the harness names it.
-_PLATFORMS = {"codex-cloud": "Codex cloud", "codex-cloud-cli": "Codex cloud", "codex-cloud-web": "Codex cloud",
+_PLATFORMS = {"gpt-chat": "GPT Pro", "codex-cloud": "Codex cloud", "codex-cloud-cli": "Codex cloud", "codex-cloud-web": "Codex cloud",
               "local-shell": HERE}
-_PLACES = {"codex-cloud": "in Codex cloud", "local-shell": f"on {HERE}"}
-_WHERE = {"local-shell": "mac", "codex-cloud": "cloud"}  # what the list's tabs filter on
+_PLACES = {"gpt-chat": "with GPT Pro", "codex-cloud": "in Codex cloud", "local-shell": f"on {HERE}"}
+_WHERE = {"local-shell": "mac", "codex-cloud": "cloud", "gpt-chat": "chat"}  # what the list's tabs filter on
+_WORKERS = (("chat", "GPT Pro", "chat"), ("cloud", "Codex cloud", "cloud"), ("mac", HERE, "mac"))  # filter, name, icon
 _NEEDS = ("net", "python", "git", "loopback", "browser", "gpu")  # capabilities the composer offers
 _STALE = 300  # seconds without a check before the status line says the checks may have stopped
 _TAIL = 12  # lines of a failed job's output shown open, as where it stopped
-_CODEX = "https://chatgpt.com/codex"  # the one page outside the app a live page links to, for a hand launch
+_CODEX = "https://chatgpt.com/codex"  # the pages outside the app a live page links to: a hand launch,
+_CHATGPT = "https://chatgpt.com/"  # and a GPT Pro chat
 _LABEL = re.compile(r"^[^:]{1,24}:\s+")  # a seat role's leading label of up to 24 characters, such as "Testing: "
 _SETUP = "create and publish the cloud environment"  # how the supervisor's Codex cloud setup step begins
 _NATIVE = "make the Codex cloud environment "  # how its step begins while the codex CLI cannot see the environment
@@ -116,6 +119,10 @@ _ICONS = {
     "step": '<path d="M4 6.5h16M4 12h16M4 17.5h9"/>',
     "again": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
     "resume": '<path d="M8 5.5v13l10-6.5z"/>',
+    "chat": ('<path d="M12 3.5 13.7 9a2 2 0 0 0 1.3 1.3l5.5 1.7-5.5 1.7a2 2 0 0 0-1.3 1.3L12 20.5l-1.7-5.5A2 2 0 0 0 9 '
+             '13.7L3.5 12 9 10.3A2 2 0 0 0 10.3 9z"/>'),
+    "jobs": '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
+    "coord": '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
 }
 _RING = '<circle cx="7" cy="7" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/>'
 _SHAPES = {
@@ -246,7 +253,7 @@ def _ring(state, hue=None):
 def _where(kind):
     """Where a job runs, as the tabs' icon, named for a screen reader."""
     name, icon = (HERE, "mac") if kind == "local-shell" else ("Codex cloud", "cloud") if kind == "codex-cloud" else (
-        _platform(kind), "")
+        "GPT Pro", "chat") if kind == "gpt-chat" else (_platform(kind), "")
     return (f'<span class="where" role="img" aria-label="{_text(name)}">{_ic(icon, True)}</span>' if icon
             else f'<span class="where mono">{_text(str(kind)[:6])}</span>')
 
@@ -496,6 +503,8 @@ def _ask_line(item):
     action, detail = str(item.get("action") or ""), str(item.get("detail") or "")
     if kind == "web-launch" and job:
         return "Launch it in Codex, then link the task", ""
+    if kind == "chat" and job:
+        return "Ask GPT Pro, then paste its reply", ""
     if kind == "harvest" and job:
         if "--bundle" in action:
             return "Paste the patch from Codex", ("It ran in the Codex web app, which the codex CLI cannot read, and "
@@ -522,6 +531,8 @@ def _ask_kind(item):
         return "launch", "launch"
     if kind == "harvest":
         return "patch", "patch"
+    if kind == "chat":
+        return "chat", "chat"
     return "other", "stop" if kind == "refusal" else "step"
 
 
@@ -538,7 +549,8 @@ class _Job:
         self.word, self.tone = _STATES.get(self.state, (self.state, "neutral"))
         self.stops = ctx["scopes"].get(f"job:{self.id}", [])
         self.items = ctx["asks"].get(self.id, [])
-        self.handoff = self.state == "handoff" and not any(i.get("kind") == "web-launch" for i in self.items)
+        self.handoff = (self.state == "handoff" and self.kind != "gpt-chat"
+                        and not any(i.get("kind") == "web-launch" for i in self.items))
         self.mine = [s for s in self.stops if s.get("owner") == "app"]
         ended = self.meta.get("updated")
         self.brief = str(self.meta.get("brief") or "").strip()
@@ -552,6 +564,8 @@ class _Job:
         self.native = bool(ctx.get("native")) and self.kind == "codex-cloud" and self.state == "ready"
         if self.native:
             self.word, self.tone = _STATES["env"]
+        elif self.kind == "gpt-chat" and self.state == "handoff":
+            self.word, self.tone = _CHAT_WAIT
         self.count = len(self.items) + self.handoff + len(self.mine) + self.failure + self.held
         if self.count:
             self.group = "needs"
@@ -628,6 +642,8 @@ class _Job:
                 return go(page, "Launch by hand", "launch", "a")
             if kind == "harvest":
                 return go(page, "Paste patch", "patch", "h")
+            if kind == "chat":
+                return go(page, "Ask GPT Pro", "chat", "a")
             return _button(ctx, "/inbox/resolve", [("id", item["id"]), ("note", "")], f'{_ic("check", True)}Mark done',
                            "r", "gbtn", "Mark done")
         if self.handoff:
@@ -759,6 +775,30 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
             f'<li><div><p>Copy the prompt.</p>{copy}</div></li>'
             f'<li><div><p>Open Codex, start a task{where} and paste the prompt.</p>{_codex_link()}</div></li>'
             f'<li><div>{attach}</div></li></ol>{foot}</div>')
+
+
+def _chat_card(ctx, jid, spec, item, lead):
+    """A GPT Pro chat waiting on you: the prompt to copy, the way to ChatGPT, and the box its reply goes in."""
+    model = (spec.get("model") or {}).get("requested") if isinstance(spec.get("model"), dict) else None
+    when = (_when(item["created"], ctx["now"], f"inbox:{item['id']}", "asked ")
+            if item and _number(item.get("created")) else "")
+    out = [f'<p class="label">{_dot("warn")}Needs you{" · " + when if when else ""}</p>'
+           '<h3>Ask GPT Pro, then paste its reply</h3>'
+           f'<p class="detail">Start a new chat with {_text(model or "GPT Pro")} in ChatGPT and paste this prompt. When '
+           'it has answered, paste the whole reply below; the reply is the job\'s result.</p>'
+           f'<pre class="prompt" id="prompt-{_text(jid)}" tabindex="0">{_text(spec.get("brief", ""))}</pre>']
+    if not ctx["live"]:
+        out.append(f'<p class="cli mono">rh chat prompt {_text(jid)} · rh chat reply {_text(jid)} &lt;file&gt;</p>')
+        return f'<div class="ask-card chat-card">{"".join(out)}</div>'
+    out.append(f'<div class="acts">{_copy("prompt-" + jid, "Copy prompt")}<a class="btn" href="{_CHATGPT}" '
+               'target="_blank" rel="noopener noreferrer">Open ChatGPT<span aria-hidden="true">↗</span>'
+               '<span class="sr"> (opens a new tab)</span></a></div>')
+    out.append(f'<form class="reply-box composer" method="post" action="/reply" data-act data-label="Save reply">'
+               f'{_hidden(ctx, [("job", jid)])}<label class="sr" for="reply-{_text(jid)}">The reply from ChatGPT</label>'
+               f'<textarea class="c-text" id="reply-{_text(jid)}" name="text" rows="4" required '
+               'placeholder="Paste the reply from ChatGPT"></textarea><div class="c-row"><span class="c-hint mono">'
+               f'⌘↵ save</span><button class="{_cls("primary" if lead else "")}">Save reply</button></div></form>')
+    return f'<div class="ask-card chat-card">{"".join(out)}</div>'
 
 
 def _dismiss(ctx, iid):
@@ -1091,6 +1131,67 @@ def _job_list(jobs, stop_rows, ctx):
     return empty + "".join(out)
 
 
+def _lane(jobs, stop_rows, ctx, here=None):
+    """Linear's list beside whatever is open: every job, grouped by what you do next, filtered by who works on it.
+    The open job's row is lit."""
+    tabs = ['<button type="button" role="tab" aria-selected="true" data-where="">All</button>']
+    tabs += [f'<button type="button" role="tab" aria-selected="false" data-where="{w}">{_text(word)}</button>'
+             for w, word, _ in _WORKERS]
+    new = (f'<a class="icon-btn" href="{_url(ctx, "/new")}" data-nav data-k="n" aria-label="New job, N">{_ic("new")}</a>'
+           if ctx["can_add"] else "")
+    head = (f'<div class="lane-head"><h2>Jobs</h2><div class="tabs" role="tablist" aria-label="Who works on it">'
+            f'{"".join(tabs)}</div>{new}</div>')
+    listed = _job_list(jobs, stop_rows, ctx)
+    if here:
+        mark = f'data-key="job:{_text(here)}"'
+        listed = listed.replace(mark, mark + ' aria-current="page"', 1)
+    return f'<section class="jobs lane" aria-label="Jobs">{head}<div class="list">{listed}</div></section>'
+
+
+def _coord(view, ctx, jobs):
+    """The coordination system, out of sight: one line at the sidebar's foot that opens the check loop, Codex cloud's
+    launches, this Mac's load and the heavy lease, and the seats."""
+    loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
+    sup = view.get("supervisor") if isinstance(view.get("supervisor"), dict) else None
+    mode = loop.get("mode") if loop else None
+    quiet = bool(sup) and _number(sup.get("age_s")) and sup["age_s"] > _STALE
+    if mode == "paused":
+        word, dot = "Checks paused", "warn"
+    elif mode in ("on", "other"):
+        word, dot = "Checks on", "warn" if quiet else "live"
+    else:
+        word, dot = ("Checks", "warn" if quiet or not sup else "good")
+    if loop and loop.get("failed"):
+        dot = "bad"
+    live = sum(j.group == "live" for j in jobs)
+    seats = [x for x in view.get("seats", []) if isinstance(x, dict) and x.get("name")]
+    said = f'{_dot(dot, dot == "live")}<span>{word}</span><span class="soft num">· {live} live</span>'
+    line = f'<span class="coord-line" data-region="coord" data-sig="{_sig(said)}">{said}</span>'
+    parts = [f'<h2 class="side-h">Check loop</h2>{_checks(view, ctx)}']
+    if ctx["live"]:
+        paused = any(x.get("owner") == "app" for x in ctx["scopes"].get("route:codex-cloud", []))
+        cloud = (_button(ctx, "/resume", [("route", "codex-cloud"), ("pause", "on")], "Resume Codex cloud", "",
+                         "small", "Resume Codex cloud") if paused else
+                 _popover(ctx, "/stop", [("route", "codex-cloud"), ("pause", "on")], "Pause Codex cloud", "",
+                          _field("Why? (optional)", "reason", placeholder="Paused from the app"), "Pause Codex cloud",
+                          "quiet small danger", "No new task starts in Codex cloud until you resume it.", "up left"))
+        pace = view.get("pacing") if isinstance(view.get("pacing"), dict) else {}
+        gap, hour = pace.get("min_gap_s", 60), pace.get("max_per_hour", 20)
+        parts.append(f'<h2 class="side-h">Codex cloud</h2><p class="more">New tasks at least {_text(gap)} s apart, '
+                     f'at most {_text(hour)} an hour.</p><div class="btns">{cloud}</div>')
+    parts.append(_host(view, ctx))
+    if seats:
+        rows = []
+        for seat in seats:
+            tone, state, job, _ = _seat_state(str(seat["name"]), jobs)
+            rows.append(f'<li>{_dot({"accent": "live", "amber": "warn"}.get(tone, "neutral"))}'
+                        f'<span class="mono">{_text(seat["name"])}</span><span class="soft">{_text(state)}'
+                        f'{" · " + _text(job.id) if job else ""}</span></li>')
+        parts.append(f'<h2 class="side-h">Seats</h2><ul class="seat-list">{"".join(rows)}</ul>')
+    return (f'<details class="coord"><summary aria-label="Coordination: the check loop, Codex cloud, {HERE} and the '
+            f'seats">{line}{_ic("coord", True)}</summary><div class="coord-panel">{"".join(parts)}</div></details>')
+
+
 def _seat_state(name, jobs):
     """What a seat is doing, from the jobs assigned to it: (tone, word, the job it is on, how many it runs)."""
     mine = [j for j in jobs if j.seat == name]
@@ -1116,7 +1217,7 @@ def _composer(ctx, draft, ready, first):
     draft = draft if isinstance(draft, dict) else {}
     value = lambda name: _text(draft.get(name, ""))  # noqa: E731
     kind = draft.get("kind") or ("codex-cloud" if ready else "local-shell")
-    picked = {k: " checked" if kind == k else "" for k in ("local-shell", "codex-cloud")}
+    picked = {k: " checked" if kind == k else "" for k in ("gpt-chat", "local-shell", "codex-cloud")}
     have = set(draft.get("needs", [])) if isinstance(draft.get("needs"), list) else set()
     needs = "".join(f'<label><input type="checkbox" name="needs" value="{n}"{" checked" if n in have else ""}>{n}</label>'
                     for n in _NEEDS)
@@ -1130,11 +1231,13 @@ def _composer(ctx, draft, ready, first):
             f'class="mono" autocomplete="off" spellcheck="false" placeholder="sh -c \'date &gt; today.txt\'" '
             f'value="{value("command")}"><small>Runs in runs/&lt;name&gt;/, so write plain file names. Pipes and &gt; '
             'need sh -c, as shown.</small></div>'
-            '<div class="c-row"><fieldset class="seg where"><legend class="sr">Runs on</legend>'
-            f'<label><input type="radio" name="kind" value="local-shell"{picked["local-shell"]}>{_ic("mac", True)}'
-            f'{HERE}</label>'
+            '<div class="c-row"><fieldset class="seg where"><legend class="sr">Who works on it</legend>'
+            f'<label><input type="radio" name="kind" value="gpt-chat"{picked["gpt-chat"]}>{_ic("chat", True)}'
+            'GPT Pro</label>'
             f'<label><input type="radio" name="kind" value="codex-cloud"{picked["codex-cloud"]}>{_ic("cloud", True)}'
-            f'Codex cloud{later}</label></fieldset>'
+            f'Codex cloud{later}</label>'
+            f'<label><input type="radio" name="kind" value="local-shell"{picked["local-shell"]}>{_ic("mac", True)}'
+            f'{HERE}</label></fieldset>'
             '<label class="name"><span class="mono">name</span><input type="text" name="id" required autocomplete="off" '
             'spellcheck="false" class="mono" pattern="[a-z0-9][a-z0-9._\\-]{0,62}" placeholder="todo-scan" '
             f'aria-label="Job name" value="{value("id")}"></label>'
@@ -1170,10 +1273,13 @@ def _tally(ctx, jobs):
     return f'<p class="tally" data-region="tally" data-still data-sig="{_sig(pulse)}">{pulse}</p>'
 
 
-def _compose_strip(ctx, view, first):
-    """Starting a job: the composer as one line over the list, opening up as you type."""
+def _compose_strip(ctx, view, first, focus=False):
+    """Starting a job: Claude Code's input, docked at the foot of the detail, opening up as you type."""
+    form = _composer(ctx, view.get("compose"), ctx["ready"], first)
+    if focus:
+        form = form.replace('<textarea class="c-text" id="brief"', '<textarea class="c-text" id="brief" autofocus', 1)
     return ('<section class="c-strip" aria-labelledby="compose-title"><h1 class="sr" id="compose-title" tabindex="-1">'
-            'What should run?</h1>' + _composer(ctx, view.get("compose"), ctx["ready"], first) + '</section>')
+            'What should run?</h1>' + form + '</section>')
 
 
 def _reef(ctx, view, jobs):
@@ -1241,7 +1347,7 @@ def _snapshot_rail(jobs, loose, view, ctx):
     return f'<aside class="rail" aria-label="What needs you">{"".join(parts)}</aside>'
 
 
-def _home(jobs, stop_rows, loose_cards, view, ctx, feedback):
+def _home(jobs, stop_rows, loose_cards, view, ctx, feedback, heading=""):
     """Today: what needs you first, then the rest of the jobs, under the composer as one line; on the right, the sea,
     where each seat is a jellyfish. A printed snapshot has neither, and lists on the right what needs a person, each
     with the command that settles it."""
@@ -1253,9 +1359,11 @@ def _home(jobs, stop_rows, loose_cards, view, ctx, feedback):
         return (_top(ctx, when) + feedback + f'<div class="page mc"><div class="center"><section class="jobs" '
                 f'aria-labelledby="jobs-h">{jobs_head}{listed}</section></div>'
                 f'{_snapshot_rail(jobs, loose_cards, view, ctx)}</div>')
-    strip = _compose_strip(ctx, view, not jobs) if ctx["can_add"] else ""
-    return (_top(ctx, when, _tally(ctx, jobs)) + feedback + f'<div class="page reef-page"><div class="center">{strip}'
-            f'<section class="jobs" aria-label="Jobs">{listed}</section></div>{_reef(ctx, view, jobs)}</div>')
+    if heading:
+        when = f'<h1 tabindex="-1">{heading}</h1>'
+    strip = _compose_strip(ctx, view, not jobs, bool(heading)) if ctx["can_add"] else ""
+    return (_top(ctx, when, _tally(ctx, jobs)) + feedback + f'<div class="page sea-page">{_reef(ctx, view, jobs)}'
+            f'<div class="dock">{strip}</div></div>')
 
 
 def _event(ev, now, kind):
@@ -1385,9 +1493,10 @@ def _props(ctx, job, spec, entry, view):
     """The right side's properties: what the job is, where and when it runs, and what it was asked to do."""
     now, kind = ctx["now"], job.get("kind") or spec.get("kind", "")
     shown = "env" if entry.native else job.get("state")
-    word = _STATES.get(shown, (shown,))[0]
+    word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]
     rows = [("State", f'{_ring(shown)}<span>{_text(word)}</span>'),
-            ("Runs on", f'{_ic("mac" if kind == "local-shell" else "cloud", True)}<span>{_text(_platform(kind))}</span>')]
+            ("Runs on", f'{_ic({"local-shell": "mac", "gpt-chat": "chat"}.get(kind, "cloud"), True)}'
+                        f'<span>{_text(_platform(kind))}</span>')]
     seat = str(spec.get("seat") or "")
     if seat:
         card = next((s for s in view.get("seats", []) if isinstance(s, dict) and s.get("name") == seat), {})
@@ -1447,12 +1556,14 @@ def _job_head(ctx, opened, job, spec, entry, finished, creature):
     ended = receipt.get("ended") or job.get("updated")
     shown = "env" if entry.native else state
     word, tone = _STATES.get(shown, (shown, "neutral"))
+    if kind == "gpt-chat" and state == "handoff":
+        word, tone = _CHAT_WAIT
     line = [_ring(shown)]
     if finished:
         took = (f" in {_m(_duration(ended - started))}" if state == "done"
                 else f" after {_m(_duration(ended - started))}") if _number(started) and _number(ended) else ""
         line.append(f"<b>{_text(word)}{took}.</b>")
-        why = _plain(receipt.get("detail") or job.get("detail"))
+        why = _clause(_plain(receipt.get("detail") or job.get("detail")))
         if why and why != word:
             line.append(f'<span class="sep">·</span><span>{_text(why)}.</span>')
         if _number(ended):
@@ -1563,7 +1674,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     for item in entry.items:
-        cards.append(_ask_card(ctx, item, opened, lead, view))
+        cards.append(_chat_card(ctx, jid, spec, item, lead) if item.get("kind") == "chat"
+                     else _ask_card(ctx, item, opened, lead, view))
         lead = False
     if entry.handoff:
         cards.append(_launch_card(ctx, jid, opened, lead))
@@ -1587,11 +1699,15 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                      f'<p class="detail">{_NEXT["held"]}</p></div>')
     if cards:
         work.append(_region("j-asks", "".join(cards), "section", "s-j-asks", ' aria-label="Needs you"'))
+    answer = opened.get("reply")
+    if isinstance(answer, str) and answer.strip():
+        work.append(_region("j-answer", f'<p class="who">{_ic("chat", True)}GPT Pro</p><div class="said">'
+                            f'{_text(_reflow(answer))}</div>', "section", "msg ai", ' aria-label="The reply"'))
     if not finished:
         loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
         doing = (f"Running {_PLACES[kind]}" if state == "running" and kind in _PLACES else entry.word)
         next_line = ("It starts once Codex cloud is set up." if entry.setup
-                     else "" if entry.native else _NEXT.get(state, "").replace("{place}", _PLACES.get(kind, "on its platform")))
+                     else "" if entry.native or kind == "gpt-chat" else _NEXT.get(state, "").replace("{place}", _PLACES.get(kind, "on its platform")))
         if loop and loop.get("mode") == "paused":
             next_line = (next_line + " Automatic checks are paused: the app won't launch or collect it until you "
                          "resume them or press Check once.").strip()
@@ -1753,6 +1869,10 @@ def _ib_detail(ctx, entry, settled, view, missing):
         if kind == "web-launch" and jid:
             opened = {"prompt": view.get("prompt"), "job": {"detail": job.row.get("detail") if job else ""}}
             parts.append(_launch_card(ctx, jid, opened, True, f'<div class="foot">{_dismiss(ctx, item["id"])}</div>'))
+        elif kind == "chat" and jid:
+            meta = ctx["meta"].get(jid) or {}
+            parts.append(_chat_card(ctx, jid, {"brief": meta.get("brief", ""), "model": meta.get("model") or {}},
+                                    item, True))
         elif _setup_item(item, ctx["ready"]):
             parts.append(_setup_card(ctx, view, True))
         elif _native_item(item):
@@ -1867,13 +1987,18 @@ def _sidebar(ctx, view, page, wait):
         ws = (f'<a class="ws-btn" href="{_url(ctx, "/")}" data-nav>{_mark()}<span>research-harness</span></a>'
               f'<button type="button" class="icon-btn" data-pal aria-label="Jump to anything, ⌘K">{_ic("search")}'
               f'</button>{new}')
-        links = [("today", "Today", "/", page == "home"), ("inbox", "Inbox", "/inbox", page.startswith("inbox"))]
-        if ctx["can_add"]:
-            links.append(("new", "New job", "/new", page == "new"))
+        links = [("inbox", "Inbox", "/inbox", page.startswith("inbox")),
+                 ("jobs", "Jobs", "/", page in ("home", "new") or page.startswith("job:"))]
         current = ' aria-current="page"'
         nav = "".join(f'<a href="{_url(ctx, path)}" data-nav{current if here else ""}>{_ic(icon)}<span>{word}</span>'
                       + (f'<b class="count num" data-need="{wait}" aria-label="{_need_word(wait)}">{wait}</b>'
                          if icon == "inbox" and wait else "") + '</a>' for icon, word, path, here in links)
+        open_ = {w: sum(1 for j in ctx["jobs"] if j.place == w and j.group in ("needs", "live", "next"))
+                 for w, _, _ in _WORKERS}
+        nav += '<h2 class="side-h nav-h">Workers</h2>' + "".join(
+            f'<button type="button" class="nav-w" data-filter="{w}" aria-pressed="false">{_ic(icon)}'
+            f'<span>{_text(word)}</span>' + (f'<b class="count soft num">{open_[w]}</b>' if open_[w] else "")
+            + '</button>' for w, word, icon in _WORKERS)
         nav = f'<nav class="nav" aria-label="Main" data-region="nav" data-sig="{_sig(nav)}">{nav}</nav>'
         tools = ('<div class="tools"><button type="button" class="btn quiet small" data-keys hidden>Shortcuts '
                  '<kbd>?</kbd></button><span class="conn" data-live data-state="on" role="status"></span></div>')
@@ -1882,8 +2007,11 @@ def _sidebar(ctx, view, page, wait):
         nav = ""
         tools = '<div class="tools"><span class="soft">Snapshot</span></div>'
     top = f'<div class="ws" data-region="side-top" data-sig="{_sig(ws)}">{ws}</div>'
-    foot = (f'<div class="side-foot">{_host(view, ctx)}<footer class="checks"><h2 class="side-h">Check loop</h2>'
-            f'{_checks(view, ctx)}{tools}</footer></div>')
+    if live:
+        foot = f'<div class="side-foot">{tools}{_coord(view, ctx, ctx["jobs"])}</div>'
+    else:
+        foot = (f'<div class="side-foot">{_host(view, ctx)}<footer class="checks"><h2 class="side-h">Check loop</h2>'
+                f'{_checks(view, ctx)}{tools}</footer></div>')
     return f'<aside class="side" aria-label="research-harness">{top}{nav}{foot}</aside>'
 
 
@@ -1982,12 +2110,12 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
         pane = _inbox_pane(view, ctx, feedback)
     elif compose:
         page, title = "new", "New job · Research harness"
-        top = _top(ctx, '<h1 tabindex="-1">New job</h1>')
-        pane = (top + feedback + '<div class="page reef-page new-page"><div class="center">'
-                + _compose_strip(ctx, view, not jobs) + f'</div>{_reef(ctx, view, jobs)}</div>')
+        pane = _home(jobs, stop_rows, loose, view, ctx, feedback, "New job")
     else:
         page, title = "home", "Research harness"
         pane = _home(jobs, stop_rows, loose, view, ctx, feedback)
+    if live and page != "inbox":
+        pane = f'<div class="split">{_lane(jobs, stop_rows, ctx, named)}<div class="detail">{pane}</div></div>'
     wait = len(ctx["needs"])
     side = _sidebar(ctx, view, page, wait)
     fast = any(j.state in ("draft", "launching", "collecting") or (j.state == "running" and j.kind == "local-shell")
@@ -2011,6 +2139,7 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<title>{_text(title)}</title>\n'
             f'{head}<style>{style}</style>\n</head>\n<body data-now="{now:.3f}" data-open="{_text(page)}" '
+            f'data-here="{_text("job:" + named if named else "")}" '
             f'data-pace="{pace}" data-jobs="{1 if jobs else 0}">\n'
             f'<div class="app">{side}<main class="pane" data-pane="{_text(page)}" tabindex="-1">{pane}</main></div>\n'
             f'{extra}</body>\n</html>\n')

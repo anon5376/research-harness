@@ -1100,6 +1100,66 @@ console.log(JSON.stringify({ out, docked, crowded, initial, rendered, draws, map
         self.assertGreater(len({json.dumps(f["first"]) for f in got["out"] if f["W"] == 320}), 1)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_tank_reuses_its_placement_until_size_or_dock_changes(self):
+        # A placement search repeated on every frame, or a cached placement that ignores a new dock or tank size,
+        # must fail on the real Tank path.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <sea>"):dashboard.SCRIPT.index("// </sea>")]
+        tank = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank(canvas)"):dashboard.SCRIPT.index("let fonts = false;")]
+        probe = """
+const assert = require('node:assert/strict');
+function exercise(reduced) {
+  const events = {}, T0 = 0;
+  let W = 600, H = 500, dockTop = 420, nextFrame, dockResized, layouts = 0, seen = null;
+  const dock = { getBoundingClientRect: () => ({ left: 20, top: dockTop, right: 580, bottom: 482 }) };
+  const host = { parentElement: { querySelector: () => dock }, getBoundingClientRect: () => ({ left: 0, top: 0 }) };
+  const ctx = { setTransform() {}, clearRect() {}, fillRect() {}, fillText() {}, beginPath() {}, moveTo() {}, arc() {}, fill() {} };
+  const spec = ['worker', 'waiting', 'idle'].map((name, k) => ({ name, tone: ['accent', 'amber', 'faint'][k], fx: 0.5, fy: 0.5 }));
+  const fauna = { floor: true, fish: 2, bacteria: 1, plankton: 1, octopus: { tone: 'amber' } };
+  const canvas = { dataset: { creatures: JSON.stringify(spec), fauna: JSON.stringify(fauna) }, parentElement: host,
+    isConnected: true, getContext: () => ctx, getBoundingClientRect: () => ({ left: 0, top: 0, width: W, height: H }) };
+  const ResizeObserver = class { constructor(fn) { dockResized = fn; } observe() {} disconnect() {} };
+  const window = { devicePixelRatio: 1, ResizeObserver };
+  const document = { documentElement: {}, hidden: false, addEventListener() {}, removeEventListener() {} };
+  const calm = { matches: reduced }, light = { addEventListener() {}, removeEventListener() {} };
+  const getComputedStyle = () => ({ getPropertyValue: () => '' });
+  const addEventListener = (event, fn) => { events[event] = fn; }, removeEventListener = () => {};
+  const requestAnimationFrame = fn => { nextFrame = fn; return 1; };
+  const setTimeout = fn => { fn(); return 1; }, clearTimeout = () => {}, $$ = () => [];
+""" + block + tank + """
+  const realLayout = seaLayout, realPlacement = seaPlacement;
+  seaLayout = (...args) => { layouts++; return realLayout(...args); };
+  seaPlacement = (...args) => { seen = args[4]; return realPlacement(...args); };
+  const frame = now => { if (reduced) dockResized(); else { const fn = nextFrame; nextFrame = null; fn(now); } };
+  Tank(canvas);
+  frame(6000);
+  const settled = layouts;
+  frame(6060);
+  assert.equal(layouts, settled, 'unchanged geometry must reuse placement');
+  dockTop -= 100;
+  frame(6120);
+  assert.equal(layouts, settled + 1, 'a new dock must replace placement');
+  assert.equal(seen[1], dockTop / seaGrid(W, H, spec.length, true).Q);
+  // The same dock in the same cells, in a tank of another size: only the tank's own change can replace placement.
+  const before = seaGrid(W, H, spec.length, true);
+  W = 640;
+  const after = seaGrid(W, H, spec.length, true);
+  assert.equal(after.P, before.P); assert.notEqual(after.cols, before.cols);
+  events.resize();
+  frame(6180);
+  const resized = layouts;
+  assert(resized > settled + 1, 'a new tank size must replace placement');
+  frame(6240);
+  assert.equal(layouts, resized, 'the new size keeps its placement');
+}
+exercise(false);
+exercise(true);
+console.log('TANK PLACEMENT PASSED');
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "TANK PLACEMENT PASSED")
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_seas_characters_fit_their_cells(self):
         # Rows stretched to fill a tank, characters wider than their column (neighbours run together), characters too
         # small to read beside the list, or specks of plankton that touch, must fail.

@@ -24,8 +24,8 @@ tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_wh
 [[mutant]]
 name = "the tank does not pass the dock to the sea"
 file = "rh/web/app.js"
-find = "    const { dots, labels } = seaDots(spec, fauna, cols, rows, t, dockCells);"
-replace = "    const { dots, labels } = seaDots(spec, fauna, cols, rows, t);"
+find = "      placement = seaPlacement(spec, fauna, cols, rows, dockCells); placedDock = dockKey;"
+replace = "      placement = seaPlacement(spec, fauna, cols, rows, null); placedDock = dockKey;"
 tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
 
 [[mutant]]
@@ -41,3 +41,24 @@ file = "rh/web/app.js"
 find = "            if (free) { ox = x; oy = y; scale = size; break search; }"
 replace = "            if (false && free) { ox = x; oy = y; scale = size; break search; }"
 tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "the tank repeats its placement search every frame"
+file = "rh/web/app.js"
+find = "  const { slots, octopus } = placement || seaPlacement(spec, fauna, cols, rows, dock);"
+replace = "  const { slots, octopus } = seaPlacement(spec, fauna, cols, rows, dock);"
+tests = ["tests.test_dashboard.DashboardTest.test_the_tank_reuses_its_placement_until_size_or_dock_changes"]
+
+[[mutant]]
+name = "a resized dock keeps the old cached placement"
+file = "rh/web/app.js"
+find = "    if (!placement || dockKey !== placedDock) {"
+replace = "    if (!placement) {"
+tests = ["tests.test_dashboard.DashboardTest.test_the_tank_reuses_its_placement_until_size_or_dock_changes"]
+
+[[mutant]]
+name = "a resized tank keeps the old cached placement"
+file = "rh/web/app.js"
+find = "    placement = null;\n"
+replace = "    // Keep the previous placement.\n"
+tests = ["tests.test_dashboard.DashboardTest.test_the_tank_reuses_its_placement_until_size_or_dock_changes"]

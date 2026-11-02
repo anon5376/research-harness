@@ -144,9 +144,41 @@ const ripple = (len, head, beat, amp) => i => {
   return Math.sin(beat - back * 3.2) * amp * back * back;
 };
 
+// Reserve the same slots and octopus box until the tank or dock changes; neither depends on animation time.
+function seaPlacement(spec, fauna, cols, rows, dock) {
+  const slots = seaLayout(spec, fauna, cols, rows), o = fauna && fauna.octopus;
+  let octopus = null;
+  if (o) {
+    const floor = fauna.floor ? 1 : 0;
+    let ox = o.at ? Math.round(o.at[0] * cols - OW / 2) : 0;
+    let oy = o.at ? Math.round(o.at[1] * rows - OH / 2) : rows - OH - floor, scale = 1;
+    if (dock && !o.at && ox < dock[2] && ox + OW > dock[0] && oy < dock[3] && oy + OH > dock[1]) {
+      if (dock[1] >= OH + 1) oy = Math.floor(dock[1] - OH - 1);
+      else if (dock[2] + OW <= cols) ox = Math.ceil(dock[2]);
+      else if (dock[0] >= OW) ox = Math.floor(dock[0] - OW);
+      // Reserve each jellyfish's full drift and its label, so the octopus does not jump as they swim.
+      const occupied = slots.map(([sx, sy, slack], k) => {
+        const half = Math.max(JW / 2, String(spec[k].name || '').length * 1.5);
+        return [sx + JW / 2 - half - slack - 1, sy - 1, sx + JW / 2 + half + slack + 1, sy + JH + 1.5];
+      });
+      occupied.push([dock[0] - 1, dock[1] - 1, dock[2] + 1, dock[3] + 1]);
+      search: for (const size of [1, 0.75, 0.5, 0.4]) {
+        for (let y = Math.floor(rows - OH * size - floor); y >= 0; y--) {
+          for (let x = 0; x <= cols - OW * size; x++) {
+            const free = occupied.every(([l, top, r, bottom]) => x + OW * size <= l || x >= r || y + OH * size <= top || y >= bottom);
+            if (free) { ox = x; oy = y; scale = size; break search; }
+          }
+        }
+      }
+    }
+    octopus = [Math.max(0, Math.min(cols - OW * scale, ox)), Math.max(0, Math.min(rows - OH * scale, oy)), scale];
+  }
+  return { slots, octopus };
+}
+
 // Every dot of the sea at time t, in cells: [x, y, kind, tone, alpha]; the seats' names to write under their
 // jellyfish; and each creature's box, for the test that checks every creature is drawn whole.
-function seaDots(spec, fauna, cols, rows, t, dock = null) {
+function seaDots(spec, fauna, cols, rows, t, dock = null, placement = null) {
   const dots = [], labels = [], parts = [];
   const put = (x, y, kind, tone, a) => { dots.push([x, y, kind, tone, a]); };
   const map = (rowsOf, x0, y0, tone, a, part, bend) => {
@@ -160,7 +192,7 @@ function seaDots(spec, fauna, cols, rows, t, dock = null) {
     });
     parts.push({ ...part, box: [x0, y0, x0 + rowsOf[0].length, y0 + rowsOf.length] });
   };
-  const slots = seaLayout(spec, fauna, cols, rows);
+  const { slots, octopus } = placement || seaPlacement(spec, fauna, cols, rows, dock);
   let below = 0;
   spec.forEach((c, k) => {
     const sp = c.sp || 1, ph = k * 1.7, tone = TONES[c.tone] ? c.tone : 'faint', a = tone === 'faint' ? 0.78 : 0.95;
@@ -203,7 +235,7 @@ function seaDots(spec, fauna, cols, rows, t, dock = null) {
     parts.push({ kind: 'jelly', name: c.name, box: [x0, y0, x0 + JW, y0 + JH] });
   });
   if (!fauna) return { dots, labels, parts };
-  const f = fauna, floor = f.floor ? 1 : 0;
+  const f = fauna;
   // plankton: a fine drift rising everywhere, and a brighter cloud for each job up next
   const specks = Math.round(cols * rows * 0.012);
   for (let i = 0; i < specks; i++) {
@@ -221,28 +253,7 @@ function seaDots(spec, fauna, cols, rows, t, dock = null) {
   // the octopus near the floor, clear of the dock, or where the page puts it in a small tank; it breathes and blinks
   if (f.octopus) {
     const o = f.octopus, tone = TONES[o.tone] ? o.tone : 'faint', a = tone === 'faint' ? 0.55 : 0.95;
-    let ox = o.at ? Math.round(o.at[0] * cols - OW / 2) : 0;
-    let oy = o.at ? Math.round(o.at[1] * rows - OH / 2) : rows - OH - floor, scale = 1;
-    if (dock && !o.at && ox < dock[2] && ox + OW > dock[0] && oy < dock[3] && oy + OH > dock[1]) {
-      if (dock[1] >= OH + 1) oy = Math.floor(dock[1] - OH - 1);
-      else if (dock[2] + OW <= cols) ox = Math.ceil(dock[2]);
-      else if (dock[0] >= OW) ox = Math.floor(dock[0] - OW);
-      // Reserve each jellyfish's full drift and its label, so the octopus does not jump as they swim.
-      const occupied = slots.map(([sx, sy, slack], k) => {
-        const half = Math.max(JW / 2, String(spec[k].name || '').length * 1.5);
-        return [sx + JW / 2 - half - slack - 1, sy - 1, sx + JW / 2 + half + slack + 1, sy + JH + 1.5];
-      });
-      occupied.push([dock[0] - 1, dock[1] - 1, dock[2] + 1, dock[3] + 1]);
-      search: for (const size of [1, 0.75, 0.5, 0.4]) {
-        for (let y = Math.floor(rows - OH * size - floor); y >= 0; y--) {
-          for (let x = 0; x <= cols - OW * size; x++) {
-            const free = occupied.every(([l, top, r, bottom]) => x + OW * size <= l || x >= r || y + OH * size <= top || y >= bottom);
-            if (free) { ox = x; oy = y; scale = size; break search; }
-          }
-        }
-      }
-    }
-    const x = Math.max(0, Math.min(cols - OW * scale, ox)), y = Math.max(0, Math.min(rows - OH * scale, oy));
+    const [x, y, scale] = octopus;
     const start = dots.length;
     const lift = 0.3 * (0.5 + 0.5 * Math.sin(t * 0.8));
     const head = t % 5.3 < 0.18 ? OCTOPUS.map(r => r.replace(/o/g, '.')) : OCTOPUS;
@@ -377,6 +388,7 @@ function Tank(canvas) {
   const host = canvas.parentElement;
   if (!ctx || !host) return;
   let W = 0, H = 0, P = 6, Q = 11, cols = 0, rows = 0;
+  let placement = null, placedDock = '';
   // The creatures' colours come from the page's theme (rh.css --sea-*), and change with it.
   let tones = TONES, label = [128, 139, 136];
   function paint() {
@@ -396,6 +408,7 @@ function Tank(canvas) {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ({ P, Q, cols, rows } = seaGrid(W, H, spec.length, !!(fauna && fauna.floor)));
+    placement = null;
   }
   // Words sit on clear water: dots fade behind every [data-clear] element in the tank's box.
   function clears() {
@@ -412,7 +425,11 @@ function Tank(canvas) {
     const dockCells = dockBox && dockBox.right > dockBox.left && dockBox.bottom > dockBox.top &&
       [(dockBox.left - tankBox.left) / P, (dockBox.top - tankBox.top) / Q,
       (dockBox.right - tankBox.left) / P, (dockBox.bottom - tankBox.top) / Q];
-    const { dots, labels } = seaDots(spec, fauna, cols, rows, t, dockCells);
+    const dockKey = dockCells ? dockCells.join('|') : '';
+    if (!placement || dockKey !== placedDock) {
+      placement = seaPlacement(spec, fauna, cols, rows, dockCells); placedDock = dockKey;
+    }
+    const { dots, labels } = seaDots(spec, fauna, cols, rows, t, dockCells, placement);
     const { cells, eyes, specks } = seaCells(dots, cols, rows);
     const clear = clears();
     const fade = (x, y) => {

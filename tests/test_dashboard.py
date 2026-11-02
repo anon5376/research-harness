@@ -969,7 +969,8 @@ class DashboardTest(unittest.TestCase):
         # jellyfish on top of each other, a dot map whose rows differ in length, or a sea that draws the same dots at
         # every moment, must fail. The sea's drawing code touches no page, so node runs it as the browser would.
         block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <sea>"):dashboard.SCRIPT.index("// </sea>")]
-        probe = block + """
+        tank = dashboard.SCRIPT[dashboard.SCRIPT.index("function Tank(canvas)"):dashboard.SCRIPT.index("let fonts = false;")]
+        probe = block + tank + """
 const spec = ['backend', 'cli', 'app', 'testing', 'design', 'lead'].map((name, k) =>
   ({ name, tone: ['faint', 'accent', 'amber'][k % 3], fx: 0.5, fy: 0.5, sp: 1 }));
 const fauna = { fish: 3, school: 5, bacteria: 2, plankton: 2, eel: true, octopus: { tone: 'amber' }, floor: true };
@@ -984,6 +985,23 @@ for (const [W, H] of [[320, 760], [320, 1100], [860, 112], [390, 112]]) {
     out.push({ W, H, cols, rows, t, parts, outside, red, first: dots.slice(0, 60) });
   }
 }
+// Dock rectangles are in lattice cells, including a fractional top edge from the page layout.
+const docked = [[800, 550, [3, 28.4, 110, 41]], [1120, 810, [3, 47.6, 155, 61]]].map(([W, H, dock]) => {
+  const { cols, rows } = seaGrid(W, H, spec.length, true);
+  return { cols, rows, dock, octopus: seaDots(spec, fauna, cols, rows, 0, dock).parts.find(p => p.kind === 'octopus').box };
+});
+// Representative sea-page tanks at both requested viewport sizes, across animation frames.
+const crowded = [];
+for (const [W, H, dockTop] of [[390, 560, 417], [390, 577, 434], [806, 837, 690]]) {
+  const { P, Q, cols, rows } = seaGrid(W, H, spec.length, true);
+  const dock = [20 / P, dockTop / Q, (W - 20) / P, (H - 18) / Q];
+  for (const t of [0, 2.7, 9.4, 31.1, 77.7]) {
+    const { dots, parts, labels } = seaDots(spec, fauna, cols, rows, t, dock);
+    const reference = seaDots(spec, fauna, cols, rows, t);
+    const outside = dots.filter(d => d[2] !== FINE && (d[0] < 0 || d[1] < 0 || d[0] > cols - 1 || d[1] > rows - 1)).length;
+    crowded.push({ W, H, t, cols, rows, dock, parts, labels, outside, reference: { parts: reference.parts, labels: reference.labels } });
+  }
+}
 const one = seaDots([spec[0]], null, 40, 20, 3);
 // a floor whose last column grows a weed: its sway must stay inside the tank
 const edge = Array.from({ length: 400 }, (_, c) => c).find(c => c > 40 && hash(c - 1, 3, 17) > 0.93);
@@ -991,7 +1009,32 @@ let weeds = 0;
 for (const t of [0, 1.3, 2.6, 3.9]) {
   weeds += seaFloor([], edge, 40, t, [], []).dots.filter(d => d[0] < 0 || d[0] > edge - 1).length;
 }
-console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.parts, weeds }));
+// Exercise the real tank's conversion from the dock's pixel rectangle to lattice cells.
+let rendered, draws = 0;
+const realSeaDots = seaDots;
+seaDots = (...args) => {
+  draws++;
+  const frame = realSeaDots(...args), { P, Q, cols, rows } = seaGrid(600, 500, spec.length, true);
+  rendered = { dock: args[5], actualDock: [20 / P, (dockTop - 100) / Q, 580 / P, 450 / Q], cols, rows,
+    octopus: frame.parts.find(p => p.kind === 'octopus').box };
+  return frame;
+};
+let dockTop = 420, onDockResize;
+const dockElement = { getBoundingClientRect: () => ({ left: 120, top: dockTop, right: 680, bottom: 550 }) };
+const host = { parentElement: { querySelector: selector => selector === '.dock' ? dockElement : null }, getBoundingClientRect: () => ({ left: 100, top: 100 }) };
+const ctx = { setTransform() {}, clearRect() {}, fillRect() {}, fillText() {}, beginPath() {}, moveTo() {}, arc() {}, fill() {} };
+const canvas = { dataset: { creatures: JSON.stringify(spec), fauna: JSON.stringify(fauna) }, parentElement: host,
+  isConnected: true, getContext: () => ctx, getBoundingClientRect: () => ({ left: 100, top: 100, width: 600, height: 500 }) };
+const ResizeObserver = class { constructor(callback) { onDockResize = callback; } observe() {} disconnect() {} };
+const window = { devicePixelRatio: 1, ResizeObserver }, document = { documentElement: {} };
+const calm = { matches: true }, light = { addEventListener() {} };
+const getComputedStyle = () => ({ getPropertyValue: () => '0 0 0' });
+const addEventListener = () => {}, $$ = () => [];
+Tank(canvas);
+const initial = rendered;
+dockTop = 300;
+onDockResize();
+console.log(JSON.stringify({ out, docked, crowded, initial, rendered, draws, maps: { FISH, MINNOW, OCTOPUS }, alone: one.parts, weeds }));
 """
         r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
@@ -1000,6 +1043,34 @@ console.log(JSON.stringify({ out, maps: { FISH, MINNOW, OCTOPUS }, alone: one.pa
             self.assertEqual(len({len(row) for row in rows}), 1, name)
         self.assertEqual([p["kind"] for p in got["alone"]], ["jelly"])  # a job's head: its seat, nothing else
         self.assertEqual(got["weeds"], 0)
+        self.assertIsNotNone(got["initial"]["dock"])
+        for frame in (got["initial"], got["rendered"]):
+            for actual, expected in zip(frame["dock"], frame["actualDock"]):
+                self.assertAlmostEqual(actual, expected)
+        self.assertEqual(got["draws"], 2)
+        self.assertLess(got["rendered"]["dock"][1], got["initial"]["dock"][1])
+        for frame in [*got["docked"], got["initial"], got["rendered"]]:
+            x0, y0, x1, y1 = frame["octopus"]
+            dx0, dy0, dx1, dy1 = frame["dock"]
+            if "cols" in frame:
+                self.assertTrue(0 <= x0 < x1 <= frame["cols"] and 0 <= y0 < y1 <= frame["rows"])
+            self.assertFalse(x0 < dx1 and dx0 < x1 and y0 < dy1 and dy0 < y1, frame)
+        positions = {}
+        for frame in got["crowded"]:
+            self.assertEqual(frame["outside"], 0)
+            self.assertEqual(frame["labels"], frame["reference"]["labels"])
+            self.assertEqual([p for p in frame["parts"] if p["kind"] != "octopus"],
+                             [p for p in frame["reference"]["parts"] if p["kind"] != "octopus"])
+            octopus = next(part["box"] for part in frame["parts"] if part["kind"] == "octopus")
+            size = (frame["W"], frame["H"])
+            self.assertEqual(positions.setdefault(size, octopus), octopus)
+            boxes = [frame["dock"], *(part["box"] for part in frame["parts"] if part["kind"] == "jelly")]
+            boxes += [[x - len(name) * 1.5, y - 1, x + len(name) * 1.5, y + 1]
+                      for x, y, name, _ in frame["labels"]]
+            x0, y0, x1, y1 = octopus
+            self.assertTrue(0 <= x0 < x1 <= frame["cols"] and 0 <= y0 < y1 <= frame["rows"], frame)
+            for bx0, by0, bx1, by1 in boxes:
+                self.assertFalse(x0 < bx1 and bx0 < x1 and y0 < by1 and by0 < y1, (frame["W"], frame["H"], frame["t"], octopus, [bx0, by0, bx1, by1]))
         for frame in got["out"]:
             kinds = [p["kind"] for p in frame["parts"]]
             with self.subTest(size=(frame["W"], frame["H"]), t=frame["t"]):

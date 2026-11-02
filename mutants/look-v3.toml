@@ -69,8 +69,8 @@ tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_th
 [[mutant]]
 name = "the tank keeps swimming under reduced motion"
 file = "rh/web/app.js"
-find = "  if (calm.matches) { draw(6); return; }"
-replace = "  if (false) { draw(6); return; }"
+find = "  if (calm.matches) { draw(6);"
+replace = "  if (false) { draw(6);"
 tests = ["tests.test_dashboard.DashboardTest.test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing"]
 
 [[mutant]]

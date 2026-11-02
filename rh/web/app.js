@@ -52,7 +52,7 @@ const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' 
 // Each creature stands for something the page shows: a jellyfish per seat (teal while it works, amber while it waits
 // on you, dim while idle), a fish per job running (at most 9), a school of up to 9 small fish for the jobs done today,
 // a colony of bacteria per job that failed today (at most 7), a cloud of plankton per job up next (at most 12), the
-// eel while the harness is being checked, and the octopus on the sea floor, amber while anything needs you. The fish,
+// eel while the harness is being checked, and the octopus near the floor, amber while anything needs you. The fish,
 // the school and the bacteria swim in the open water between the jellyfish and the octopus; once the seats reach
 // down near the octopus (8 seats in a reef 760 px tall, 14 in one 1100 px tall), they use the whole water.
 // <sea> From here to </sea> the code touches no page, so a test runs it in node.
@@ -146,7 +146,7 @@ const ripple = (len, head, beat, amp) => i => {
 
 // Every dot of the sea at time t, in cells: [x, y, kind, tone, alpha]; the seats' names to write under their
 // jellyfish; and each creature's box, for the test that checks every creature is drawn whole.
-function seaDots(spec, fauna, cols, rows, t) {
+function seaDots(spec, fauna, cols, rows, t, dock = null) {
   const dots = [], labels = [], parts = [];
   const put = (x, y, kind, tone, a) => { dots.push([x, y, kind, tone, a]); };
   const map = (rowsOf, x0, y0, tone, a, part, bend) => {
@@ -218,12 +218,32 @@ function seaDots(spec, fauna, cols, rows, t) {
     }
     parts.push({ kind: 'plankton', box: [cx, cy, cx, cy] });
   }
-  // the octopus on the sea floor, or where the page puts it in a small tank; it breathes, blinks and curls its arms
+  // the octopus near the floor, clear of the dock, or where the page puts it in a small tank; it breathes and blinks
   if (f.octopus) {
     const o = f.octopus, tone = TONES[o.tone] ? o.tone : 'faint', a = tone === 'faint' ? 0.55 : 0.95;
-    const ox = o.at ? Math.round(o.at[0] * cols - OW / 2) : 0;
-    const oy = o.at ? Math.round(o.at[1] * rows - OH / 2) : rows - OH - floor;
-    const x = Math.max(0, Math.min(cols - OW, ox)), y = Math.max(0, Math.min(rows - OH, oy));
+    let ox = o.at ? Math.round(o.at[0] * cols - OW / 2) : 0;
+    let oy = o.at ? Math.round(o.at[1] * rows - OH / 2) : rows - OH - floor, scale = 1;
+    if (dock && !o.at && ox < dock[2] && ox + OW > dock[0] && oy < dock[3] && oy + OH > dock[1]) {
+      if (dock[1] >= OH + 1) oy = Math.floor(dock[1] - OH - 1);
+      else if (dock[2] + OW <= cols) ox = Math.ceil(dock[2]);
+      else if (dock[0] >= OW) ox = Math.floor(dock[0] - OW);
+      // Reserve each jellyfish's full drift and its label, so the octopus does not jump as they swim.
+      const occupied = slots.map(([sx, sy, slack], k) => {
+        const half = Math.max(JW / 2, String(spec[k].name || '').length * 1.5);
+        return [sx + JW / 2 - half - slack - 1, sy - 1, sx + JW / 2 + half + slack + 1, sy + JH + 1.5];
+      });
+      occupied.push([dock[0] - 1, dock[1] - 1, dock[2] + 1, dock[3] + 1]);
+      search: for (const size of [1, 0.75, 0.5, 0.4]) {
+        for (let y = Math.floor(rows - OH * size - floor); y >= 0; y--) {
+          for (let x = 0; x <= cols - OW * size; x++) {
+            const free = occupied.every(([l, top, r, bottom]) => x + OW * size <= l || x >= r || y + OH * size <= top || y >= bottom);
+            if (free) { ox = x; oy = y; scale = size; break search; }
+          }
+        }
+      }
+    }
+    const x = Math.max(0, Math.min(cols - OW * scale, ox)), y = Math.max(0, Math.min(rows - OH * scale, oy));
+    const start = dots.length;
     const lift = 0.3 * (0.5 + 0.5 * Math.sin(t * 0.8));
     const head = t % 5.3 < 0.18 ? OCTOPUS.map(r => r.replace(/o/g, '.')) : OCTOPUS;
     map(head, x + 1, y + lift, tone, a, { kind: 'octopus' }, i => 0.06 + Math.sin(t * 0.8 + i * 0.5) * 0.06);
@@ -234,6 +254,10 @@ function seaDots(spec, fauna, cols, rows, t) {
         put(x + 2.4 + m * 2.1 + out * s * 0.5 + Math.sin(t * 0.9 - s * 0.9 + m * 1.7) * s * 0.2, y + 4 + s,
           s ? DIM : BRIGHT, tone, a * (1 - s * 0.15));
       }
+    }
+    if (scale !== 1) {
+      for (let i = start; i < dots.length; i++) { dots[i][0] = x + (dots[i][0] - x) * scale; dots[i][1] = y + (dots[i][1] - y) * scale; }
+      parts[parts.length - 1].box = [x, y, x + OW * scale, y + OH * scale];
     }
   }
   if (!f.floor) return { dots, labels, parts };
@@ -383,7 +407,12 @@ function Tank(canvas) {
   }
   function draw(t) {
     if (!cols || !rows) return;
-    const { dots, labels } = seaDots(spec, fauna, cols, rows, t);
+    const dock = host.parentElement && host.parentElement.querySelector('.dock');
+    const tankBox = canvas.getBoundingClientRect(), dockBox = dock && dock.getBoundingClientRect();
+    const dockCells = dockBox && dockBox.right > dockBox.left && dockBox.bottom > dockBox.top &&
+      [(dockBox.left - tankBox.left) / P, (dockBox.top - tankBox.top) / Q,
+      (dockBox.right - tankBox.left) / P, (dockBox.bottom - tankBox.top) / Q];
+    const { dots, labels } = seaDots(spec, fauna, cols, rows, t, dockCells);
     const { cells, eyes, specks } = seaCells(dots, cols, rows);
     const clear = clears();
     const fade = (x, y) => {
@@ -454,7 +483,14 @@ function Tank(canvas) {
   addEventListener('resize', resized);
   const themed = () => { if (!canvas.isConnected) return; paint(); if (calm.matches) draw(6); };
   light.addEventListener('change', themed);
-  if (calm.matches) { draw(6); return; }
+  if (calm.matches) { draw(6);
+    const dock = host.parentElement && host.parentElement.querySelector('.dock');
+    if (dock && 'ResizeObserver' in window) {
+      const observer = new ResizeObserver(() => { if (canvas.isConnected) draw(6); else observer.disconnect(); });
+      observer.observe(dock);
+    }
+    return;
+  }
   // About 20 frames a second, and none at all while the tab is hidden or the tank is scrolled out of view.
   let last = 0, raf = 0, seen = true;
   const io = 'IntersectionObserver' in window

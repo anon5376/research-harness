@@ -13,3 +13,31 @@ file = "rh/web/rh.css"
 find = ".top { min-height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;"
 replace = ".top { height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;"
 tests = ["tests.test_dashboard.DashboardTest.test_top_bar_can_wrap_without_clipping_its_tally"]
+
+[[mutant]]
+name = "the octopus ignores the dock"
+file = "rh/web/app.js"
+find = "    if (dock && !o.at && ox < dock[2] && ox + OW > dock[0] && oy < dock[3] && oy + OH > dock[1]) {"
+replace = "    if (false && dock && !o.at && ox < dock[2] && ox + OW > dock[0] && oy < dock[3] && oy + OH > dock[1]) {"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "the tank does not pass the dock to the sea"
+file = "rh/web/app.js"
+find = "    const { dots, labels } = seaDots(spec, fauna, cols, rows, t, dockCells);"
+replace = "    const { dots, labels } = seaDots(spec, fauna, cols, rows, t);"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "a resized dock does not redraw the still sea"
+file = "rh/web/app.js"
+find = "      const observer = new ResizeObserver(() => { if (canvas.isConnected) draw(6); else observer.disconnect(); });"
+replace = "      const observer = new ResizeObserver(() => { if (canvas.isConnected) return; else observer.disconnect(); });"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]
+
+[[mutant]]
+name = "the octopus does not find a clear place among the seats"
+file = "rh/web/app.js"
+find = "            if (free) { ox = x; oy = y; scale = size; break search; }"
+replace = "            if (false && free) { ox = x; oy = y; scale = size; break search; }"
+tests = ["tests.test_dashboard.DashboardTest.test_the_sea_draws_each_creature_whole"]

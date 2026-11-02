@@ -244,7 +244,7 @@ a.ws-btn:hover { background: var(--raised); }
 .page { flex: 1; min-height: 0; display: grid; }
 .page.entering { animation: enter .3s var(--ease); }
 @keyframes enter { from { opacity: 0; transform: translateY(4px); } }
-.top { height: 46px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 24px;
+.top { min-height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;
   border-bottom: 1px solid var(--rule); min-width: 0; }
 .top h1 { font-size: 16px; line-height: 20px; white-space: nowrap; outline: none; }
 .top-meta { color: var(--faint); white-space: nowrap; }

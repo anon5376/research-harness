@@ -1,0 +1,15 @@
+# Top-bar containment: each replacement changes one CSS line and must fail the named test.
+
+[[mutant]]
+name = "the top bar stops wrapping when its row is full"
+file = "rh/web/rh.css"
+find = ".top { min-height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;"
+replace = ".top { min-height: 46px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 24px;"
+tests = ["tests.test_dashboard.DashboardTest.test_top_bar_can_wrap_without_clipping_its_tally"]
+
+[[mutant]]
+name = "the top bar clips wrapped rows to its old fixed height"
+file = "rh/web/rh.css"
+find = ".top { min-height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;"
+replace = ".top { height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;"
+tests = ["tests.test_dashboard.DashboardTest.test_top_bar_can_wrap_without_clipping_its_tally"]

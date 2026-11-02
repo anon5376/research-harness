@@ -1359,6 +1359,31 @@ console.log(JSON.stringify([
         self.assertNotIn("@media (max-width", style)
         self.assertLess(px(".lane-head", "height") + px(".lane .group .head", "height"), 100)
 
+    def test_top_bar_can_wrap_without_clipping_its_tally(self):
+        # A single fixed row overflows when Today, its clock, the tally and search cannot fit beside the lane.
+        # Guard the CSS reflow contract here; browser checks own the actual pixel bounds in both schemes.
+        view = live_view()
+        pages = {"/": dashboard.render(view, NOW, token=TOKEN),
+                 "/new": dashboard.render({**view, "new": True}, NOW, token=TOKEN),
+                 "/inbox": inbox(view),
+                 "/job/live-job": dashboard.render(opened(view, "live-job"), NOW, token=TOKEN)}
+        for route, page in pages.items():
+            with self.subTest(route=route):
+                top = re.search(r'<header class="top"[^>]*>.*?</header>', page, re.S)
+                self.assertIsNotNone(top)
+                if route in ("/", "/new"):
+                    self.assertIn('data-region="tally"', top.group(0))
+                    self.assertIn("jobs live", text(top.group(0)))
+        style = re.search(r"<style>(.*?)</style>", pages["/"], re.S).group(1)
+        block = re.search(r"(?:^|\n)\.top\s*\{([^}]*)\}", style).group(1)
+        declarations = dict(re.findall(r"([\w-]+)\s*:\s*([^;]+);", block))
+        with self.subTest(constraint="row wrapping"):
+            self.assertIn(declarations.get("flex-wrap", "nowrap"), ("wrap", "wrap-reverse"),
+                          "top bar must reflow when its contents exceed one row")
+        with self.subTest(constraint="row containment"):
+            self.assertEqual(declarations.get("height", "auto"), "auto",
+                             "top bar must grow to contain every wrapped row")
+
     def test_the_composer_offers_three_workers(self):
         # A composer without GPT Pro, Codex cloud and This Mac as the three workers, in that order, or one whose GPT
         # Pro choice posts another kind, must fail.

@@ -10,6 +10,7 @@ REPO = Path(__file__).resolve().parents[1]
 DEFAULTS = {
     "cloud": {"env_id": "", "branch": "main", "codex": "codex", "route": "cli", "launches_per_tick": 1,
               "probe_timeout": 60, "changes_ttl_min": 120, "min_gap_s": 60, "max_per_hour": 20},
+    "devin": {"org_id": ""},
     "lease": {"lock": "", "max_load": 10.0, "max_wait": 600},
     "notify": {"command": []},
     "supervisor": {"interval": 60},

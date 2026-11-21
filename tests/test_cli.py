@@ -175,6 +175,16 @@ class CliTest(unittest.TestCase):
         self.assertEqual(show["receipt"]["diff_source"], "saved patch")
         self.assertNotIn("[harvest]", self.rh("inbox").stdout)
 
+    def test_doctor_reports_the_devin_route_and_never_prints_its_key(self):
+        self.env.pop("DEVIN_API_KEY", None)
+        self.assertIn("devin: not configured", self.rh("doctor", check=False).stdout)
+        self.env["DEVIN_API_KEY"] = "test-key-not-real"
+        self.rh("config", "set", "devin.org_id", "acme")
+        out = self.rh("doctor", check=False)
+        self.assertIn("devin: FAIL bad org_id: 'acme'", out.stdout)
+        self.assertIn("ledger: ok", out.stdout, "a bad Devin setting must not stop the other checks")
+        self.assertNotIn("test-key-not-real", out.stdout + out.stderr)
+
     def test_unseen_environment_waits_and_a_hand_launch_is_the_fallback_that_says_why(self):
         self.fake_codex("")
         state = json.loads(Path(self.env["FAKE_CODEX_STATE"]).read_text())

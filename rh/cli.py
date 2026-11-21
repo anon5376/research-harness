@@ -504,6 +504,7 @@ def cmd_doctor(args, cfg):
             native = cfg["cloud"]["route"] != "web"
             print(f"cloud env: {'FAIL ' if native else ''}{env}, not usable by the codex CLI: {e.detail}")
             ok &= not native
+    ok &= _doctor_devin(cfg)
     try:
         r = lease.read_host()
         allowed, why = lease.admit(r, float(cfg["lease"]["max_load"]))
@@ -517,6 +518,22 @@ def cmd_doctor(args, cfg):
     print(f"supervisor: {'last tick %ds ago' % (time.time() - json.loads(hb.read_text(encoding='utf-8'))['ts']) if hb.is_file() else 'never ran'}")
     print(f"notify: {'configured' if cfg['notify']['command'] else 'not configured'}")
     return 0 if ok else 1
+
+
+def _doctor_devin(cfg):
+    """One line on the Devin API. The key comes only from DEVIN_API_KEY, never from config.toml. Not configured
+    is not a failure: no job kind uses the route yet."""
+    from rh.adapters.devin import Devin
+    org, key = cfg["devin"]["org_id"], os.environ.get("DEVIN_API_KEY", "")
+    if not org or not key:
+        print("devin: not configured (rh config set devin.org_id org-..., and DEVIN_API_KEY in the environment)")
+        return True
+    try:
+        h = Devin(org, key).health()
+    except ValueError as e:
+        h = {"ok": False, "detail": str(e)}
+    print(f"devin: {'ok' if h['ok'] else 'FAIL'} {h['detail']}")
+    return h["ok"]
 
 
 def cmd_lease(args, cfg):

@@ -17,6 +17,7 @@ import tempfile
 import time
 from pathlib import Path
 
+from rh import contract
 from rh.ledger import TERMINAL, Ledger
 
 FUSION = "fusion-claude-fable-5-2-medium-sidekick-swe-2-high"
@@ -40,10 +41,18 @@ End with a short answer: a one-line title, then what was wrong, what you changed
 
 
 def brief(focus, history):
-    """The round's brief: the standing ask, the owner's focus if any, and what earlier rounds tried."""
+    """The round's brief: the standing ask, the owner's focus if any, and what earlier rounds tried. An agent's title
+    that reads like an operator step ("fix the deploy docs") would get every later round held by the supervisor's
+    guard, so such a title is described instead of quoted; a focus that reads like one is refused here."""
+    if steps := contract.operator_steps(focus):
+        raise ValueError(f"the focus reads like an operator step the harness holds for you: {steps[0]}")
     tried = ""
     if history:
-        lines = [f"- {h['title']} ({h['verdict']})" for h in history]
+        lines = []
+        for h in history:
+            line = f"- {h['title']} ({h['verdict']})"
+            lines.append(line if not contract.operator_steps(line) else
+                         f"- a change whose title is withheld here ({h['verdict']}, job {h.get('job', '?')})")
         tried = "\nEarlier rounds already tried these; pick something different:\n" + "\n".join(lines) + "\n"
     return BRIEF.format(check=CHECK, focus=f"\nFocus: {focus.strip()}\n" if focus.strip() else "", tried=tried)
 
@@ -68,8 +77,8 @@ def verify(repo, base, patch, branch, message, check=CHECK, timeout=1800):
         if applied.returncode:
             return "no-apply", applied.stderr.strip()[-400:]
         try:
-            ran = subprocess.run(["sh", "-c", check], cwd=work, capture_output=True, text=True, encoding="utf-8",
-                                 errors="replace", timeout=timeout)
+            ran = subprocess.run(check, shell=True, cwd=work, capture_output=True, text=True, encoding="utf-8",
+                                 errors="replace", timeout=timeout)  # sh here, cmd on Windows
             code, tail = ran.returncode, (ran.stdout + ran.stderr).strip().splitlines()[-3:]
         except subprocess.TimeoutExpired:
             code, tail = 124, [f"timed out after {timeout} s"]
@@ -128,6 +137,8 @@ def run(cfg, rounds=3, model=FUSION, focus="", timeout_min=60, call=None, sleep=
         finally:
             led.close()
         runs = home / "runs" / jid
+        if (runs / "base").is_file():  # the commit the agent's copy was really made from
+            base = (runs / "base").read_text(encoding="utf-8").strip() or base
         answer = (runs / "answer.md").read_text(encoding="utf-8", errors="replace") if (runs / "answer.md").is_file() else ""
         title = _title(answer)
         if state == "done":

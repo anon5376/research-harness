@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -608,8 +609,11 @@ def cmd_improve(args, cfg):
     from rh import improve
     if not 1 <= args.rounds <= 5:
         raise ValueError("--rounds is 1 to 5: each round is a paid agent run")
-    improve.run(cfg, rounds=args.rounds, model=args.model or improve.FUSION, focus=args.focus,
-                timeout_min=args.timeout_min)
+    try:
+        improve.run(cfg, rounds=args.rounds, model=args.model or improve.FUSION, focus=args.focus,
+                    timeout_min=args.timeout_min)
+    except subprocess.CalledProcessError as error:  # a git step failed: say which, not a traceback
+        raise ValueError(f"{' '.join(map(str, error.cmd[:4]))} failed: {(error.stderr or '').strip()[-300:]}") from None
     return 0
 
 

@@ -1,5 +1,7 @@
 """rh/agent.py's Devin client against a stand-in `devin acp` that speaks the Agent Client Protocol over stdio."""
 import json
+import os
+import subprocess
 import sys
 import tempfile
 import textwrap
@@ -71,6 +73,55 @@ class DevinAcpTest(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(answer.read_text(encoding="utf-8"), "Fixed the typo.\n")
             self.assertEqual(json.loads((tmp / "choices.json").read_text()), ["model=swe-2-high", "no", "yes", "no"])
+
+
+def git(cwd, *args):
+    return subprocess.run(["git", "-C", str(cwd), "-c", "user.name=t", "-c", "user.email=t@localhost", *args],
+                          capture_output=True, text=True, encoding="utf-8", check=True).stdout
+
+
+class FollowUpTest(unittest.TestCase):
+    def test_a_follow_up_starts_from_the_last_runs_changes_and_reads_its_answer(self):
+        # A follow-up on a clean copy, one that does not see the earlier answer, or whose changes.patch drops the
+        # earlier run's changes, must fail.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo, prior, out = tmp / "repo", tmp / "prior", tmp / "out"
+            for d in (repo, prior, out):
+                d.mkdir()
+            git(repo, "init", "--quiet")
+            (repo / "a.txt").write_text("one\n", encoding="utf-8")
+            git(repo, "add", "a.txt")
+            git(repo, "commit", "--quiet", "-m", "start")
+            base = git(repo, "rev-parse", "HEAD").strip()
+            (prior / "base").write_text(base + "\n", encoding="utf-8")
+            (prior / "answer.md").write_text("Added line two.\n", encoding="utf-8")
+            (prior / "changes.patch").write_text(
+                "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n one\n+two\n", encoding="utf-8")
+            git(repo, "commit", "--quiet", "--allow-empty", "-m", "moved on")  # the repo moved since that run
+            # A stand-in claude: prints the prompt it got and the file as it found it, then adds line three.
+            fake = tmp / "claude"
+            fake.write_text(f"#!{sys.executable}\nimport sys, pathlib\np = pathlib.Path('a.txt')\n"
+                            "print(sys.argv[2]); print('FILE', p.read_text().split())\n"
+                            "p.write_text(p.read_text() + 'three\\n')\n", encoding="utf-8")
+            fake.chmod(0o755)
+            cwd = Path.cwd()
+            try:
+                os.chdir(out)
+                code = agent.main(["agent.py", "claude", str(fake), str(repo), "Now add line three.",
+                                   "--prior", str(prior)])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(code, 0)
+            said = (out / "answer.md").read_text(encoding="utf-8")
+            self.assertIn("Added line two.", said)
+            self.assertIn("Now add line three.", said)
+            self.assertIn("FILE ['one', 'two']", said)
+            self.assertNotIn("--prior", said)
+            self.assertEqual((out / "base").read_text(encoding="utf-8").strip(), base)
+            patch = (out / "changes.patch").read_text(encoding="utf-8")
+            self.assertIn("+two", patch)
+            self.assertIn("+three", patch)
 
 
 if __name__ == "__main__":

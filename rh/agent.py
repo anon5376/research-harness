@@ -117,17 +117,49 @@ def _devin(binary, work, brief, extra, answer):
             except (OSError, ValueError):
                 pass
     print(f"\nstopped: {stop}", flush=True)
-    answer.write_text("".join(said).strip() + "\n", encoding="utf-8")
+    text = "".join(said).strip()
+    if not text and stop == "end_turn":  # it happens: the turn ends on a tool call with nothing said after it
+        text = "_Devin ended its turn without a final message. Its work is in the output above._"
+    answer.write_text(text + "\n", encoding="utf-8")
     return 0 if stop == "end_turn" else 1
+
+
+def _continue(work, prior, brief):
+    """Set the fresh copy up as the earlier run left it (its commit, with its changes applied) and return the brief
+    with that run's answer in front, so the agent picks up where it stopped. The changes.patch of a follow-up holds
+    every run's changes since that commit, so a chain carries them all."""
+    base, patch, said = prior / "base", prior / "changes.patch", prior / "answer.md"
+    if base.is_file():
+        subprocess.run(["git", "-C", str(work), "checkout", "--quiet", "--detach",
+                        base.read_text(encoding="utf-8").strip()], check=True)
+    note = ""
+    if patch.is_file() and patch.stat().st_size:
+        applied = subprocess.run(["git", "-C", str(work), "apply", "--index", "--whitespace=nowarn", str(patch)],
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace")
+        note = ("The earlier run's changes are already applied in this copy.\n" if applied.returncode == 0 else
+                "The earlier run's changes could not be applied here; start from the files as they are.\n")
+        print(note.strip(), flush=True)
+    answer = said.read_text(encoding="utf-8", errors="replace").strip() if said.is_file() else ""
+    earlier = f"Your answer in the earlier run was:\n\n{answer}\n\n" if answer else ""
+    return f"This continues an earlier run on this repository. {note}{earlier}The request, with the follow-up last:\n\n{brief}"
 
 
 def main(argv):
     provider, binary, repo, brief, extra = argv[1], argv[2], argv[3], argv[4], argv[5:]
+    prior = None
+    if "--prior" in extra[:-1]:  # a follow-up: continue the run in this folder
+        at = extra.index("--prior")
+        prior, extra = Path(extra[at + 1]), extra[:at] + extra[at + 2:]
     out = Path.cwd()
     scratch = Path(tempfile.mkdtemp(prefix="rh-agent-"))
     work = scratch / "repo"
     try:
         subprocess.run(["git", "clone", "--quiet", "--shared", repo, str(work)], check=True)
+        if prior:
+            brief = _continue(work, prior, brief)
+        base = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True,
+                              encoding="utf-8", check=True).stdout.strip()
+        (out / "base").write_text(base + "\n", encoding="utf-8")  # the commit the changes apply to
         answer = out / "answer.md"
         if provider == "codex":
             code = subprocess.run([binary, "exec", "--sandbox", "workspace-write", "--cd", str(work),

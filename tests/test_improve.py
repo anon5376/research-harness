@@ -65,6 +65,16 @@ class ImproveTest(unittest.TestCase):
         self.assertNotIn("Earlier rounds", improve.brief("", []))
         self.assertIn(improve.CHECK, text)
 
+    def test_an_earlier_title_or_focus_cannot_get_later_rounds_held(self):
+        # A title like "Fix the deploy docs" quoted in every later brief holds every later round; a focus like it
+        # would hold the first. Either reaching the brief must fail.
+        from rh import contract
+        text = improve.brief("", [{"title": "Fix the deploy docs", "verdict": "landed", "job": "improve-1"}])
+        self.assertEqual(contract.operator_steps(text), [])
+        self.assertIn("- a change whose title is withheld here (landed, job improve-1)", text)
+        with self.assertRaisesRegex(ValueError, "operator step"):
+            improve.brief("deploy the site", [])
+
     def test_the_brief_is_not_held_as_an_operator_step(self):
         # The supervisor holds a job whose brief reads like contacting someone; the loop's own words must not.
         from rh import contract

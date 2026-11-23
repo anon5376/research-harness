@@ -940,6 +940,42 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             self.assertIsNone(led.job("busy-one-r2"))
 
+    def test_an_agents_follow_up_continues_its_chat_on_the_model_picked(self):
+        # A follow-up the agent never sees, a model switch that is ignored or keeps the old model's effort, a run
+        # that starts from scratch instead of from the last one, or a page that does not show the chat so far, must fail.
+        agent = str(Path(dashboard.__file__).with_name("agent.py"))
+        spec = contract.normalize({"id": "tidy-up", "kind": "local-shell", "brief": "Tidy the README.",
+                                   "command": ["python3", agent, "claude", "/usr/local/bin/claude", "/repo",
+                                               "Tidy the README.", "--model", "claude-sonnet-5-5", "--effort", "high"]})
+        with self.ledger() as led:
+            led.add_job(spec)
+            for step in ("ready", "launching", "running"):
+                led.set_state("tidy-up", step)
+            led.finish("tidy-up", "done", {"route": "local-shell", "checks": [], "model_requested": None,
+                                           "model_served": None, "ended": time.time(), "detail": "ok"})
+        (self.home / "runs" / "tidy-up").mkdir(parents=True)
+        (self.home / "runs" / "tidy-up" / "answer.md").write_text("**Tidied** the intro.", encoding="utf-8")
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/devin"):
+            self.request("/again", {"job": "tidy-up", "changed": "now the install part", "model": "swe-2-high"})
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/claude"):
+            self.request("/again", {"job": "tidy-up", "changed": "and the license"})
+        with self.ledger() as led:
+            devin, claude = led.job("tidy-up-r2")["spec"]["command"], led.job("tidy-up-r3")["spec"]["command"]
+        self.assertEqual(devin[2:4], ["devin", "/usr/local/bin/devin"])
+        self.assertEqual(devin[5], "Tidy the README.\n\nFollow-up: now the install part")
+        prior = str(Path(self.cfg["home"]) / "runs" / "tidy-up")
+        self.assertEqual(devin[6:], ["--model", "swe-2-high", "--prior", prior])
+        self.assertEqual(claude[2], "claude")
+        self.assertEqual(claude[6:], ["--model", "claude-sonnet-5-5", "--effort", "high",
+                                      "--prior", prior])
+        page = self.request("/job/tidy-up-r2")[2]
+        self.assertIn('data-region="j-thread"', page)
+        self.assertIn("<strong>Tidied</strong> the intro.", page)
+        self.assertIn('<div class="user-message">Tidy the README.</div>', page)
+        self.assertIn('<div class="user-message">now the install part</div>', page)
+        self.assertEqual(re.findall(r'<div class="user-message">([^<]*)</div>', page),
+                         ["Tidy the README.", "now the install part"])  # each ask once, no "Follow-up:" glue
+
     def test_setup_saves_the_environment_and_closes_its_step(self):
         # An environment ID that reaches the config unchecked, or a setup step left open after it is done, must fail.
         with self.ledger() as led:

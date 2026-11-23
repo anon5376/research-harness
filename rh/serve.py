@@ -247,31 +247,7 @@ def _job_file(draft, repo):
             raise ValueError("the time limit is a whole number of minutes, at most 10080")
         spec["timeout_min"] = int(timeout)
     if agent:
-        # The model names its provider; each provider's models come from its own table in the dated policy.
-        policy_path = config.REPO / "policy.toml"
-        policy = contract.load_policy(policy_path) if policy_path.is_file() else {}
-        tables = {"codex": "codex-cloud", "claude": "claude-local", "devin": "devin-local"}
-        model = draft["model"].strip()
-        provider = "codex" if not model else next(
-            (name for name, table in tables.items() if model in policy.get(table, {}).get("models", [])), None)
-        if provider is None:
-            allowed = [m for table in tables.values() for m in policy.get(table, {}).get("models", [])]
-            raise ValueError(f"model {model} is not in the model policy: allowed {allowed}")
-        binary = shutil.which(provider)
-        if not binary:
-            raise ValueError(f"{provider.capitalize()} is not installed on this Mac: the {provider} command was not found")
-        extra = ["--model", model] if model else []
-        if provider == "codex":
-            extra += ["-c", 'service_tier="default"']  # the policy keeps fast off
-        effort = draft["effort"].strip()
-        if effort and provider != "devin":  # Devin's effort is part of its model's name
-            efforts = policy.get({"codex": "codex-local"}.get(provider, tables[provider]), {}).get("efforts", [])
-            if effort not in efforts:
-                raise ValueError(f"effort {effort} is not in the policy for {provider}: allowed {efforts}")
-            cli = {"light": "low", "extra-high": "xhigh"}.get(effort, effort)
-            extra += ["-c", f'model_reasoning_effort="{cli}"'] if provider == "codex" else ["--effort", cli]
-        spec["command"] = [sys.executable, str(Path(__file__).with_name("agent.py")), provider, binary, str(repo),
-                           spec["brief"], *extra]
+        spec["command"] = _agent_command(spec["brief"], draft["model"].strip(), draft["effort"].strip(), repo)
     elif spec["kind"] == "local-shell":
         try:  # the shell worker runs the brief as its command unless Options names another
             spec["command"] = shlex.split(draft["command"].strip() or draft["brief"])
@@ -280,7 +256,36 @@ def _job_file(draft, repo):
     return spec["id"], _job_text(spec)
 
 
-def _again(cfg, old, changed, input_path=""):
+def _agent_command(brief, model, effort, repo, prior=None):
+    """The command of a local agent job: rh/agent.py with the CLI of the provider the model names, its model and effort
+    in that CLI's words, and, for a follow-up, the folder of the run it continues."""
+    # The model names its provider; each provider's models come from its own table in the dated policy.
+    policy_path = config.REPO / "policy.toml"
+    policy = contract.load_policy(policy_path) if policy_path.is_file() else {}
+    tables = {"codex": "codex-cloud", "claude": "claude-local", "devin": "devin-local"}
+    provider = "codex" if not model else next(
+        (name for name, table in tables.items() if model in policy.get(table, {}).get("models", [])), None)
+    if provider is None:
+        allowed = [m for table in tables.values() for m in policy.get(table, {}).get("models", [])]
+        raise ValueError(f"model {model} is not in the model policy: allowed {allowed}")
+    binary = shutil.which(provider)
+    if not binary:
+        raise ValueError(f"{provider.capitalize()} is not installed on this Mac: the {provider} command was not found")
+    extra = ["--model", model] if model else []
+    if provider == "codex":
+        extra += ["-c", 'service_tier="default"']  # the policy keeps fast off
+    if effort and provider != "devin":  # Devin's effort is part of its model's name
+        efforts = policy.get({"codex": "codex-local"}.get(provider, tables[provider]), {}).get("efforts", [])
+        if effort not in efforts:
+            raise ValueError(f"effort {effort} is not in the policy for {provider}: allowed {efforts}")
+        cli = {"light": "low", "extra-high": "xhigh"}.get(effort, effort)
+        extra += ["-c", f'model_reasoning_effort="{cli}"'] if provider == "codex" else ["--effort", cli]
+    if prior:
+        extra += ["--prior", str(prior)]
+    return [sys.executable, str(Path(__file__).with_name("agent.py")), provider, binary, str(repo), brief, *extra]
+
+
+def _again(cfg, old, changed, input_path="", model="", effort=""):
     """The next revision of a finished job, as (id, TOML): the same contract under the next free name, pointing back
     at the job it follows, with what changed (a follow-up is also added to the brief)."""
     led = Ledger(Path(cfg["home"]) / "ledger.db")
@@ -309,6 +314,15 @@ def _again(cfg, old, changed, input_path=""):
         spec["write_root"] = job["spec"]["write_root"]
     if changed:
         spec["brief"] = spec["brief"].rstrip() + "\n\nFollow-up: " + changed
+    if was := dashboard.agent_of(spec.get("command")):
+        # A local agent's next run continues the last one: the same brief plus the follow-up, its changes applied
+        # to a fresh copy and its answer read first, on the model and effort picked in the reply box (else the same).
+        _, old_model, old_effort = was
+        model = model or old_model
+        effort = effort if model == old_model or effort else ""
+        effort = effort or (old_effort if model == old_model else "")
+        spec["command"] = _agent_command(spec["brief"], model, effort, spec["command"][4],
+                                         Path(cfg["home"]) / job["spec"]["write_root"])
     if item := _repository_input(input_path, cfg["repo"]["path"]):
         inputs = spec.get("inputs", [])
         if not any(existing["path"] == item["path"] for existing in inputs):
@@ -362,7 +376,8 @@ def _action(cfg, path, fields):
         job, text = _job_file(_draft(fields), cfg["repo"]["path"])
         return ["job", "add", "--", str(_upload(cfg, job, ".toml", text))]
     if path == "/again":
-        job, text = _again(cfg, value("job"), value("changed").strip(), value("input_path"))
+        job, text = _again(cfg, value("job"), value("changed").strip(), value("input_path"),
+                           value("model").strip(), value("effort").strip())
         return ["job", "add", "--", str(_upload(cfg, job, ".toml", text))]
     if path == "/setup":
         env = value("env_id").strip()
@@ -450,6 +465,34 @@ def _outputs(cfg, shown):
 
 
 _ANSWER = 200_000  # characters of an answer shown in the chat; the file keeps the rest
+
+
+def _thread(cfg, job, most=20):
+    """The earlier runs of a job, oldest first, as the chat shows them: what was asked in each (the first run's brief,
+    then each follow-up), the agent and model that ran it, its state and its answer if it left one."""
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        runs, seen, prior = [], {job["id"]}, job["spec"].get("prior")
+        while prior and prior not in seen and len(runs) < most:
+            seen.add(prior)
+            row = led.job(prior)
+            if row is None:
+                break
+            runs.append(row)
+            prior = row["spec"].get("prior")
+    finally:
+        led.close()
+    thread = []
+    for row in reversed(runs):
+        spec = row["spec"]
+        root = _outputs(cfg, {"job": row}) if row["state"] in TERMINAL else None
+        said = root / "answer.md" if root else None
+        answer = (said.read_text(encoding="utf-8", errors="replace")[:_ANSWER]
+                  if said and said.is_file() and not said.is_symlink() else "")
+        who = dashboard.agent_of(spec.get("command"))
+        thread.append({"id": row["id"], "state": row["state"], "ask": dashboard.ask_of(spec), "answer": answer,
+                       "provider": who[0] if who else "", "model": who[1] if who else ""})
+    return thread
 
 
 def _files(root, skip=()):
@@ -775,6 +818,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
                          "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
                          **(extra or {})})
+            policy_path = config.REPO / "policy.toml"
+            view["job_policy"] = contract.load_policy(policy_path) if policy_path.is_file() else {}
             if not view.get("open") and not view.get("box"):
                 repo = Path(cfg["repo"]["path"]).resolve()
                 if repo.is_dir():
@@ -784,8 +829,6 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                         view["workspace"]["branch"] = ref.stdout.strip()
                     elif gitx.git(repo, "rev-parse", "--verify", "HEAD", check=False).returncode == 0:
                         view["workspace"]["branch"] = "Detached HEAD"
-                policy_path = config.REPO / "policy.toml"
-                view["job_policy"] = contract.load_policy(policy_path) if policy_path.is_file() else {}
             if view.get("box") and view.get("pick") is None:
                 # The Inbox opens on its newest waiting item, as the page lists it.
                 waiting = sorted((i for i in items.values() if not i.get("resolved")),
@@ -868,7 +911,12 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                                    and not said.is_symlink())
                     if chat_answer:
                         shown["answer"] = said.read_text(encoding="utf-8", errors="replace")[:_ANSWER]
-                    shown["files"], shown["peek"] = _files(root, skip=("answer.md",) if chat_answer else ())
+                    # an agent's base (the commit its changes apply to) is bookkeeping, not a result
+                    skip = (("answer.md",) if chat_answer else ()) + (
+                        ("base",) if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
+                    shown["files"], shown["peek"] = _files(root, skip=skip)
+                if shown["job"].get("spec", {}).get("prior"):
+                    shown["thread"] = _thread(cfg, shown["job"])  # the chat so far, while this run works too
                 self.page({"open": shown})
             elif (len(parts) == 4 and parts[1] == "job" and parts[3] == "file"
                     and contract.JOB_ID_RE.fullmatch(parts[2])):

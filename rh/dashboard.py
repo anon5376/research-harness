@@ -432,6 +432,103 @@ def _reflow(text):
     return "\n".join(out)
 
 
+_MD_INLINE = re.compile(r"`([^`\n]+)`|\*\*(.+?)\*\*|(?<![\w*])\*(?!\s)([^*\n]+?)\*(?![\w*])|\[([^\]\n]+)\]\(([^)\s]+)\)")
+_MD_HEAD = re.compile(r"(#{1,6})\s+(.*)")
+_MD_ITEM = re.compile(r"([ \t]*)(?:([-*•])|(\d+)[.)])\s+(.*)")
+
+
+def _md_inline(text):
+    """One line of Markdown as HTML: code, bold, italics and links; everything else escaped. A link opens only if it
+    is https; a link to a local path is shown as its words, with the path on hover."""
+    out, at = [], 0
+    for m in _MD_INLINE.finditer(text):
+        out.append(escape(text[at:m.start()]))
+        code, bold, em, label, href = m.groups()
+        if code is not None:
+            out.append(f"<code>{escape(code)}</code>")
+        elif bold is not None:
+            out.append(f"<strong>{_md_inline(bold)}</strong>")
+        elif em is not None:
+            out.append(f"<em>{_md_inline(em)}</em>")
+        elif href.startswith("https://"):
+            out.append(f'<a href="{escape(href)}" target="_blank" rel="noopener noreferrer">{_md_inline(label)}</a>')
+        else:
+            out.append(f'<span class="md-path" title="{escape(href)}">{_md_inline(label)}</span>')
+        at = m.end()
+    out.append(escape(text[at:]))
+    return "".join(out)
+
+
+def _markdown(text):
+    """An agent's answer, written in Markdown, as HTML: paragraphs (hard-wrapped lines joined), headings, bullet and
+    numbered lists, ``` code blocks, and the inline marks of _md_inline. No raw HTML passes through."""
+    blocks, para, items, kind, code = [], [], [], "", None
+
+    def flush():
+        nonlocal para, items, kind
+        if para:
+            blocks.append(f"<p>{_md_inline(' '.join(para))}</p>")
+        if items:
+            blocks.append(f"<{kind}>" + "".join(f"<li>{_md_inline(i)}</li>" for i in items) + f"</{kind}>")
+        para, items, kind = [], [], ""
+
+    for line in str(text or "").splitlines():
+        if code is not None:
+            if line.lstrip().startswith("```"):
+                blocks.append(f"<pre><code>{escape(chr(10).join(code))}</code></pre>")
+                code = None
+            else:
+                code.append(line)
+            continue
+        if line.lstrip().startswith("```"):
+            flush()
+            code = []
+        elif not line.strip():
+            flush()
+        elif head := _MD_HEAD.fullmatch(line.strip()):
+            flush()
+            blocks.append(f'<p class="md-h">{_md_inline(head.group(2))}</p>')
+        elif item := _MD_ITEM.fullmatch(line):
+            want = "ol" if item.group(3) else "ul"
+            if para or (items and kind != want):
+                flush()
+            kind = want
+            items.append(item.group(4))
+        elif items and line.startswith((" ", "\t")):
+            items[-1] += " " + line.strip()  # a list item's wrapped line
+        else:
+            if items:
+                flush()
+            para.append(line.strip())
+    if code is not None:
+        blocks.append(f"<pre><code>{escape(chr(10).join(code))}</code></pre>")
+    flush()
+    return "".join(blocks)
+
+
+def agent_of(command):
+    """(provider, model, effort) of a local agent job's command (rh/agent.py PROVIDER BINARY REPO BRIEF ...), or None
+    for any other command. The effort is in the composer's words (light, extra-high), so a follow-up can keep it."""
+    if not isinstance(command, list) or len(command) < 6 or not str(command[1]).endswith("agent.py"):
+        return None
+    tail = [str(part) for part in command[6:]]
+    model = tail[tail.index("--model") + 1] if "--model" in tail[:-1] else ""
+    effort = tail[tail.index("--effort") + 1] if "--effort" in tail[:-1] else ""
+    for part in tail:
+        if part.startswith("model_reasoning_effort="):
+            effort = part.split("=", 1)[1].strip('"')
+    return str(command[2]), model, {"low": "light", "xhigh": "extra-high"}.get(effort, effort)
+
+
+def ask_of(spec):
+    """What the person asked in this run: the brief for a first run, the follow-up for a later one ("" for a plain
+    rerun)."""
+    if spec.get("prior"):
+        changed = str(spec.get("changed") or "")
+        return "" if changed == "run again with no changes" or changed.startswith("added input ") else changed
+    return str(spec.get("brief") or "").strip()
+
+
 def _title(meta, jid):
     """A job's name in the list and the palette: the first sentence of its brief, cut to at most 98 characters and an
     ellipsis when it runs past 100, else its id."""
@@ -1289,38 +1386,42 @@ def _composer_form(ctx, action, label, message, *, job=None, worker="", options=
             f'<button class="{cls}" aria-label="{label}" title="{label}"{send}>{_ic("up")}</button></div></div>{where}</form>')
 
 
-def _composer(ctx, draft, ready, policy):
-    """The one control that starts a job: what it should do, where it runs, its name, and the rest folded away."""
+_MODEL_NAMES = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6.1-terra": "GPT-6.1 Terra",
+                "gpt-6.1-sol-pro": "GPT-6.1 Sol Pro", "gpt-6-pro": "GPT-6 Pro",
+                "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5",
+                "claude-haiku-5-5": "Claude Haiku 5.5", "claude-fable-5-2": "Claude Fable 5.2",
+                "swe-2-high": "SWE-2 High", "swe-2-max": "SWE-2 Max", "swe-2-flash-high": "SWE-2 Flash",
+                "fusion-claude-fable-5-2-medium-sidekick-swe-2-high": "Fusion: Fable 5.2 + SWE-2 High",
+                "fable-5-2-medium": "Fable 5.2 Medium"}
+# Devin's chooser groups its models (Fusion first, with what Fusion is) and tags each with its cost; so does this one.
+_DEVIN_FUSION = "Pairs frontier intelligence with cost-efficient execution to deliver frontier-level results at lower cost."
+
+
+def _devin_tags(key):
+    if key.startswith("fusion-"):
+        lead = key.removeprefix("fusion-").split("-sidekick-")
+        row = " · ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part) for part in lead)  # lead · sidekick
+        return (f' data-group="Fusion" data-group-tip="{_DEVIN_FUSION} Lead · sidekick." data-row="{_text(row)}" data-cost="API" '
+                'data-cost-tip="Billed at API pricing: the lead per token, the SWE-2 sidekick free"')
+    return ' data-group="SWE-2" data-cost="Free" data-cost-tip="No quota used"'
+
+
+def _model_picker(policy, kind, draft, only=False):
+    """The model and effort pickers for a route: every route's, with all but `kind` hidden (the New job composer), or
+    only `kind`'s (`only`, the reply box under a job)."""
     draft = draft if isinstance(draft, dict) else {}
-    value = lambda name: _text(draft.get(name, ""))  # noqa: E731
-    kind = draft.get("kind") or ("codex-cloud" if ready else "local-agent")
-    if kind not in ("gpt-chat", "local-agent", "local-shell", "codex-cloud"):
-        kind = "local-agent"
-    cloud = "Codex cloud" if ready else f"Codex cloud{_SEP}setup required"
-    workers = (("gpt-chat", "GPT Pro", "chat"), ("local-agent", HERE, "mac"), ("codex-cloud", cloud, "cloud"),
-               ("local-shell", "Shell", "term"))
-    options = "".join(f'<option value="{key}"{" selected" if kind == key else ""}>{_ic(icon, True)}{_text(name)}</option>'
-                      for key, name, icon in workers)
-    have = set(draft.get("needs", [])) if isinstance(draft.get("needs"), list) else set()
-    needs = "".join(f'<label class="need"><input type="checkbox" name="needs" value="{n}"{" checked" if n in have else ""}>'
-                    f'{_NEED_WORDS[n]}</label>' for n in _NEEDS)
-    timeout = value("timeout_min") or "120"
-    opened = " open" if draft else ""
-    model_names = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6.1-terra": "GPT-6.1 Terra",
-                   "gpt-6.1-sol-pro": "GPT-6.1 Sol Pro", "gpt-6-pro": "GPT-6 Pro",
-                   "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5",
-                   "claude-haiku-5-5": "Claude Haiku 5.5", "claude-fable-5-2": "Claude Fable 5.2",
-                   "swe-2-high": "SWE-2 High", "swe-2-max": "SWE-2 Max", "swe-2-flash-high": "SWE-2 Flash",
-                   "fusion-claude-fable-5-2-medium-sidekick-swe-2-high": "Fusion: Fable 5.2 + SWE-2 High"}
     # Codex on this Mac follows the same dated policy as Codex cloud: its models, at standard speed.
     # This Mac runs any provider's agent; each group is a provider, each model carries its mark.
     codex_models = list(policy.get("codex-cloud", {}).get("models", ()))
     providers = (("openai", "OpenAI", codex_models),
                  ("claude", "Anthropic", list(policy.get("claude-local", {}).get("models", ()))),
-                 ("devin", "Cognition", list(policy.get("devin-local", {}).get("models", ()))))
+                 ("devin", "Cognition", sorted(policy.get("devin-local", {}).get("models", ()),
+                                               key=lambda key: not key.startswith("fusion-"))))  # Fusion first, as Devin
     routes = {"gpt-chat": [("openai", "", list(policy.get("gpt-chat", {}).get("models", ())))],
               "codex-cloud": [("openai", "", codex_models)],
               "local-agent": [p for p in providers if p[2]]}
+    if only:  # the reply box under a job: only the route the job runs on
+        routes = {kind: routes.get(kind, [])}
     # Reasoning effort, like Codex's: the levels a provider's CLI knows, of which the dated policy allows some.
     effort_tables = {("gpt-chat", "openai"): "gpt-chat", ("codex-cloud", "openai"): "codex-cloud",
                      ("local-agent", "openai"): "codex-local", ("local-agent", "claude"): "claude-local"}
@@ -1342,8 +1443,9 @@ def _composer(ctx, draft, ready, policy):
             def opts(prov, keys):
                 levels, allowed = effort_levels(route, prov)
                 return "".join(f'<option value="{_text(key)}" data-prov="{prov}" data-levels="{" ".join(levels)}" '
-                               f'data-efforts="{" ".join(allowed)}"{" selected" if pick == key else ""}>'
-                               f'{_ic(prov, True)}{_text(model_names.get(key, key))}</option>' for key in keys)
+                               f'data-efforts="{" ".join(allowed)}"{_devin_tags(key) if prov == "devin" else ""}'
+                               f'{" selected" if pick == key else ""}>'
+                               f'{_ic(prov, True)}{_text(_MODEL_NAMES.get(key, key))}</option>' for key in keys)
             values = "".join(f'<optgroup label="{label}">{opts(prov, keys)}</optgroup>' if label else opts(prov, keys)
                              for prov, label, keys in groups if keys)
             # the effort that goes with the chosen model: the draft's if its provider allows it, else the highest
@@ -1356,11 +1458,10 @@ def _composer(ctx, draft, ready, policy):
                 effort_selects.append(f'<select class="effort-pick" name="effort" data-route="{route}" '
                                       f'aria-label="Reasoning effort"{disabled}>{levels}</select>')
             if route == kind:
-                picked_name = model_names.get(pick, pick)
+                picked_name = _MODEL_NAMES.get(pick, pick)
                 picked_effort = dict(_EFFORTS).get(effort, "") if allowed else ""
             models.append(f'<select class="ghost model-pick" data-route="{route}" name="model" aria-label="Model" '
                           f'title="Model"{disabled}>{values}</select>')
-    marks = "".join(f'<span class="wk-ic" data-for="{key}">{_ic(icon, True)}</span>' for key, _, icon in workers)
     prov_marks = "".join(f'<span class="prov" data-prov="{prov}" aria-hidden="true">{_ic(prov, True)}</span>'
                          for prov in ("openai", "claude", "devin"))
     # The model picker after T3 Code's: the button shows the provider's mark and the model; the script opens a panel
@@ -1375,6 +1476,29 @@ def _composer(ctx, draft, ready, policy):
                        f'aria-label="Reasoning effort" title="Reasoning effort"{"" if picked_effort else " hidden"}>'
                        f'{_ic("effort", True)}<span class="ef-name">{picked_effort}</span>{_ic("chev", True)}</button></div>')
     worker_picker = f'<div class="model-picker">{trigger}' + "".join(models) + '</div>' + effort_picker
+    return worker_picker
+
+
+def _composer(ctx, draft, ready, policy):
+    """The one control that starts a job: what it should do, where it runs, its name, and the rest folded away."""
+    draft = draft if isinstance(draft, dict) else {}
+    value = lambda name: _text(draft.get(name, ""))  # noqa: E731
+    kind = draft.get("kind") or ("codex-cloud" if ready else "local-agent")
+    if kind not in ("gpt-chat", "local-agent", "local-shell", "codex-cloud"):
+        kind = "local-agent"
+    cloud = "Codex cloud" if ready else f"Codex cloud{_SEP}setup required"
+    workers = (("gpt-chat", "GPT Pro", "chat"), ("local-agent", HERE, "mac"), ("codex-cloud", cloud, "cloud"),
+               ("local-shell", "Shell", "term"))
+    options = "".join(f'<option value="{key}"{" selected" if kind == key else ""}>{_ic(icon, True)}{_text(name)}</option>'
+                      for key, name, icon in workers)
+    have = set(draft.get("needs", [])) if isinstance(draft.get("needs"), list) else set()
+    needs = "".join(f'<label class="need"><input type="checkbox" name="needs" value="{n}"{" checked" if n in have else ""}>'
+                    f'{_NEED_WORDS[n]}</label>' for n in _NEEDS)
+    timeout = value("timeout_min") or "120"
+    opened = " open" if draft else ""
+    worker_picker = _model_picker(policy, kind, draft)
+    controls = []
+    marks = "".join(f'<span class="wk-ic" data-for="{key}">{_ic(icon, True)}</span>' for key, _, icon in workers)
     runner = (f'<div class="worker-picker">{marks}<select class="ghost" name="kind" aria-label="Where it runs" '
               f'title="Where it runs">{options}</select></div>')
     message = ('<label class="sr" for="brief">What should the job do?</label>'
@@ -1704,6 +1828,17 @@ def _job_head(title, kind):
     return _region("j-head", body, "section", "jd-head")
 
 
+def _said(provider, model, text, link="", inner=False):
+    """An agent's answer as a chat message: who answered and on which model, then the answer rendered from Markdown."""
+    who, mark = _AGENT_WHO.get(provider or "", ("Answer", "chat"))
+    name = _MODEL_NAMES.get(model, model) if model else ""
+    head = (f'<p class="who" data-prov="{_text(provider or "")}">{_ic(mark, True)}{who}'
+            + (f'<span class="who-model">{_text(name)}</span>' if name else "")
+            + (f'<span class="who-run">{link}</span>' if link else "") + "</p>")
+    body = f'{head}<div class="assistant-message md">{_markdown(text)}</div>'
+    return body if inner else f'<div class="msg ai">{body}</div>'
+
+
 def _job_pane(opened, jobs, ctx, feedback, view):
     """A job's page: the work on the left (what it was asked, what it needs from you, its output, and Run again), and
     its properties, receipt, pauses and stops, and timeline on the right."""
@@ -1759,10 +1894,31 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                          f'<p class="fail-c"><code>{_text(bad[0])}</code><span class="exit mono">exit '
                          f'{_text(bad[1])}</span></p>')
         work.append(_region("j-fail", said_fail + others, "section", "s-j-fail", ' aria-label="What failed"'))
-    original_prompt = str(spec.get("brief") or "").strip()
+    # The chat: each earlier run as what was asked and what the agent answered, then what this run asks.
+    thread = opened.get("thread") if isinstance(opened.get("thread"), list) else []
+    if thread:
+        turns = []
+        for run in thread:
+            if not isinstance(run, dict):
+                continue
+            if run.get("ask"):
+                turns.append(f'<div class="user-message">{_text(_reflow(run["ask"]))}</div>')
+            link = (f'<a class="mono" href="{_url(ctx, "/job/" + str(run.get("id")))}" data-nav>{_text(run.get("id"))}</a>'
+                    if ctx["live"] else f'<span class="mono">{_text(run.get("id"))}</span>')
+            if run.get("answer"):
+                turns.append(_said(run.get("provider"), run.get("model"), run["answer"], link))
+            else:
+                turns.append(f'<p class="run-note">{link}{_SEP_HTML}{_text(_STATES.get(run.get("state"), (run.get("state"),))[0])}'
+                             f', no answer</p>')
+        work.append(_region("j-thread", "".join(turns), "section", "s-j-thread", ' aria-label="Earlier runs"'))
+    original_prompt = ask_of(spec)
     if original_prompt:
         work.append(_region("j-brief", f'<div class="user-message">{_text(_reflow(original_prompt))}</div>',
-                            "section", "s-j-brief", ' aria-label="Original request"'))
+                            "section", "s-j-brief", ' aria-label="Original request"' if not spec.get("prior")
+                            else ' aria-label="Follow-up"'))
+    elif spec.get("prior"):
+        work.append(_region("j-brief", '<p class="run-note">Ran again with no changes</p>', "section", "s-j-brief",
+                            ' aria-label="Follow-up"'))
     check_rows = _checks_of(opened, spec, finished or state not in _PRE)
     check_values = [passed for passed, _, _ in check_rows if passed is not None]
     shown = "env" if entry.native else state
@@ -1822,13 +1978,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                             "section", "msg ai", ' aria-label="The reply"'))
     said = opened.get("answer")
     if isinstance(said, str) and said.strip():
-        command = spec.get("command") if isinstance(spec.get("command"), list) else []
-        provider = command[2] if len(command) > 2 and str(command[1]).endswith("agent.py") else (
-            "codex" if kind == "codex-cloud" else "")
-        who, mark = _AGENT_WHO.get(provider, ("Answer", "chat"))
-        work.append(_region("j-answer", f'<p class="who" data-prov="{provider}">{_ic(mark, True)}{who}</p>'
-                            f'<div class="assistant-message">{_text(_reflow(said))}</div>',
-                            "section", "msg ai", ' aria-label="The answer"'))
+        agent = agent_of(spec.get("command"))
+        provider, model = agent[:2] if agent else ("codex" if kind == "codex-cloud" else "", "")
+        if not model and kind == "codex-cloud" and isinstance(spec.get("model"), dict):
+            model = str(spec["model"].get("requested") or "")
+        work.append(_region("j-answer", _said(provider, model, said, inner=True), "section", "msg ai",
+                            ' aria-label="The answer"'))
     if not finished:
         loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
         doing = (f"Running {_PLACES[kind]}" if state == "running" and kind in _PLACES else entry.word)
@@ -1894,8 +2049,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         again = state != "done" or spec.get("kind") != "codex-cloud"
         message = ('<label class="sr" for="changed">What should change?</label>'
                    '<textarea class="c-text" id="changed" name="changed" rows="1" '
-                   'placeholder="Ask for a change, or send empty to rerun"></textarea>')
-        reply = _composer_form(ctx, "/again", "Run again", message, job=jid, files=True,
+                   'placeholder="Reply, or send empty to run again"></textarea>')
+        agent = agent_of(spec.get("command"))
+        # An agent's next run may use another model or effort: the reply box has the composer's pickers.
+        picker = (_model_picker(view.get("job_policy") or {}, "local-agent", {"model": agent[1], "effort": agent[2]},
+                                only=True) if agent else "")
+        reply = _composer_form(ctx, "/again", "Run again", message, job=jid, files=True, worker=picker,
                                controls=_worker_note(_platform(kind)), followup=True,
                                primary=lead and again and state != "done")
     else:

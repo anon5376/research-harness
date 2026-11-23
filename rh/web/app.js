@@ -1613,26 +1613,23 @@ function openModels(trigger) {
   function render() {
     const rows = shown();
     highlight = Math.max(0, Math.min(highlight, rows.length - 1));
-    list.replaceChildren(...rows.map((o, i) => {
-      const row = document.createElement('button');
-      row.type = 'button';
-      row.className = 'mp-row' + (i === highlight ? ' hi' : '');
-      row.dataset.prov = o.dataset.prov || 'openai';
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', String(o.selected));
-      const name = document.createElement('span');
-      name.className = 'mp-n';
-      name.textContent = o.textContent.trim();
-      row.append(markFor(picker, row.dataset.prov), name);
-      if (o.selected) row.insertAdjacentHTML('beforeend', CHECK_SVG);
-      row.addEventListener('click', () => choose(o));
-      row.addEventListener('pointermove', () => {
-        if (highlight === i) return;
-        highlight = i;
-        for (const [n, r] of [...list.children].entries()) r.classList.toggle('hi', n === i);
-      });
-      return row;
-    }));
+    // Devin's own chooser: its models in sections (Fusion first, with what Fusion is), each tagged with its cost,
+    // and the one in use marked Current.
+    query.placeholder = prov === 'devin' ? 'Search all models' : 'Search models…';
+    let section = null;
+    const items = [];
+    rows.forEach((o, i) => {
+      if (o.dataset.group && o.dataset.group !== section) {
+        section = o.dataset.group;
+        const head = document.createElement('p');
+        head.className = 'mp-sec';
+        head.textContent = section;
+        if (o.dataset.groupTip) head.title = o.dataset.groupTip;
+        items.push(head);
+      }
+      items.push(rowFor(o, i));
+    });
+    list.replaceChildren(...items);
     if (!rows.length) {
       const empty = document.createElement('p');
       empty.className = 'mp-empty';
@@ -1644,6 +1641,39 @@ function openModels(trigger) {
     const on = !searching && $(`button[data-prov="${prov}"]`, rail);
     bar.hidden = !on;
     if (on) bar.style.top = (on.offsetTop + on.offsetHeight / 2 - 10) + 'px';
+  }
+  function rowFor(o, i) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'mp-row' + (i === highlight ? ' hi' : '');
+      row.dataset.prov = o.dataset.prov || 'openai';
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(o.selected));
+      const name = document.createElement('span');
+      name.className = 'mp-n';
+      name.textContent = o.dataset.row || o.textContent.trim();
+      row.title = o.textContent.trim();  // the full name, when the row cuts it short
+      row.append(markFor(picker, row.dataset.prov), name);
+      if (o.dataset.cost) {
+        if (o.selected) {
+          const now = document.createElement('span');
+          now.className = 'mp-cur';
+          now.textContent = 'Current';
+          row.append(now);
+        }
+        const cost = document.createElement('span');
+        cost.className = 'mp-cost';
+        cost.textContent = o.dataset.cost;
+        if (o.dataset.costTip) cost.title = o.dataset.costTip;
+        row.append(cost);
+      } else if (o.selected) row.insertAdjacentHTML('beforeend', CHECK_SVG);
+      row.addEventListener('click', () => choose(o));
+      row.addEventListener('pointermove', () => {
+        if (highlight === i) return;
+        highlight = i;
+        for (const [n, r] of $$('.mp-row', list).entries()) r.classList.toggle('hi', n === i);
+      });
+      return row;
   }
   query.addEventListener('input', () => { highlight = 0; render(); });
   panel.addEventListener('keydown', e => {
@@ -1666,8 +1696,9 @@ function openModels(trigger) {
   });
 
   // One height for every provider, so switching tabs never resizes the panel.
-  const tallest = Math.max(...groups.map(g => g.options.length));
-  panel.style.height = Math.min(346, 40 + 12 + tallest * 34 - 2 + 2) + 'px';
+  const tallest = Math.max(...groups.map(g => g.options.length
+    + new Set(g.options.map(o => o.dataset.group).filter(Boolean)).size * 0.85));
+  panel.style.height = Math.min(346, 40 + 12 + tallest * 34) + 'px';
   document.body.append(panel);
   const r = trigger.getBoundingClientRect(), h = panel.offsetHeight, w = panel.offsetWidth;
   panel.style.left = Math.max(8, Math.min(r.left - 4, innerWidth - w - 8)) + 'px';

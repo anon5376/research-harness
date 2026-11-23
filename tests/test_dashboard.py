@@ -104,6 +104,9 @@ def opened(view, jid, **job):
     return {**view, "open": {"job": record, "receipt": None, "events": events, "log": None}}
 
 
+FUSION = "fusion-claude-fable-5-2-medium-sidekick-swe-2-high"
+
+
 class Forms(HTMLParser):
     """Each form's action, method and fields (name -> value), as a browser would submit them."""
     def __init__(self, source):
@@ -613,6 +616,35 @@ class DashboardTest(unittest.TestCase):
         message = re.search(r'<section[^>]*class="msg ai"[^>]*>.*?</section>', page, re.S).group(0)
         self.assertIn('data-prov="claude"', message)
         self.assertEqual(text(message), "ClaudeFixed the <typo> in README.md.")
+
+    def test_an_answer_is_rendered_from_markdown_without_letting_html_through(self):
+        # Raw ** and - on the page, a link to a local path that opens, or HTML from an answer reaching the page, must fail.
+        html = dashboard._markdown("**I haven't confirmed it.** Nothing yet.\n\n- **Disk:** 154 GiB free\n"
+                                   "- see [guide](https://developer.apple.com/x) and [notes](/private/tmp/n.md)\n\n"
+                                   "`top` was blocked <script>x</script>\n\n```\nlog <b>\n```")
+        self.assertEqual(html, '<p><strong>I haven&#x27;t confirmed it.</strong> Nothing yet.</p>'
+                               '<ul><li><strong>Disk:</strong> 154 GiB free</li><li>see <a href="https://developer.apple.com/x" '
+                               'target="_blank" rel="noopener noreferrer">guide</a> and <span class="md-path" '
+                               'title="/private/tmp/n.md">notes</span></li></ul>'
+                               '<p><code>top</code> was blocked &lt;script&gt;x&lt;/script&gt;</p>'
+                               '<pre><code>log &lt;b&gt;</code></pre>')
+
+    def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
+        # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without
+        # their section and cost, must fail.
+        view = opened(live_view(), "finished-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", command=[
+            "python3", "/x/rh/agent.py", "devin", "/bin/devin", "/repo", "go", "--model", "swe-2-high"])
+        view["job_policy"] = {"devin-local": {"models": ["swe-2-high", FUSION]},
+                              "claude-local": {"models": ["claude-opus-5-5"], "efforts": ["high"]}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        reply = re.search(r'<form class="compose[^>]*action="/again".*?</form>', page, re.S).group(0)
+        self.assertEqual(re.findall(r'data-route="([^"]+)" name="model"', reply), ["local-agent"])
+        self.assertIn('<option value="swe-2-high" data-prov="devin"', reply)
+        self.assertIn('data-group="SWE-2" data-cost="Free"', reply)
+        self.assertIn('data-group="Fusion"', reply)
+        self.assertIn('data-row="Fable 5.2 Medium · SWE-2 High" data-cost="API"', reply)
+        self.assertRegex(reply, r'<option value="swe-2-high"[^>]* selected>')
 
     def test_job_page_shows_the_work_left_and_its_record_right(self):
         # Dropping what the job was asked, its output tail, its checks, the files it made or a line of its timeline,

@@ -399,6 +399,11 @@ class ListsTest(unittest.TestCase):
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("Renamed the Options label to Run", text(row))
 
+    def test_provider_marks_wear_no_brand_colour(self):
+        # The Claude mark was coral in the picker and on answers but grey in Settings: drift, and a second accent
+        # beside the app's one blue (critic r10 F8). Every provider mark takes its row's ink.
+        self.assertNotIn("#d97757", dashboard.STYLE)
+
     def test_the_inbox_panes_start_on_one_line(self):
         # The list's 'Needs you' line box starts 13px below the panes' top and the detail's meta line started 24px
         # below it, so the panes began 11px apart across the divider (critic r10 F10).

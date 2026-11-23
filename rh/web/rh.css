@@ -1224,7 +1224,6 @@ html.lg-on[data-live-app] .app > .side.side { border: 0; border-radius: 0;
 .model-picker:has(select:enabled option[data-prov="openai"]:checked) .prov[data-prov="openai"],
 .model-picker:has(select:enabled option[data-prov="claude"]:checked) .prov[data-prov="claude"],
 .model-picker:has(select:enabled option[data-prov="devin"]:checked) .prov[data-prov="devin"] { display: inline-flex; }
-.model-picker .prov[data-prov="claude"], select option[data-prov="claude"] > svg.ic { color: #d97757; }
 @supports (appearance: base-select) {
   .c-row select optgroup { display: grid; padding: 2px 0; }
   .c-row select optgroup + optgroup { margin-top: 4px; padding-top: 6px; border-top: 1px solid rgb(255 255 255 / .07); }
@@ -1261,7 +1260,6 @@ html.lg-on[data-live-app] .app > .side.side { border: 0; border-radius: 0;
 .mp-prov:hover, .mp-prov:focus-visible { background: rgb(255 255 255 / .1); outline: none; }
 .mp-prov[aria-pressed="true"] { background: rgb(255 255 255 / .06); }
 .mp-prov .ic { width: 20px; height: 20px; }
-.mp-prov[data-prov="claude"], .mp-row[data-prov="claude"] > .ic:first-child { color: #d97757; }
 .mp-bar { position: absolute; right: 4px; z-index: 1; width: 3px; height: 20px; border-radius: 2px; background: #fff;
   pointer-events: none; transition: top .2s ease-out; }
 .mp-main { display: flex; flex: 1; flex-direction: column; min-width: 0; background: rgb(255 255 255 / .015); }
@@ -1338,7 +1336,6 @@ body[data-tint="mono"] { --ef-accent: #8a8a94; }
 .composer:has(select[name="kind"] option[value="gpt-chat"]:checked) .op-title:not(.answer-option),
 .composer:has(select[name="kind"] option[value="local-shell"]:checked) .op-title:not(.answer-option) {
   margin-top: 0; padding-top: 0; border-top: 0; }
-.msg.ai .who[data-prov="claude"] > .ic { color: #d97757; }
 /* The settings menu is read, not looked through: as solid as the model and effort menus. */
 html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock .opts-body, .session-dock .opts-body {
   background: linear-gradient(180deg, rgb(255 255 255 / .06), rgb(255 255 255 / .02)), rgb(16 18 26 / .95);

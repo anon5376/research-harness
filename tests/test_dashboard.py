@@ -514,7 +514,27 @@ class ListsTest(unittest.TestCase):
         self.assertIn("color: var(--faint)", rule("details.worked:not([open]) > summary .lines"))
         self.assertIn("width: auto", rule("details.worked:not([open]) > summary"))
         self.assertIn("margin-left: 0", rule("details.worked:not([open]) > summary .lines"))
-        self.assertIn("margin-top: -16px", rule(".jd-body .session-file-list + .worked"))
+        self.assertIn("margin-top: -20px", rule(".jd-body .session-file-list + .worked"))  # 4px apart (r16 F1)
+        # r16 F1: with a pointer the answer's Copy takes no row, and its attachments sit 20px under it
+        hover = dashboard.STYLE.split("@media (hover: hover) {\n  .msg-copy { opacity: 0; }", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".msg-acts { position: absolute;", hover)
+        self.assertIn("margin-top: -7px", rule(".jd-body > .msg.ai + .session-file-list"))
+        # r16 F4: open, the Output head moved its toggle 700px to a leading chevron; it now keeps the row's layout,
+        # 'Hide' and the turned chevron where 'Show ›' sat, and a running log (which stays open) has no toggle
+        opened_ = "details.worked[open]:not(:has(> .worked-content > pre.log[data-follow]))"
+        self.assertIn('content: "Hide"', rule(opened_ + " > summary::after"))
+        self.assertIn("order: 1", rule(opened_ + " > summary::before"))
+        self.assertIn("display: block", rule(opened_ + " > summary > .ic"))
+        following = ".worked:has(> .worked-content > pre.log[data-follow])"
+        self.assertIn("content: none", rule(following + " > summary::before"))
+        self.assertIn("pointer-events: none", rule(following + " > summary"))
+        # r16 F3: the sidebar draws a failure as an outlined ring; the Inbox, palette and banner keep the disc
+        self.assertIn("fill: none", rule('.side svg.st[data-s="failed"] circle'))
+        # r16 F2: a swarm's kept run says the header's words too
+        self.assertIn(".sw-run.kept .sw-a", dashboard.SCRIPT.split("function echoTitle()", 1)[1].split("\n}", 1)[0])
+        # r16 F6, F7: touch shows Copy as its glyph; a phone palette fades its last row over 48px
+        self.assertIn(".msg-copy .pc-t { display: none; }", dashboard.STYLE.split("@media (hover: none) {\n  .msg-acts", 1)[1])
+        self.assertIn("linear-gradient(#000 calc(100% - 48px), transparent)", dashboard.STYLE)
 
     def test_provider_marks_wear_no_brand_colour(self):
         # The Claude mark was coral in the picker and on answers but grey in Settings: drift, and a second accent
@@ -843,6 +863,9 @@ class ListsTest(unittest.TestCase):
         self.assertTrue(sub.endswith('<span class="mono">broke-job</span>'), sub)
         self.assertIn("color: #9aa0ad", rule(".q-who.q-sub"))
         self.assertIn("font-size: 12px", rule(".q-who.q-sub"))
+        # r16 F5: Show all shares the meta line, and on a desktop the id is left to the selected row beside it
+        self.assertIn("grid-column: 2; grid-row: 2;", rule(".q-head .q-head-in > .q-title.user-message + .ask-more"))
+        self.assertIn(".q-who.q-sub > .mono:last-child", dashboard.STYLE)
         short = re.search(r'data-region="ib-detail".*?</section>',
                           inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
         self.assertIn('<h2 class="q-title" id="q-h" data-clear>Fix the flaky test</h2>', short)
@@ -1659,8 +1682,18 @@ class DashboardTest(unittest.TestCase):
         view["open"]["answer"] = "Fixed it."  # a markdown answer, so .assistant-message.md renders
         view["open"]["files"] = [{"path": "changes.patch", "size": 90}]  # and a patch preview, so .peek.diff does
         view["open"]["peek"] = {"path": "changes.patch", "text": "+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n", "more": False}
+        # and a swarm's judge page, so its run rows (.sw-run, .sw-a) render
+        swarm = live_view()
+        swarm["not_started"] = [{"id": "fix.best", "state": "waiting", "paused": False, "detail": "", "external_id": None}]
+        swarm["recent"] = [*swarm["recent"], {"id": "fix.w1", "state": "done", "paused": False, "detail": "",
+                                               "external_id": None}]
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290}
+        swarm["meta"] = {**swarm.get("meta", {}),
+                         "fix.w1": {**base, "updated": NOW - 230, "model": "swe-2-max", "goal": "fix", "said": "Renamed"},
+                         "fix.best": {**base, "updated": NOW - 5, "model": "swe-2-max", "goal": "fix", "after": ["fix.w1"]}}
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
-                 + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN) + inbox(live_view()))
+                 + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN) + inbox(live_view())
+                 + dashboard.render(opened(swarm, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN))
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())
         self.assertEqual(sorted(selected - made - rendered), [])
         self.assertIn("g-needs", {c[2:] for c in rendered if c.startswith("s-")})  # positive control for the regex

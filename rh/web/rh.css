@@ -580,6 +580,16 @@ a.ib:hover { background: var(--surface); }
 .q-who.q-sub { margin-top: 8px; font-size: 12px; color: #9aa0ad; }
 .q-who.q-sub > .mono { color: #9aa0ad; font-size: 12px; }
 .q-head-in > .q-title:first-child { margin-top: 0; }
+/* a folded brief's Show all sits on the meta line, at the brief's right edge, not on a row of its own; on a desktop
+   the run id leaves that line to the selected row beside it */
+.q-head-in:has(> .ask-more) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px;
+  align-items: baseline; max-width: 680px; }
+.q-head-in:has(> .ask-more) > .q-title { grid-column: 1 / -1; }
+.q-head-in:has(> .ask-more) > .q-sub { grid-column: 1; grid-row: 2; }
+.q-head .q-head-in > .q-title.user-message + .ask-more { grid-column: 2; grid-row: 2; margin: 8px 0 0; }
+@media (min-width: 601px) {
+  .q-who.q-sub > .mono:last-child, .q-who.q-sub > .sep:nth-last-child(2) { display: none; }
+}
 .q-title { margin-top: 10px; font: 28px/34px var(--serif); letter-spacing: -0.02em; max-width: 640px; }
 .q-job { margin-top: 12px; font-size: 13px; line-height: 1.6; color: var(--muted); }
 .q-job > .dot { display: inline-block; margin-right: 8px; vertical-align: 1px; }
@@ -1406,10 +1416,28 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
   transition: opacity 150ms ease-out, background-color 120ms ease-out, color 120ms ease-out; }
 .msg-copy svg { width: 14px; height: 14px; }
 .msg-copy:hover, .msg-copy:focus-visible { color: var(--text); background: #1c2030; }
+/* on touch the Copy is its glyph alone, as the phone patch head's, in a 44px hit area */
+@media (hover: none) {
+  .msg-acts { margin-left: -7px; }
+  .msg-copy { position: relative; width: 28px; padding: 0; justify-content: center; }
+  .msg-copy .pc-t { display: none; }
+  .msg-copy::after { content: ""; position: absolute; inset: -8px; }
+}
+/* a phone palette's list dissolves its last row over 48px, so no glyph is sliced at the footer */
+@media (max-width: 600px) {
+  .p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent);
+    mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
+}
 @media (hover: hover) {
   .msg-copy { opacity: 0; }
   .msg.ai:is(:hover, :focus-within) .msg-copy { opacity: 1; }
+  /* with a pointer the Copy takes no row: it rests at the answer's bottom right, on its last line, so the answer's
+     patch and Output sit right under it */
+  .msg.ai { position: relative; }
+  .msg-acts { position: absolute; right: -10px; bottom: -4px; margin: 0; }
 }
+/* an answer's attachments are its results: 20px under its last line, and 4px apart */
+.jd-body > .msg.ai + .session-file-list { margin-top: -7px; }
 .msg.ai .who .who-model { color: var(--faint); }
 .msg.ai .who .who-model::before { content: "·"; margin-right: 6px; }
 .msg.ai .who .who-run { margin-left: auto; font-size: 12px; }
@@ -1725,6 +1753,10 @@ dialog::backdrop { background: rgb(3 5 12 / .72); -webkit-backdrop-filter: blur(
 /* Cancelled is not done: a dashed ring, and its name steps back. */
 svg.st[data-s="cancelled"] circle { stroke-dasharray: 2.2 1.6; }
 .side .rows a.item:has(> svg.st[data-s="cancelled"]) .name { color: var(--faint); }
+/* In the sidebar a failure is an outlined ring: red still means failed, a weight lighter than in the Inbox, the
+   palette and the banner, where the failure is the subject */
+.side svg.st[data-s="failed"] circle { fill: none; stroke: currentColor; stroke-width: 1.5; r: 5.6; }
+.side svg.st[data-s="failed"] .k { stroke: currentColor; stroke-width: 1.5; }
 /* The palette's list fades under its footer instead of slicing a row. */
 .p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
   padding-bottom: 20px; }
@@ -1764,7 +1796,7 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
    wears the same card as Last output and Where it stopped (header row inside, 12.5px on 21px). */
 .worked:has(> .worked-content > pre.log[data-follow]) { border: 1px solid var(--border); border-radius: var(--r-card);
   background: rgb(255 255 255 / .025); overflow: hidden; }
-.worked:has(> .worked-content > pre.log[data-follow]) > summary { width: auto; height: 38px; padding: 0 14px 0 10px;
+.worked:has(> .worked-content > pre.log[data-follow]) > summary { width: auto; height: 38px; pointer-events: none; cursor: default; padding: 0 14px 0 10px;
   border-bottom: 1px solid var(--rule); }
 .worked:has(> .worked-content > pre.log[data-follow]) > summary .worked-output { color: var(--text); font-size: 13px; }
 .worked-content:has(> pre.log[data-follow]) { margin-top: 0; border: 0; border-radius: 0; background: none; }
@@ -2157,4 +2189,15 @@ details.worked:not([open]) > summary::before { order: 1; width: 9px; text-align:
 details.worked:not([open]) > summary::after { content: "Show"; margin-left: auto; font-size: 12px; color: var(--muted); }
 details.worked:not([open]) > summary .worked-output { color: var(--text); font-size: 13px; }
 details.worked:not([open]) > summary .lines { margin-left: 0; color: var(--faint); }
-.jd-body .session-file-list + .worked { margin-top: -16px; }
+.jd-body .session-file-list + .worked { margin-top: -20px; }
+/* Open, a finished Output keeps its row: glyph, name and count at left, 'Hide' and the turned chevron where 'Show ›'
+   sat, so the toggle stays under the pointer and both attachments share one head */
+details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summary { width: auto; }
+details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summary > .ic { display: block; flex: none; color: var(--faint); }
+details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summary::before { order: 1; width: 9px; text-align: left; margin-left: -2px; }
+details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summary::after { content: "Hide"; margin-left: auto; font-size: 12px; color: var(--muted); }
+details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summary .worked-output { color: var(--text); font-size: 13px; }
+details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summary .lines { margin-left: 0; color: var(--faint); }
+/* a running job's log stays open: its head wears the glyph and no toggle */
+.worked:has(> .worked-content > pre.log[data-follow]) > summary::before { content: none; }
+.worked:has(> .worked-content > pre.log[data-follow]) > summary > .ic { display: block; flex: none; color: var(--faint); }

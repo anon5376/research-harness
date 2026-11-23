@@ -1086,7 +1086,7 @@ function applyMode() {
   document.documentElement.dataset.mode = mode;
   for (const t of $$('[role="tab"][data-mode]')) t.setAttribute('aria-selected', String(t.dataset.mode === mode));
   const title = $('#compose-title');
-  if (title) title.textContent = mode === 'research' ? 'What should we find out?' : 'What are we building?';
+  if (title) title.textContent = mode === 'research' ? 'What should we find out?' : (title.dataset.repo || 'What are we building?');
   for (const kind of $$('form.compose select[name="kind"]')) {
     const research = kind.value === 'gpt-chat';
     if (research !== (mode === 'research')) {

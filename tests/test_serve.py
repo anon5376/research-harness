@@ -186,7 +186,7 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(code, 200)
         for group in ("Needs you", "Live", "Up next", "Ended today"):
             self.assertIn(f">{group}</h3>", page)
-        self.assertIn(">What are we building?</h1>", page)
+        self.assertRegex(page, r'id="compose-title" tabindex="-1" data-repo="[^"]+">[^<]+</h1>')  # the repository heads it
         self.assertIn('data-mode="coding"', page)
         self.assertIn('data-mode="research"', page)
         self.assertIn('/actions?t=serve-test-key', page)
@@ -298,12 +298,15 @@ class ServeTest(unittest.TestCase):
         self.repo.rename(named)
         self.cfg["repo"]["path"] = str(named)
         page = self.request("/new")[2]
-        self.assertRegex(page, r'<span class="where-chip" title="Repository"><svg[^>]*>.*?</svg><span class="wc-t">harness-visual-test</span></span>')
+        # the configured repository heads the page; the line under it names the branch
+        self.assertIn('data-repo="harness-visual-test">harness-visual-test</h1>', page)
+        self.assertNotIn('title="Repository"', page)
         self.assertRegex(page, r'<span class="where-chip" title="Branch"><svg[^>]*>.*?</svg><span class="wc-t">main</span></span>')
         self.assertNotIn('compose-trail', page)
         self.cfg["repo"]["path"] = str(self.base / "missing")
         page = self.request("/new")[2]
         self.assertNotIn('where-chip"', page)
+        self.assertIn('tabindex="-1">What are we building?</h1>', page)  # no repository known: the page asks
 
     def test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address(self):
         # An Inbox that opens on an older item, a hand launch opened from it without its prompt, or an item address

@@ -2090,6 +2090,23 @@ console.log(JSON.stringify([
         for spec in ("margin-left: auto", "font-size: 12px", "color: #7d8394"):
             self.assertIn(spec, count)
 
+    def test_the_new_job_page_is_headed_by_its_repository(self):
+        # A new-job page headed by a question any agent app could ask while the repository hides in a row under the
+        # composer, a repository named twice, or a page with no repository left without a heading, must fail.
+        view = {**live_view(), "workspace": {"repo": "research-harness", "branch": "rh3-composer-agents"}}
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        self.assertIn('<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="research-harness">'
+                      'research-harness</h1>', page)
+        strip = page.split('<section class="c-strip', 1)[1].split("</section>", 1)[0]
+        self.assertEqual(strip.count(">research-harness<"), 1)
+        self.assertIn(">rh3-composer-agents<", page)
+        self.assertIn(".c-strip .where-bar { top: auto; bottom: calc(100% + ", dashboard.STYLE)
+        # on a phone, with no row under it, the composer sits at the reply box's 24px from the foot
+        self.assertIn(".sea-page > .dock:has(> .c-strip.has-repo) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
+                      dashboard.STYLE)
+        bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
+        self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
+
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
         # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
         # room for only one button while Pause and Cancel both show, must fail.

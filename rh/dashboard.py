@@ -1673,9 +1673,9 @@ def _composer(ctx, draft, ready, policy):
               'pattern="[a-z0-9][a-z0-9._\\-]{0,62}" '
               f'placeholder="fix-login-bug" value="{value("id")}">'))
     workspace = ctx["workspace"]
+    # the repository heads the page, so the line under it names only the branch
     where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}<span class="wc-t">{_text(workspace[key])}</span></span>'
-                    for key, icon, title in (("repo", "folder", "Repository"), ("branch", "branch", "Branch"))
-                    if workspace.get(key))
+                    for key, icon, title in (("branch", "branch", "Branch"),) if workspace.get(key))
     form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx), options=fields, opened=opened,
                           controls="".join(controls), where=f'<div class="where-bar">{runner}{where}</div>', files=True,
                           picked=draft.get("input_path", "") if isinstance(draft.get("input_path"), str) else "")
@@ -1689,8 +1689,12 @@ def _compose_strip(ctx, view, focus=False):
     form = _composer(ctx, view.get("compose"), ctx["ready"], view.get("job_policy") or {})
     if focus:
         form = form.replace('<textarea class="c-text" id="brief"', '<textarea class="c-text" id="brief" autofocus', 1)
-    return (f'<section class="c-strip" aria-labelledby="compose-title"><div class="compose-intro">'
-            '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1></div>' + form + '</section>')
+    # A coding job works in this repository, so its name heads the page; with none known, the page asks.
+    repo = str((ctx.get("workspace") or {}).get("repo") or "")
+    title = (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(repo)}">{_text(repo)}</h1>'
+             if repo else '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1>')
+    return (f'<section class="c-strip{" has-repo" if repo else ""}" aria-labelledby="compose-title">'
+            f'<div class="compose-intro">{title}</div>' + form + '</section>')
 
 
 def _reef(ctx, view, jobs):

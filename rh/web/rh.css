@@ -1890,3 +1890,18 @@ a.sw-run:hover { background: var(--surface); }
 .pane:has(.ibx[data-view="empty"]) .top-meta { display: none; }
 /* Every log card names its line count the same way: right-aligned, small and quiet. */
 :is(.out .head, .worked-summary) .lines { margin-left: auto; font-size: 12px; color: #7d8394; }
+/* The new-job page is headed by its repository, with where the job runs on one line under the name and the
+   composer below: the context reads first and the foot of the composer is clear. */
+.c-strip .where-bar { top: auto; bottom: calc(100% + 14px); left: 50%; right: auto; transform: translateX(-50%);
+  flex-wrap: nowrap; justify-content: center; }
+.c-strip .where-bar .worker-picker { flex-basis: auto; }
+.c-strip.has-repo .compose-intro { margin-bottom: 52px; }
+.c-strip.has-repo .compose-title { letter-spacing: -.01em; }
+@media (max-width: 600px) {
+  .sea-page > .dock:has(> .c-strip.has-repo) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+}
+/* On a wide screen menus open below the composer, clear of the line above it, so it stays while one is open. */
+@media (min-width: 601px) {
+  .c-strip .compose:has(.mp-trigger[aria-expanded="true"], .ef-trigger[aria-expanded="true"], details.opts[open]) .where-bar {
+    visibility: visible; }
+}

@@ -2441,7 +2441,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
         # the count sits right, as every log card's does
         count = f'<span class="lines mono">{_text(line_count)}</span>' if log else ""
-        work_summary = (f'<summary class="worked-summary">'
+        # folded, a glyph where a file row's icon sits starts 'Output' on the file name's edge
+        work_summary = (f'<summary class="worked-summary">{_ic("term", True)}'
                         f'<span class="worked-output">{output_status}</span>{tag}{count}</summary>')
         output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
                        '<p class="soft">The worker has not produced output yet.</p>')

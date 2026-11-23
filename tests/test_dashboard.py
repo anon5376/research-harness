@@ -456,10 +456,24 @@ class ListsTest(unittest.TestCase):
         # leading '›', 24px apart, so they read as unrelated (critic r10 F6). Folded, Output is a row like the file's,
         # 'Output 7 lines … Show ›'; open, it keeps its card header. A file row and Output sit 8px apart.
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
-        self.assertIn("display: none", rule("details.worked:not([open]) > summary::before"))
         trail = rule("details.worked:not([open]) > summary::after")
-        for spec in ('content: "Show ›"', "margin-left: auto"):
+        for spec in ('content: "Show"', "margin-left: auto"):
             self.assertIn(spec, trail)
+        # r11 F4: still two components. Folded, Output wears a 14px glyph where the file's icon sits, so its name
+        # starts on the file name's edge, in the file name's ink with the size's grey count; and 'Show' ends in the
+        # very chevron 'Preview' ends in (the summary's own '›', moved last), not a text '›' of another size.
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"].update(log="one\ntwo", answer="Fixed it.")
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>', dashboard.render(done, NOW, token=TOKEN),
+                            re.S).group(0)
+        self.assertTrue(summary.startswith('<summary class="worked-summary">' + dashboard._ic("term", True)), summary)
+        chev = rule("details.worked:not([open]) > summary::before")
+        for spec in ("order: 1", "width: 9px", "text-align: left", "margin-left: -2px"):
+            self.assertIn(spec, chev)
+        self.assertNotIn("display: none", chev)
+        self.assertIn("display: none", rule("details.worked[open] > summary > .ic"))
+        self.assertIn("color: var(--text)", rule("details.worked:not([open]) > summary .worked-output"))
+        self.assertIn("color: var(--faint)", rule("details.worked:not([open]) > summary .lines"))
         self.assertIn("width: auto", rule("details.worked:not([open]) > summary"))
         self.assertIn("margin-left: 0", rule("details.worked:not([open]) > summary .lines"))
         self.assertIn("margin-top: -16px", rule(".jd-body .session-file-list + .worked"))

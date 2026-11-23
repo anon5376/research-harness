@@ -1024,7 +1024,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             view["job_policy"] = contract.load_policy(policy_path) if policy_path.is_file() else {}
             if not view.get("open") and not view.get("box"):
                 repo = Path(cfg["repo"]["path"]).resolve()
-                if repo.is_dir():
+                # only a git working tree's root is a workspace: the packaged app's default path is its own bundle's
+                # Contents/Resources, which is none (and an app built inside a checkout sits below that tree's root)
+                top = gitx.git(repo, "rev-parse", "--show-toplevel", check=False) if repo.is_dir() else None
+                if top is not None and top.returncode == 0 and Path(top.stdout.strip()).resolve() == repo:
                     view["workspace"] = {"repo": repo.name}
                     ref = gitx.git(repo, "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
                     if ref.returncode == 0:

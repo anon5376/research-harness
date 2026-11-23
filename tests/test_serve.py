@@ -326,6 +326,14 @@ class ServeTest(unittest.TestCase):
         page = self.request("/new")[2]
         self.assertNotIn('where-chip"', page)
         self.assertIn('tabindex="-1">What are we building?</h1>', page)  # no repository known: the page asks
+        # A folder that is no git working tree is no workspace: the packaged desktop app's default repo path is its
+        # own bundle's Contents/Resources, which headed a fresh install's page as 'Resources' (Devin macOS DMG check)
+        bundle = self.base / "Research Harness.app" / "Contents" / "Resources"
+        bundle.mkdir(parents=True)
+        self.cfg["repo"]["path"] = str(bundle)
+        page = self.request("/new")[2]
+        self.assertNotIn('data-repo="Resources"', page)
+        self.assertIn('tabindex="-1">What are we building?</h1>', page)
 
     def test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address(self):
         # An Inbox that opens on an older item, a hand launch opened from it without its prompt, or an item address

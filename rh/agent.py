@@ -16,6 +16,7 @@ and its process sandbox is off unless set up with `devin sandbox`. Either way it
 """
 import collections
 import json
+import shlex
 import shutil
 import subprocess
 import sys
@@ -147,19 +148,60 @@ def _continue(work, prior, brief):
     return f"This continues an earlier run on this repository. {note}{earlier}The request, with the follow-up last:\n\n{brief}"
 
 
-def _judge(work, runs, brief):
-    """Lay each swarm run's answer and changes in .swarm/<run>/ of the fresh copy and return the judge's brief."""
-    shown = []
+def _check(repo, run, check, scratch):
+    """Run the swarm's check on one run's changes in a clean copy at that run's commit: (verdict, output tail)."""
+    patch = run / "changes.patch"
+    if not patch.is_file() or not patch.stat().st_size:
+        return "no changes", ""
+    copy = scratch / f"check-{run.name}"
+    subprocess.run(["git", "clone", "--quiet", "--shared", repo, str(copy)], check=True)
+    if (run / "base").is_file():
+        subprocess.run(["git", "-C", str(copy), "checkout", "--quiet", "--detach",
+                        (run / "base").read_text(encoding="utf-8").strip()], check=False)
+    applied = subprocess.run(["git", "-C", str(copy), "apply", "--whitespace=nowarn", str(patch)],
+                             capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if applied.returncode:
+        return "failed: the changes did not apply", applied.stderr[-2000:]
+    try:
+        done = subprocess.run(shlex.split(check), cwd=copy, stdin=subprocess.DEVNULL, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace", timeout=1800)
+    except subprocess.TimeoutExpired:
+        return "failed: timed out after 30 min", ""
+    except OSError as error:
+        return f"failed: {error}", ""
+    tail = "\n".join((done.stdout + done.stderr).rstrip().splitlines()[-30:])
+    return ("passed" if done.returncode == 0 else f"failed: exit {done.returncode}"), tail
+
+
+def _judge(work, runs, brief, repo=None, check="", out=None, scratch=None):
+    """Lay each swarm run's answer and changes in .swarm/<run>/ of the fresh copy and return the judge's brief. With a
+    check, the harness first runs it on each run's changes in a clean copy (agents may not run commands), so the
+    judge decides on evidence; the verdicts are also kept in swarm-checks.json beside the judge's answer."""
+    shown, verdicts = [], {}
     for run in runs:
         place = work / ".swarm" / run.name
         place.mkdir(parents=True, exist_ok=True)
         for name in ("answer.md", "changes.patch"):
             if (run / name).is_file():
                 shutil.copyfile(run / name, place / name)
-        shown.append(f"- .swarm/{run.name}/" + ("" if (run / "answer.md").is_file() else " (it left no answer)"))
+        notes = [] if (run / "answer.md").is_file() else ["it left no answer"]
+        if check:
+            verdict, tail = _check(repo, run, check, scratch)
+            verdicts[run.name] = verdict
+            print(f"check {run.name}: {verdict}", flush=True)
+            if verdict == "no changes":
+                notes.append("no changes to check")
+            else:
+                notes.append(f"its check {verdict}")
+                (place / "check.txt").write_text(f"{verdict}\n\n{tail}\n", encoding="utf-8")
+        shown.append(f"- .swarm/{run.name}/" + (f" ({'; '.join(notes)})" if notes else ""))
+    if check and out is not None:
+        (out / "swarm-checks.json").write_text(json.dumps(verdicts, indent=1) + "\n", encoding="utf-8")
+    checked = (f"\n\nThe harness ran `{check}` on each run's changes in a clean copy; its verdict and last lines "
+               "are in check.txt. Prefer work that passed." if check else "")
     return (f"{len(runs)} agents each worked on the request below in their own copy of this repository. Each one's "
             "final answer (answer.md) and its changes (changes.patch, a git diff) are in this folder:\n\n"
-            + "\n".join(shown) + "\n\nRead them all. Choose the best work, or combine the best parts of several, "
+            + "\n".join(shown) + checked + "\n\nRead them all. Choose the best work, or combine the best parts of several, "
             "and make this copy hold that result (git apply a patch, then edit as needed); check it the way the "
             "request needs. Do not edit .swarm, which is removed afterwards. Start your answer with a one-line "
             "title of the change itself (what it does, not which run you chose), then say which run you chose and "
@@ -176,6 +218,10 @@ def main(argv):
         at = extra.index("--swarm")
         runs.append(Path(extra[at + 1]))
         extra = extra[:at] + extra[at + 2:]
+    check = ""
+    if "--check" in extra[:-1]:  # a swarm's judge: the command that checks each run's changes first
+        at = extra.index("--check")
+        check, extra = extra[at + 1], extra[:at] + extra[at + 2:]
     out = Path.cwd()
     scratch = Path(tempfile.mkdtemp(prefix="rh-agent-"))
     work = scratch / "repo"
@@ -184,7 +230,7 @@ def main(argv):
         if prior:
             brief = _continue(work, prior, brief)
         if runs:
-            brief = _judge(work, runs, brief)
+            brief = _judge(work, runs, brief, repo, check, out, scratch)
         base = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True,
                               encoding="utf-8", check=True).stdout.strip()
         (out / "base").write_text(base + "\n", encoding="utf-8")  # the commit the changes apply to

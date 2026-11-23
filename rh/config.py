@@ -15,7 +15,7 @@ DEFAULTS = {
     "notify": {"command": []},
     "supervisor": {"interval": 60},
     # /swarm in the composer: one run per model (Devin's SWE-2 models are free), then a judge keeps the best work
-    "swarm": {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max"},
+    "swarm": {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "check": ""},
     "repo": {"path": str(REPO)},
 }
 

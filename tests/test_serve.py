@@ -274,9 +274,13 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(post([("models", "swe-2-high"), ("judge", "gpt-6.1-sol")])[0], 400)
         self.assertEqual(post([("models", m) for m in ("swe-2-high", "swe-2-max", "swe-2-flash-high", "claude-haiku-5-5",
                                                       "claude-opus-5-5")] + [("judge", "swe-2-max")])[0], 400)
-        self.assertEqual(post([("models", "swe-2-high"), ("models", "claude-haiku-5-5"), ("judge", "claude-haiku-5-5")])[0], 204)
+        self.assertEqual(post([("models", "swe-2-high"), ("judge", "swe-2-high"), ("check", "pytest 'open")])[0], 400)
+        self.assertEqual(post([("models", "swe-2-high"), ("models", "claude-haiku-5-5"), ("judge", "claude-haiku-5-5"),
+                               ("check", " pytest -q ")])[0], 204)
         saved = config.load(self.home)["swarm"]
-        self.assertEqual((saved["models"], saved["judge"]), (["swe-2-high", "claude-haiku-5-5"], "claude-haiku-5-5"))
+        self.assertEqual((saved["models"], saved["judge"], saved["check"]),
+                         (["swe-2-high", "claude-haiku-5-5"], "claude-haiku-5-5", "pytest -q"))
+        self.assertIn('name="check" class="mono"', self.request("/new")[2])
         page = self.request("/new")[2]
         self.assertIn('value="claude-haiku-5-5" checked', page)
         self.assertNotIn('value="swe-2-max" checked', page)
@@ -715,6 +719,7 @@ class ServeTest(unittest.TestCase):
         # folder, and open as the swarm's page; a /swarm that ran one job, or a judge that needed every run done, fails.
         config.set_value("swarm.models", "swe-2-max,claude-haiku-5-5", self.cfg["home"])
         config.set_value("swarm.judge", "swe-2-high", self.cfg["home"])
+        config.set_value("swarm.check", "python3 -I tests/run.py", self.cfg["home"])
         self.cfg.update(config.load(self.cfg["home"]))
         with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
             code, headers, _ = self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Fix the typo"})
@@ -733,6 +738,7 @@ class ServeTest(unittest.TestCase):
         self.assertEqual([spec["command"][i + 1] for i, a in enumerate(spec["command"]) if a == "--swarm"],
                          [str(home / "runs" / "fix-the-typo.w1"), str(home / "runs" / "fix-the-typo.w2")])
         self.assertTrue(spec["operator_facing"] and spec["card"]["said"] == "Fix the typo")
+        self.assertEqual(spec["command"][-2:], ["--check", "python3 -I tests/run.py"])  # runs are checked first
         # an OpenAI model is never a swarm worker: the plan's usage is the owner's
         config.set_value("swarm.models", "gpt-6.1-sol", self.cfg["home"])
         self.cfg.update(config.load(self.cfg["home"]))

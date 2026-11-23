@@ -299,6 +299,8 @@ def _swarm_file(cfg, draft):
     best = tomllib.loads(text)
     for job in jobs:
         best["command"] += ["--swarm", str(home / "runs" / f"{gid}.{job['id']}")]
+    if swarm.get("check"):  # the harness checks each run's changes before the judge reads them
+        best["command"] += ["--check", str(swarm["check"])]
     best["after"], best["after_any"] = [job["id"] for job in jobs], True
     said = draft["brief"].replace("\r\n", "\n").strip()
     card = {"said": said, "form": "the chosen run's answer and its changes",
@@ -1037,6 +1039,13 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     # an agent's base (the commit its changes apply to) is bookkeeping, not a result
                     skip = (("answer.md",) if chat_answer else ()) + (
                         ("base",) if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
+                    checks = root / "swarm-checks.json"  # a swarm judge's verdicts on its runs, shown on its card
+                    if shown["job"].get("spec", {}).get("after_any") and checks.is_file() and not checks.is_symlink():
+                        try:
+                            shown["swarm_checks"] = json.loads(checks.read_text(encoding="utf-8"))
+                        except (OSError, ValueError):
+                            pass
+                        skip += ("swarm-checks.json",)
                     shown["files"], shown["peek"] = _files(root, skip=skip)
                 if shown["job"].get("spec", {}).get("prior"):
                     shown["thread"] = _thread(cfg, shown["job"])  # the chat so far, while this run works too
@@ -1140,20 +1149,25 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 self.reply(204)
                 return
             if path == "/settings/swarm":
-                models, judge = fields.get("models", []), _value(fields, "judge")
+                models, judge, check = fields.get("models", []), _value(fields, "judge"), _value(fields, "check").strip()
                 allowed = swarm_choices()
-                if (not 0 < len(models) <= SWARM_MAX or len(set(models)) != len(models)
-                        or any(m not in allowed for m in (*models, judge))):
+                try:
+                    shlex.split(check)
+                except ValueError:
+                    check = None
+                if (not 0 < len(models) <= SWARM_MAX or len(set(models)) != len(models) or check is None
+                        or len(check) > 300 or any(m not in allowed for m in (*models, judge))):
                     self.reply(400)
                     return
                 with _CLI_LOCK:
                     try:
                         config.set_value("swarm.models", ",".join(models), cfg["home"])
                         config.set_value("swarm.judge", judge, cfg["home"])
+                        config.set_value("swarm.check", check, cfg["home"])
                     except (OSError, ValueError):
                         self.reply(500)
                         return
-                    cfg.setdefault("swarm", {}).update({"models": list(models), "judge": judge})
+                    cfg.setdefault("swarm", {}).update({"models": list(models), "judge": judge, "check": check})
                 self.reply(204)
                 return
             back = _next(fields)

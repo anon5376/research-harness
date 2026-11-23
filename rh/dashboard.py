@@ -1958,20 +1958,27 @@ def _fail_banner(state, spec, bad):
             f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
 
 
-def _swarm_card(ctx, runs):
-    """A swarm's runs on its judge's page: each run's model, state, time and first answer line, linked to its page."""
+def _swarm_card(ctx, runs, checks=None):
+    """A swarm's runs on its judge's page: each run's model, state, time, check verdict and first answer line, linked
+    to its page."""
     now, items = ctx["now"], []
+    checks = checks if isinstance(checks, dict) else {}
     for rid in runs:
         m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
         st = ctx["states"].get(rid) or "waiting"
         word = "Done" if st == "done" else _STATES.get(st, (st,))[0]
         start, end = m.get("started"), m.get("updated")
-        took = (_duration(end - start) if st not in (*_LIVE, *_PRE) and _number(start) and _number(end)
-                else _duration(now - start) if st in _LIVE and _number(start) else "")
+        took = _text(_duration(end - start) if st not in (*_LIVE, *_PRE) and _number(start) and _number(end)
+                     else _duration(now - start) if st in _LIVE and _number(start) else "")
         model = _names([m["model"]]) if m.get("model") else rid
         said = str(m.get("said") or "")
+        verdict = str(checks.get(rid.rsplit(".", 1)[-1]) or checks.get(rid) or "")
+        if verdict and verdict != "no changes":
+            ok = verdict == "passed"
+            took = (took + " " if took else "") + (f'<span class="sw-c{"" if ok else " bad"}">'
+                                                   f'{"Check passed" if ok else "Check failed"}</span>')
         inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="sw-m">{_text(model)}</span>'
-                 f'<span class="sw-s">{_SEP_HTML.join(_text(x) for x in (word, took) if x)}</span>'
+                 f'<span class="sw-s">{_SEP_HTML.join(x for x in (_text(word), took) if x)}</span>'
                  + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))
         items.append(f'<li><a class="sw-run" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}</a></li>' if ctx["live"]
                      else f'<li><div class="sw-run">{inner}</div></li>')
@@ -2099,7 +2106,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
     work.append(_region("job-result", "".join(result), "p", "job-result"))
     if runs:
-        work.append(_swarm_card(ctx, runs))
+        work.append(_swarm_card(ctx, runs, opened.get("swarm_checks")))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     chat_dock = ""
@@ -2577,7 +2584,11 @@ def _swarm_settings(ctx):
             '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
             f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
             f'<label class="swarm-judge"><span>Judge</span><select name="judge">{judges}</select></label>'
-            '</fieldset></form>')
+            '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
+            f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
+            f'value="{_text(swarm.get("check") or "")}"></label>'
+            '<p class="set-hint">The harness runs it on each run\'s changes in a clean copy before the judge reads '
+            'them. Leave empty to judge without it.</p></fieldset></form>')
 
 
 def _settings(ctx, preset, tint="cobalt"):

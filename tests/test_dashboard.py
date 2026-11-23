@@ -273,6 +273,12 @@ class ListsTest(unittest.TestCase):
         self.assertIn("Running", status)
         self.assertIn("1 of 2 runs ended", status)
         self.assertNotIn("No output received yet", page)  # the judge has none until it starts
+        # once the judge has checked the runs, each row says whether its changes passed
+        done = opened(view, "fix.best", kind="local-shell", state="waiting")
+        done["open"]["swarm_checks"] = {"fix.w1": "passed", "fix.w2": "failed: exit 1"}
+        card = re.search(r'data-region="j-swarm".*?</section>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn('<span class="sw-c">Check passed</span>', card)
+        self.assertIn('<span class="sw-c bad">Check failed</span>', card)
 
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that

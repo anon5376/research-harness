@@ -189,5 +189,52 @@ class SwarmJudgeTest(unittest.TestCase):
             self.assertNotIn(".swarm", patch)
 
 
+class SwarmCheckTest(unittest.TestCase):
+    def test_the_judge_is_told_which_runs_pass_the_check_on_a_clean_copy(self):
+        # Agents may not run commands, so the harness checks each run's patch itself: a judge brief that does not
+        # say which run passed, or a check run on the repository instead of the run's patched copy, must fail.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo, out = tmp / "repo", tmp / "out"
+            runs = [tmp / "fix.w1", tmp / "fix.w2", tmp / "fix.w3"]
+            for d in (repo, out, *runs):
+                d.mkdir()
+            git(repo, "init", "--quiet")
+            (repo / "a.txt").write_text("one\n", encoding="utf-8")
+            git(repo, "add", "a.txt")
+            git(repo, "commit", "--quiet", "-m", "start")
+            base = git(repo, "rev-parse", "HEAD").strip()
+            for run, word in zip(runs[:2], ("bad", "two")):
+                (run / "base").write_text(base + "\n", encoding="utf-8")
+                (run / "answer.md").write_text(f"Added {word}.\n", encoding="utf-8")
+                (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
+                                                   f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
+            (runs[2] / "answer.md").write_text("I changed nothing.\n", encoding="utf-8")  # no patch: not checked
+            check = f"{sys.executable} -c \"import sys; sys.exit('bad' in open('a.txt').read())\""
+            fake = tmp / "claude"
+            fake.write_text(f"#!{sys.executable}\nimport sys, pathlib\nprint(sys.argv[2])\n"
+                            "for p in sorted(pathlib.Path('.swarm').rglob('check.txt')): print('CHECK', p.parent.name, p.read_text().splitlines()[0])\n",
+                            encoding="utf-8")
+            fake.chmod(0o755)
+            cwd = Path.cwd()
+            try:
+                os.chdir(out)
+                code = agent.main(["agent.py", "claude", str(fake), str(repo), "Add a second line.",
+                                   *[a for r in runs for a in ("--swarm", str(r))], "--check", check])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(code, 0)
+            said = (out / "answer.md").read_text(encoding="utf-8")
+            self.assertIn("- .swarm/fix.w1/ (its check failed: exit 1)", said)
+            self.assertIn("- .swarm/fix.w2/ (its check passed)", said)
+            self.assertIn("- .swarm/fix.w3/ (no changes to check)", said)
+            self.assertIn("CHECK fix.w1 failed: exit 1", said)
+            self.assertIn("CHECK fix.w2 passed", said)
+            self.assertEqual((repo / "a.txt").read_text(encoding="utf-8"), "one\n")  # the repository is never written
+            self.assertNotIn("--check", said)
+            self.assertEqual(json.loads((out / "swarm-checks.json").read_text(encoding="utf-8")),
+                             {"fix.w1": "failed: exit 1", "fix.w2": "passed", "fix.w3": "no changes"})
+
+
 if __name__ == "__main__":
     unittest.main()

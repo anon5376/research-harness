@@ -225,17 +225,97 @@ def _ln(line):
     return f'<span class="ln{tone}">{_text(line)}</span>'
 
 
-def _peek_html(path, text):
-    """A file's preview, escaped. A patch reads as a diff: each line its own block, marked added, removed, a hunk's
-    head or a file header, so a change shows at a glance as it does in a review."""
-    if not path.endswith((".patch", ".diff")):
-        return _text(text)
+_HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 
-    def mark(line):
-        if line.startswith(("diff --git", "index ", "--- ", "+++ ", "new file", "deleted file", "similarity", "rename ")):
-            return " meta"
-        return " hunk" if line.startswith("@@") else " add" if line.startswith("+") else " del" if line.startswith("-") else ""
-    return "".join(f'<span class="dl{mark(line)}">{_text(line)}</span>' for line in text.splitlines())
+
+def _diff_parse(text):
+    """A unified diff as rows (kind, number, line) and its files as [path, added, removed]. kind is file, hunk, add,
+    del or ctx; number is the line's number in the new file (None for a removed line, a file or a hunk). A hunk's
+    body is read by its counts, so a removed line that starts '--' is not taken for a header. Git's header lines are
+    dropped: the file row says what they said."""
+    rows, files = [], []
+    old_left = new_left = new_n = 0
+    minus, pending = "", None  # the last '--- ' path; the row of a 'diff --git' file still waiting for '+++ '
+    for line in text.splitlines():
+        if old_left > 0 or new_left > 0:
+            mark = line[:1]
+            if mark == "\\":  # "\ No newline at end of file"
+                continue
+            if mark == "+":
+                rows.append(("add", new_n, line))
+                new_n, new_left = new_n + 1, new_left - 1
+                files[-1][1] += 1
+            elif mark == "-":
+                rows.append(("del", None, line))
+                old_left -= 1
+                files[-1][2] += 1
+            else:
+                rows.append(("ctx", new_n, line))
+                new_n, old_left, new_left = new_n + 1, old_left - 1, new_left - 1
+            continue
+        hunk = _HUNK.match(line)
+        if hunk:
+            if not files:
+                files.append(["", 0, 0])
+            old_left = int(hunk.group(1) or 1)
+            new_n, new_left = int(hunk.group(2)), int(hunk.group(3) or 1)
+            rows.append(("hunk", None, hunk.group(4)))
+        elif line.startswith("diff --git "):
+            files.append([line.rsplit(" b/", 1)[-1], 0, 0])
+            rows.append(("file", None, files[-1][0]))
+            pending = len(rows) - 1
+        elif line.startswith("--- "):
+            minus = line[4:].split("\t")[0].removeprefix("a/")
+        elif line.startswith("+++ "):
+            path = line[4:].split("\t")[0].removeprefix("b/")
+            path = minus if path == "/dev/null" else path
+            if pending is not None:
+                files[-1][0] = path
+                rows[pending] = ("file", None, path)
+            else:
+                files.append([path, 0, 0])
+                rows.append(("file", None, path))
+            pending = None
+    return rows, files
+
+
+def _diff_head(text, whole=True):
+    """A patch preview's head: the file it changes (or how many) and its added and removed line counts. A preview
+    cut short names only its first file, since its counts would undercount."""
+    files = _diff_parse(text)[1]
+    if not files:
+        return ""
+    if not whole:
+        return f'<span class="mono">{_text(files[0][0] + (" and more" if len(files) > 1 else ""))}</span>'
+    name = files[0][0] if len(files) == 1 else f"{len(files)} files"
+    added, removed = sum(f[1] for f in files), sum(f[2] for f in files)
+    zero = lambda n: "" if n else " zero"  # noqa: E731  (a zero count is quiet, not green or red)
+    return (f'<span class="mono">{_text(name)}</span><span class="n add{zero(added)}">+{added}</span>'
+            f'<span class="n del{zero(removed)}">−{removed}</span>')
+
+
+def _peek_html(path, text):
+    """A file's preview, escaped. A patch reads as a diff: each line its own block, marked added or removed and
+    numbered as in the new file (the gutter draws it), a hunk headed by its function, and a wrapped line hung under
+    its code; a patch of several files names each where it starts."""
+    rows, files = _diff_parse(text) if path.endswith((".patch", ".diff")) else ([], [])
+    if not files:
+        return _text(text)
+    out = []
+    for kind, n, line in rows:
+        if kind == "file":
+            if len(files) > 1:
+                out.append(f'<span class="dl file">{_text(line)}</span>')
+            continue
+        if kind == "hunk":
+            out.append(f'<span class="dl hunk">{_text(line)}</span>')
+            continue
+        body = line[1:]
+        indent = len(body[:len(body) - len(body.lstrip(" \t"))].expandtabs(4))
+        out.append(f'<span class="dl{"" if kind == "ctx" else " " + kind}"'
+                   + (f' data-n="{n}"' if n is not None else "")
+                   + (f' style="--i:{indent + 1}"' if indent else "") + f'>{_text(line)}</span>')
+    return "".join(out)
 
 
 def _sig(*fields):
@@ -2292,10 +2372,15 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                     f'target="_blank" rel="noopener">{_text(path)}</a>' if ctx["live"] else _text(path))
             details = ""
             if preview and preview.get("path") == path:
-                more = "\n…" if preview.get("more") else ""
-                details = (f'<details class="file-preview"><summary>Preview</summary>'
-                           f'<pre class="peek" tabindex="0">{_peek_html(path, str(preview.get("text", "")))}{more}</pre>'
-                           '</details>')
+                # (own names: render's head and text are the page's)
+                peek_text = str(preview.get("text", ""))
+                diff_head = (_diff_head(peek_text, whole=not preview.get("more"))
+                             if path.endswith((".patch", ".diff")) else "")
+                more = (('<span class="dl">…</span>' if diff_head else "\n…") if preview.get("more") else "")
+                details = (f'<details class="file-preview"><summary>Preview</summary><div class="peek-card">'
+                           + (f'<div class="peek-head">{diff_head}</div>' if diff_head else "")
+                           + f'<pre class="peek{" diff" if diff_head else ""}" tabindex="0">'
+                           f'{_peek_html(path, peek_text)}{more}</pre></div></details>')
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'
                              f'<span class="session-file-size">{_text(_size(file.get("size")))}</span></span>'
                              f'{details}</li>')

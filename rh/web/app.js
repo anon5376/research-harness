@@ -1937,7 +1937,7 @@ for (const picker of $$('.effort-picker')) if (picker.closest('form')) syncEffor
 // A long ask scrolls inside its bubble; while more of it lies below, its bottom edge fades instead of cutting a line.
 function fadeLong(bubble) { bubble.classList.toggle('more', bubble.scrollTop + bubble.clientHeight < bubble.scrollHeight - 2); }
 function fadeAll() {
-  for (const b of $$('.user-message')) {
+  for (const b of $$('.user-message, pre.peek.diff')) {
     fadeLong(b);
     // an ask cut to its first lines offers the rest once
     const long = b.classList.contains('whole') || b.scrollHeight > b.clientHeight + 2;
@@ -1971,6 +1971,8 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('rh:page', fadeAll);
 addEventListener('resize', fadeAll);
+// a preview folded away has no height to measure until it opens
+document.addEventListener('toggle', e => { if (e.target.matches && e.target.matches('.file-preview')) fadeAll(); }, true);
 fadeAll();
 
 // A follow-up opens on its own turn, under the earlier ones, once per visit; live refreshes leave the scroll alone.

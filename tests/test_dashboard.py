@@ -423,20 +423,45 @@ class ListsTest(unittest.TestCase):
 
     def test_a_patch_preview_reads_as_a_diff(self):
         # A changes.patch previewed as plain text, where an added line looks like a removed one, must fail: added,
-        # removed, hunk and file-header lines each carry their own mark; other files stay plain text.
-        patch = ("diff --git a/x.py b/x.py\nindex 1..2 100644\n--- a/x.py\n+++ b/x.py\n@@ -1,2 +1,2 @@ def f():\n"
-                 " keep\n-old <line>\n+new <line>\n")
+        # removed and hunk lines each carry their own mark; other files stay plain text. The four git header lines
+        # (critic r9 F5: a third of the visible lines) become the card's head, the file and its +/- counts; a hunk
+        # head keeps only its function; lines carry their new-file number for the gutter (a removed line has none);
+        # an indented line hangs its wrap under its code.
+        patch = ("diff --git a/x.py b/x.py\nindex 1..2 100644\n--- a/x.py\n+++ b/x.py\n@@ -7,3 +7,3 @@ def f():\n"
+                 " keep\n-old <line>\n+new <line>\n+        deep\n")
         diff = dashboard._peek_html("changes.patch", patch)
-        self.assertIn('<span class="dl meta">diff --git a/x.py b/x.py</span>', diff)
-        self.assertIn('<span class="dl meta">--- a/x.py</span>', diff)
-        self.assertIn('<span class="dl meta">+++ b/x.py</span>', diff)
-        self.assertIn('<span class="dl hunk">@@ -1,2 +1,2 @@ def f():</span>', diff)
+        for header in ("diff --git", "index 1..2", "--- a/x.py", "+++ b/x.py", "@@"):
+            self.assertNotIn(header, diff)
+        self.assertIn('<span class="dl hunk">def f():</span>', diff)
+        self.assertIn('<span class="dl" data-n="7"> keep</span>', diff)
         self.assertIn('<span class="dl del">-old &lt;line&gt;</span>', diff)
-        self.assertIn('<span class="dl add">+new &lt;line&gt;</span>', diff)
-        self.assertIn('<span class="dl"> keep</span>', diff)
+        self.assertIn('<span class="dl add" data-n="8">+new &lt;line&gt;</span>', diff)
+        self.assertIn('<span class="dl add" data-n="9" style="--i:9">+        deep</span>', diff)
+        self.assertEqual(dashboard._diff_head(patch),
+                         '<span class="mono">x.py</span><span class="n add">+2</span><span class="n del">−1</span>')
+        two = patch + "diff --git a/y.py b/y.py\n--- a/y.py\n+++ b/y.py\n@@ -1 +1 @@\n-a\n+b\n"
+        self.assertIn('<span class="dl file">y.py</span>', dashboard._peek_html("changes.patch", two))
+        self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono">2 files</span>'))
+        self.assertIn('<span class="n del zero">−0</span>', dashboard._diff_head("+++ b/x.py\n@@ -0,0 +1 @@\n+a\n"))
         self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")
-        for mark in ("add", "del", "hunk"):
+        self.assertEqual(dashboard._diff_head("+ a list item\n"), "")
+        for mark in ("add", "del", "hunk", "file"):
             self.assertIn(f".peek .dl.{mark} {{", dashboard.STYLE)
+        # the gutter draws the number (so a copy takes only the code), 40px, right-aligned, in the quiet grey
+        gutter = dashboard.STYLE.split(".peek.diff .dl::before {", 1)[1].split("}", 1)[0]
+        for spec in ("content: attr(data-n)", "width: 40px", "text-align: right", "color: #6e7383"):
+            self.assertIn(spec, gutter)
+        # a previewed patch sits in the app's card with its head, folds with a fade and offers the rest
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"].update(files=[{"path": "changes.patch", "size": 300}],
+                            peek={"path": "changes.patch", "text": patch, "more": False})
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertIn('<div class="peek-card"><div class="peek-head"><span class="mono">x.py</span>', body)
+        # and the page keeps its own head (a preview's head once took its place)
+        self.assertRegex(body, r'<div class="jd-main"><section class="jd-head" data-region="j-head"')
+        self.assertIn('<pre class="peek diff" tabindex="0">', body)
+        self.assertIn("$$('.user-message, pre.peek.diff')", dashboard.SCRIPT)
+        self.assertIn("pre.peek.diff.more:not(.whole)", dashboard.STYLE)
 
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
@@ -1271,6 +1296,8 @@ class DashboardTest(unittest.TestCase):
         view = opened(live_view(), "live-job")
         view["open"]["log"] = "out"
         view["open"]["answer"] = "Fixed it."  # a markdown answer, so .assistant-message.md renders
+        view["open"]["files"] = [{"path": "changes.patch", "size": 90}]  # and a patch preview, so .peek.diff does
+        view["open"]["peek"] = {"path": "changes.patch", "text": "+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n", "more": False}
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
                  + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN) + inbox(live_view()))
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())

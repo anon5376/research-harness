@@ -1956,7 +1956,37 @@ a.sw-run:hover { background: var(--surface); }
 .peek .dl.add { background: rgb(74 222 128 / .10); color: #b8f0c8; }
 .peek .dl.del { background: rgb(248 113 113 / .10); color: #f6c1c1; }
 .peek .dl.hunk { color: #8fb0ff; }
-.peek .dl.meta { color: #7d8394; }
+.peek .dl.file { color: var(--text); font-weight: 500; }
+/* A previewed file sits in the app's card, as Output does; a patch's card is headed by the file it changes and its
+   added and removed counts, which replace git's four header lines. */
+.peek-card { margin-top: 6px; border: 1px solid var(--border); border-radius: var(--r-card); overflow: hidden;
+  background: rgb(255 255 255 / .025); }
+.session-file { min-width: 0; }  /* a grid item: else a preview's longest line sets the row's width past the page */
+.peek-card pre.peek { border-top: 0; }
+.peek-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 14px;
+  border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+.peek-head .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.peek-head .n { flex: none; font: 12px var(--mono); }
+.peek-head .n.add { color: #7ee2a0; }
+.peek-head .n.del { color: #f69a9a; }
+.peek-head .n.zero { color: var(--faint); }
+/* Its lines: a 40px gutter of new-file numbers drawn from data-n (so a copy takes only the code), then the code,
+   a wrapped line hung under its first character (--i, set per indented line). No inner scroll: it folds. */
+pre.peek.diff { padding: 8px 0; tab-size: 4; overflow: hidden; }
+.peek.diff .dl { position: relative; margin: 0; padding: 0 14px 0 calc(52px + var(--i, 1) * 1ch);
+  text-indent: calc(var(--i, 1) * -1ch); }
+.peek.diff .dl::before { content: attr(data-n); position: absolute; left: 0; top: 0; width: 40px; text-align: right;
+  color: #6e7383; text-indent: 0; }
+.peek.diff .dl.hunk { min-height: 20px; padding-left: 52px; text-indent: 0; }
+.peek.diff .dl.hunk::before { content: "⋯"; }
+.peek.diff .dl.file { padding-left: 14px; text-indent: 0; }
+.peek.diff .dl.file:not(:first-child) { margin-top: 8px; }
+/* folded, its last lines fade and Show all opens the rest in place */
+pre.peek.diff.more:not(.whole) { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); }
+pre.peek.diff.whole { max-height: none; }
+pre.peek.diff + .ask-more { width: 100%; height: 32px; margin: 0; padding: 0 14px; text-align: left;
+  border-top: 1px solid var(--rule); }
 /* A failure toast's output folds behind the app's chevron, not the browser's triangle. */
 .toast summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
 .toast summary::-webkit-details-marker { display: none; }

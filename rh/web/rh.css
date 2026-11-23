@@ -1788,3 +1788,5 @@ a.sw-run:hover { background: var(--surface); }
 .sw-a { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 600px) { .sw-run { grid-template-columns: 16px minmax(0, 1fr) auto; padding: 8px 10px; row-gap: 2px; }
   .sw-a { grid-column: 2 / 4; } }
+/* The Preview chevron starts at the filename's text edge, so the attachment hangs from one line. */
+.file-preview > summary::before { text-align: left; width: 9px; }

@@ -2023,4 +2023,18 @@ document.addEventListener('change', e => {
     if (!r.ok) throw new Error('not saved');
   }).catch(() => toast('The swarm settings could not be saved.', false, ''));
 });
+// An identifier moves whole to the next line; only one wider than its column breaks, and then at its own seams
+// (after _ and .), never mid-word as "strin / g".
+function seamTokens() {
+  for (const el of document.querySelectorAll('code.tok:not(.seams)')) {
+    if (el.getClientRects().length < 2) continue;
+    el.className = 'tok seams';
+    el.innerHTML = el.textContent.replace(/[&<>]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;'})[c])
+      .replace(/([_.])/g, '$1<wbr>');
+  }
+}
+let seamTimer = 0;
+addEventListener('resize', () => { clearTimeout(seamTimer); seamTimer = setTimeout(seamTokens, 150); });
+document.addEventListener('rh:page', seamTokens);
+seamTokens();
 })();

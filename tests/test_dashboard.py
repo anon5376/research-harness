@@ -796,7 +796,8 @@ class DashboardTest(unittest.TestCase):
         reply = re.search(r'<form class="compose[^>]*action="/again".*?</form>', page, re.S).group(0)
         self.assertEqual(re.findall(r'data-route="([^"]+)" name="model"', reply), ["local-agent"])
         self.assertIn('<option value="swe-2-high" data-prov="devin"', reply)
-        self.assertIn('data-group="SWE-2" data-cost="Free"', reply)
+        self.assertIn('data-group="SWE-2 · Free"', reply)  # said once in the section, not as a chip on each row
+        self.assertNotIn('data-cost="Free"', reply)
         self.assertIn('data-group="Fusion"', reply)
         self.assertIn('data-row="Fable 5.2 Medium + SWE-2 High" data-cost="API"', reply)
         self.assertRegex(reply, r'<option value="swe-2-high"[^>]* selected>')

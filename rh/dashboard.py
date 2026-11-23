@@ -1467,7 +1467,8 @@ def _devin_tags(key):
         row = " + ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part) for part in lead)  # lead + sidekick
         return (f' data-group="Fusion" data-group-tip="{_DEVIN_FUSION} Lead + sidekick." data-row="{_text(row)}" data-cost="API" '
                 'data-cost-tip="Billed at API pricing: the lead per token, the SWE-2 sidekick free"')
-    return ' data-group="SWE-2" data-cost="Free" data-cost-tip="No quota used"'
+    # every SWE-2 model is free, so the section says it once and the one row that costs (Fusion's API) stands out
+    return ' data-group="SWE-2 · Free" data-group-tip="SWE-2 models use no quota"'
 
 
 def _model_picker(policy, kind, draft, only=False):

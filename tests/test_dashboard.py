@@ -2384,6 +2384,21 @@ console.log(JSON.stringify([
                       dashboard.STYLE)
         self.assertIn("html[data-live-app] .sea-page::before { background: radial-gradient(", dashboard.STYLE)
 
+    def test_inline_code_in_an_answer_is_a_light_chip_and_long_code_reads_as_text(self):
+        # A 90-character literal became three stacked grey chips on a phone, so chips outnumbered prose (critic r10
+        # F4). Short code is a light chip that keeps its padding across a wrap; code over 40 characters (no 'nw'
+        # class) drops the chip and reads as mono text in the sentence.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        chip = rule(".assistant-message.md code.nw")
+        for spec in ("font-size: .875em", "padding: 0 4px", "border-radius: 4px", "background: rgb(255 255 255 / .06)",
+                     "box-decoration-break: clone"):
+            self.assertIn(spec, chip)
+        plain = rule(".assistant-message.md code:not(.nw)")
+        for spec in ("background: none", "padding: 0"):
+            self.assertIn(spec, plain)
+        self.assertIn('<code class="nw">x</code>', dashboard._md_inline("`x`"))
+        self.assertNotIn('class="nw"', dashboard._md_inline("`" + "a" * 41 + "`"))
+
     def test_a_folded_brief_fades_and_adds_no_characters(self):
         # The brief bubble's fold took the line clamp's ellipsis: after a full stop it read 'tests....', after a space
         # 'Running ...', while the Inbox faded (critic r10 F1). Its text sits in its own span, which folds to three

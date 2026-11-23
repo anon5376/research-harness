@@ -1507,7 +1507,10 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .run-progress::-webkit-progress-value { background: var(--ef-accent); border-radius: 1px; transition: width .2s cubic-bezier(.16, 1, .3, 1); }
 .run-progress::-moz-progress-bar { background: var(--ef-accent); }
 /* Short code stays one token on one line. */
-.assistant-message.md code.nw { white-space: nowrap; }
+.assistant-message.md code.nw { white-space: nowrap; font-size: .875em; padding: 0 4px; border-radius: 4px;
+  background: rgb(255 255 255 / .06); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+/* Code over 40 characters drops the chip and reads as mono text in its sentence: stacked chips outweighed the prose. */
+.assistant-message.md code:not(.nw) { background: none; padding: 0; color: #d6dbe6; }
 /* Touch: every composer and header control is a 44px target, whatever it draws. */
 @media (pointer: coarse) {
   .compose .c-row :is(.add-input, .mp-trigger, .ef-trigger, .send), .compose .opts > summary, .sidebar-toggle,

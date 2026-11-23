@@ -3137,11 +3137,16 @@ console.log(JSON.stringify([
         self.assertEqual(dashboard._found("[ -f 'out dir/a.txt' ]", 1), "out dir/a.txt is missing or not a file")
         self.assertEqual(dashboard._found("test -s flaky.md", 2), "it exited with code 2")
         # Under the banner the status line said 'failed' again, a second red ring and word 150px below the first
-        # (critic r12 F1): with a banner it keeps only its facts, the checks and the time.
-        status = re.search(r'data-region="job-result".*?</p>', dashboard.render(broke, NOW, token=TOKEN), re.S).group(0)
+        # (critic r12 F1): with a banner it has no ring. Its '0/1 checks' then broke the grammar every other status
+        # line keeps (state, then time) and repeated the banner's check (critic r22 F8): it reads 'Failed · 3 s', the
+        # word in the meta grey, never red.
+        status = re.search(r'<p class="job-result[^"]*" data-region="job-result".*?</p>',
+                           dashboard.render(broke, NOW, token=TOKEN), re.S).group(0)
         self.assertNotIn("<svg", status)
-        self.assertNotIn("Failed", status)
-        self.assertRegex(text(status), r"checks")
+        self.assertNotIn("checks", text(status))
+        self.assertTrue(text(status).startswith("Failed·"), text(status))  # the state, then its time
+        self.assertIn('class="job-result after-fail"', status)
+        self.assertIn(".job-result.after-fail .job-result-status { color: #9aa0ab; }", dashboard.STYLE)
         page = dashboard.render(done, NOW, token=TOKEN)
         self.assertNotIn('class="s-j-fail"', page)
         # In the Inbox a failed job wears the red ring it wears on Today.

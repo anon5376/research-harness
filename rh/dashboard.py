@@ -2405,6 +2405,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         work.append(_region("j-brief", '<p class="run-note">Ran again with no changes</p>', "section", "s-j-brief",
                             ' aria-label="Follow-up"'))
     check_rows = _checks_of(opened, spec, finished or state not in _PRE)
+    checks_at = None  # where the status line counts the checks, if it does
     check_values = [passed for passed, _, _ in check_rows if passed is not None]
     shown = "env" if entry.native else state
     word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]
@@ -2430,6 +2431,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             checks_text = f'{len(check_values)}/{len(check_rows)} checks checked'
         else:
             checks_text = f'{len(check_rows)} {"check" if len(check_rows) == 1 else "checks"} pending'
+        checks_at = len(status_line)
         status_line.append(_text(checks_text))
     if runs:  # a swarm's time is the whole swarm's, from its first run's start
         firsts = [ctx["meta"].get(r, {}).get("started") for r in runs if isinstance(ctx["meta"].get(r), dict)]
@@ -2451,8 +2453,11 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             rest = spent * (total - done_n) / done_n
             # past its limit, 'N left' would read as budget left: it says when it should end instead
             status_line.append(_text(f"ends ~{_clock(now + rest, now)}" if late else _left(rest)))
-    if failed and bad and len(status_line) > 1:  # the banner above already says it failed, in red: say it once
-        result, status_line = result[1:], status_line[1:]
+    quiet = failed and bad and len(status_line) > 1
+    if quiet:  # the banner above says it failed, in red, and names the check: the line is the state word and the time
+        result = result[1:]
+        if checks_at is not None:
+            del status_line[checks_at]
     # each part keeps the dot that leads it, so a wrapped line can hide its leading dot (see .sl in rh.css)
     status_line = [f'<span class="nowrap">{_SEP_HTML if i else ""}{part}</span>' for i, part in enumerate(status_line)]
     result.append(f'<span class="job-result-status sl">{"<wbr>".join(status_line)}</span>')
@@ -2460,7 +2465,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
     status_at, status_html = len(work), "".join(result)
-    work.append(_region("job-result", status_html, "p", "job-result"))
+    work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else "job-result"))
     if runs:
         work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept"),
                                 opened.get("swarm_stats")))

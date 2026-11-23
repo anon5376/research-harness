@@ -399,6 +399,11 @@ class ListsTest(unittest.TestCase):
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("Renamed the Options label to Run", text(row))
 
+    def test_the_inbox_panes_start_on_one_line(self):
+        # The list's 'Needs you' line box starts 13px below the panes' top and the detail's meta line started 24px
+        # below it, so the panes began 11px apart across the divider (critic r10 F10).
+        self.assertIn(".q-head-in { position: relative; padding: 13px 40px 20px; }", dashboard.STYLE)
+
     def test_the_inbox_carries_no_label_that_says_nothing(self):
         # 'newest first' over a list with no other order, or '0 settled today' beside the count of what waits, must
         # fail; a day with settled items still says how many.

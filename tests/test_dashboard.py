@@ -1240,7 +1240,11 @@ class ListsTest(unittest.TestCase):
         status = re.search(r'<span class="job-result-status sl">(.*?)</span><progress', page, re.S).group(1)
         parts = status.split("<wbr>")
         self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
-                         ["Past its 2 h limit", "·600 / 2,400", "·~3 h left"])  # no vague 'still being checked' (r12 F7)
+                         ["Past its 2 h limit", "·600 / 2,400",
+                          "·ends ~" + dashboard._clock(NOW + 3 * 3600, NOW)])
+        # r21 F3: 'Past its 2 h limit · … · ~3 h left' read as time left in its budget; past the limit the estimate
+        # is the clock time it should end at
+        self.assertNotIn("h left", status)  # no vague 'still being checked' (r12 F7)
         self.assertRegex(parts[0], r'^<span class="nowrap">[^<]*</span>$')
         for part in parts[1:]:
             self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')

@@ -2428,7 +2428,9 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         status_line.append(f'<span class="num">{done_n:,} / {total:,}</span>')  # as finished logs write 2,400
         spent = now - started_at if _number(started_at) else 0
         if spent > 30 and done_n < total:
-            status_line.append(_text(_left(spent * (total - done_n) / done_n)))
+            rest = spent * (total - done_n) / done_n
+            # past its limit, 'N left' would read as budget left: it says when it should end instead
+            status_line.append(_text(f"ends ~{_clock(now + rest, now)}" if late else _left(rest)))
     if failed and bad and len(status_line) > 1:  # the banner above already says it failed, in red: say it once
         result, status_line = result[1:], status_line[1:]
     # each part keeps the dot that leads it, so a wrapped line can hide its leading dot (see .sl in rh.css)

@@ -285,6 +285,26 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn('role="tablist"', head(one))
         self.assertNotIn('<span class="n num">', head(one))  # the top bar holds the count
 
+    def test_the_inbox_says_what_failed_as_the_job_page_does(self):
+        # The Inbox is where failures are triaged, so its banner must name the command and its exit code; a bare
+        # "Failed: ..." sentence must fail.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": []}  # a failed job leads
+        view["fails"] = {r["id"]: ["make test", 2, ""] for r in view["recent"] if r["state"] in dashboard._FAILED}
+        self.assertTrue(view["fails"])
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
+        self.assertIn('<p class="fail-c"><code>make test</code><span class="exit mono">exit 2</span></p>', detail)
+        self.assertIn("The command exited with code 2", text(detail))
+        # without a recorded check the one-line headline stays
+        # an agent run names its CLI and model, never the agent.py line that carries the whole brief
+        spec = {"command": ["python3", "/x/rh/agent.py", "devin", "/bin/devin", "/repo", "a long brief", "--model",
+                            "swe-2-max"], "accept": "pytest -q"}
+        self.assertEqual(dashboard.short_cmd(spec, "python3 /x/rh/agent.py devin /bin/devin /repo 'a long brief'"),
+                         "devin --model swe-2-max")
+        self.assertEqual(dashboard.short_cmd(spec, "pytest -q"), "pytest -q")
+        self.assertEqual(dashboard.short_cmd({"command": ["make", "test"]}, "make test"), "make test")
+        plain = re.search(r'data-region="ib-detail".*?</section>', inbox({**view, "fails": {}}), re.S).group(0)
+        self.assertNotIn('class="fail-c"', plain)
+
     def test_the_inbox_opens_on_the_newest_job_that_waits_when_nothing_asks(self):
         page = inbox({**live_view(), "inbox": []})
         self.assertNotIn("No questions to answer.", page)

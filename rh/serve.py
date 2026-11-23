@@ -587,6 +587,25 @@ def _tail(cfg, jid, most=5):
     return "\n".join(text.rstrip("\n").splitlines()[-most:])
 
 
+def _fails(cfg, ids):
+    """Each failed job's first failed check as [command, exit code, its done-when check], for the Inbox banner."""
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    out = {}
+    try:
+        for jid in ids:
+            job = led.job(jid)
+            if not job:
+                continue
+            spec = job.get("spec") or {}
+            bad = next(((cmd, code) for ok, cmd, code in dashboard._checks_of({"receipt": led.receipt(jid)}, spec, True)
+                        if ok is False), None)
+            if bad:
+                out[jid] = [dashboard.short_cmd(spec, bad[0]), bad[1], str(spec.get("accept") or "")]
+    finally:
+        led.close()
+    return out
+
+
 _HEADS = {}  # answer.md path -> (mtime_ns, first line): the list asks for every done job's on each page
 
 
@@ -929,8 +948,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     elif gitx.git(repo, "rev-parse", "--verify", "HEAD", check=False).returncode == 0:
                         view["workspace"]["branch"] = "Detached HEAD"
             if view.get("box"):  # the Inbox shows where each failed local job stopped, as its page does
-                view["tails"] = {r["id"]: _tail(cfg, r["id"]) for r in view.get("recent", [])
-                                 if isinstance(r, dict) and r.get("state") in dashboard._FAILED}
+                failed = [r["id"] for r in view.get("recent", []) if isinstance(r, dict)
+                          and r.get("state") in dashboard._FAILED]
+                view["tails"] = {jid: _tail(cfg, jid) for jid in failed}
+                view["fails"] = _fails(cfg, failed)
             if view.get("box") and view.get("pick") is None:
                 # The Inbox opens on its newest waiting item, as the page lists it.
                 waiting = sorted((i for i in items.values() if not i.get("resolved")),

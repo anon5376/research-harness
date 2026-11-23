@@ -1937,6 +1937,26 @@ def _said(provider, model, text, link="", inner=False):
     return body if inner else f'<div class="msg ai">{body}</div>'
 
 
+def short_cmd(spec, cmd):
+    """A failed command as a person reads it: an agent run is its CLI and model, not the agent.py line with the brief."""
+    agent = agent_of(spec.get("command"))
+    if agent and cmd != str(spec.get("accept") or ""):
+        provider, model, _ = agent
+        return f"{provider} --model {model}" if model else provider
+    return cmd
+
+
+def _fail_banner(state, spec, bad):
+    """What failed, as the job page and the Inbox both say it: the sentence, then the command with its exit code."""
+    what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"
+    found = _found(bad[0], bad[1])
+    # an exit code says itself: "The command exited with code 1"
+    sentence = (f"{what} exited with code {bad[1]}" if what == "The command" and found == f"it exited with code {bad[1]}"
+                else f"{what} failed: {found}")
+    return (f'<p class="fail-k">{_ring(state)}{_text(sentence)}</p>'
+            f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
+
+
 def _swarm_card(ctx, runs):
     """A swarm's runs on its judge's page: each run's model, state, time and first answer line, linked to its page."""
     now, items = ctx["now"], []
@@ -2009,17 +2029,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                  f'<a class="mono" href="{_url(ctx, "/job/" + j.id)}" data-nav>{_text(j.id)}</a>' for j in runs]
         others = f'<p class="fail-runs">Failed the same way {len(runs)} times: {_SEP_HTML.join(named)}</p>'
     if failed and (bad or others):
-        said_fail = ""
-        if bad:
-            what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"
-            found = _found(bad[0], bad[1])
-            # an exit code says itself: "The command exited with code 1", the sentence the Inbox uses too
-            sentence = (f"{what} exited with code {bad[1]}"
-                        if what == "The command" and found == f"it exited with code {bad[1]}"
-                        else f"{what} failed: {found}")
-            said_fail = (f'<p class="fail-k">{_ring(state)}{_text(sentence)}</p>'
-                         f'<p class="fail-c"><code>{_text(bad[0])}</code><span class="exit mono">exit '
-                         f'{_text(bad[1])}</span></p>')
+        said_fail = _fail_banner(state, spec, bad) if bad else ""
         work.append(_region("j-fail", said_fail + others, "section", "s-j-fail", ' aria-label="What failed"'))
     # The chat: each earlier run as what was asked and what the agent answered, then what this run asks.
     thread = opened.get("thread") if isinstance(opened.get("thread"), list) else []
@@ -2312,7 +2322,11 @@ def _ib_job(ctx, entry, view):
                f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">'
                f'{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
                if tail else "")
-    said = (f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
+    # a failed check reads as on the job's page: the sentence, the command and its exit code
+    check = (view.get("fails") or {}).get(job.id)
+    said = (_fail_banner(job.state, {"accept": check[2]}, check[:2])
+            if bad and isinstance(check, list) and len(check) == 3 else
+            f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
             f'<span>{job.headline_html(runs)}</span></p>')
     body = (f'<div class="q-head"><div class="q-head-in"><p class="q-who" data-clear>{_SEP_HTML.join(who)}</p>'
             f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2></div></div>'

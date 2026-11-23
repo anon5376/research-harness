@@ -1600,6 +1600,15 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(rings["failed"], item(page, "broke-job"))
         self.assertIn(rings["done"], item(page, "finished-job"))
 
+    def test_a_past_its_limit_ring_is_the_running_half_in_a_dashed_ring(self):
+        # The clock badge a late job once wore blurred into a blot at 14px: a badge element, a solid ring or a late
+        # shape without the running half must fail.
+        late = dashboard._SHAPES["late"]
+        self.assertIn('d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1Z" fill="currentColor"', late)
+        self.assertIn('stroke-dasharray="2.1 2.3"', late)
+        self.assertNotIn('cx="11"', late)
+        self.assertNotIn("stroke-dasharray", dashboard._SHAPES["half"])
+
     def test_each_seat_is_a_jellyfish_in_the_colour_of_what_it_is_doing(self):
         # A seat drawn teal while its job waits on you or amber while it works, a seat left out of the sea or out of
         # the list a screen reader gets, a role still wearing its label ("Testing: ..."), a tank in the snapshot (which

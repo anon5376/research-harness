@@ -182,11 +182,10 @@ _SHAPES = {
     "held": _RING + '<path d="M5.7 5v4M8.3 5v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
     "quarter": _RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 10.1 7Z" fill="currentColor"/>',
     "half": _RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1Z" fill="currentColor"/>',
-    # running past its limit: the running half, with a small clock at the lower right
-    "late": (_RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1Z" fill="currentColor"/>'
-             '<circle cx="11" cy="11" r="3.4" fill="#0b0d14" stroke="none"/>'
-             '<circle cx="11" cy="11" r="2.7" fill="none" stroke="currentColor" stroke-width="1"/>'
-             '<path d="M11 9.6V11l.9.7" fill="none" stroke="currentColor" stroke-width=".9" stroke-linecap="round"/>'),
+    # running past its limit: the running half inside a dashed ring
+    "late": ('<circle cx="7" cy="7" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4" '
+             'stroke-dasharray="2.1 2.3"/>'
+             '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1Z" fill="currentColor"/>'),
     "three": _RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1A3.1 3.1 0 0 1 3.9 7Z" fill="currentColor"/>',
     "handoff": _RING + ('<path d="M5.1 8.9 8.7 5.3M5.9 5.2h2.9v2.9" fill="none" stroke="currentColor" '
                         'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'),

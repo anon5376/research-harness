@@ -435,6 +435,9 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .out .head { height: 38px; flex: none; display: flex; align-items: center; gap: 12px; padding: 0 8px 0 14px;
   border-bottom: 1px solid var(--rule); }
 .out .head h2 { font-size: 13px; color: var(--text); }
+/* every log card opens on the Output row's terminal glyph, so the cards read as one component */
+.out .head h2 { display: flex; align-items: center; gap: 10px; }
+.out .head h2 > .ic { flex: none; color: var(--faint); }
 .livetag { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--ui); color: var(--accent); }
 .out .head .lines { margin-left: auto; color: var(--faint); }
 pre.log, pre.peek { margin: 0; padding: 12px 14px; font-size: 13px; line-height: 20px; color: var(--muted);
@@ -1468,7 +1471,7 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 .detail:has(.jd-inspector[open]):has(.job-actions .act) .jd-head-in { padding-right: 116px; }
 .detail:has(.jd-inspector[open]):has(.job-actions .act + .act) .jd-head-in { padding-right: 216px; }
 /* The model search is a field in the panel, divided from the list by one rule, never boxed. */
-.mp-pop .mp-q, .mp-pop .mp-q:focus { border: 0; border-bottom: 1px solid rgb(255 255 255 / .07); border-radius: 0;
+.mp-pop .mp-q, .mp-pop .mp-q:focus { padding: 0 14px; border: 0; border-bottom: 1px solid rgb(255 255 255 / .07); border-radius: 0;
   box-shadow: none; outline: none; }
 /* The sidebar as a drawer over the page (phones, narrow windows) is frosted and almost opaque, like the menus:
    clear glass over text only scrambles both. */

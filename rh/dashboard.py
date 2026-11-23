@@ -2511,20 +2511,24 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     # A done job that gave no answer made its output: its last lines show open, as a failed one's do.
     answered = any(isinstance(opened.get(k), str) and opened[k].strip() for k in ("answer", "reply"))
     card = bool(log) and (failed or (finished and state == "done" and not answered))
+    total = opened.get("log_total") if opened.get("log_cut") and isinstance(opened.get("log_total"), int) else None
     if card:
         tail = lines[-_TAIL:]
         # the failed check and its exit code lead the page; the card adds only what the run printed last
         name, region = ("Where it stopped", "j-error") if failed else ("Last output", "j-last")
-        body = (f'<div class="head"><h2>{name}</h2><span class="lines mono">'
-                f'{len(tail)}{f" of {len(lines)}" if len(lines) > len(tail) else ""} '
-                f'{"line" if len(tail) == 1 and len(lines) == 1 else "lines"}</span></div>'
+        # 'N of M lines' when M is the whole log; a kept tail of unknown length is no whole, so the card counts its own
+        whole = total if total else None if opened.get("log_cut") else len(lines)
+        body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2><span class="lines mono">'
+                f'{len(tail)}{f" of {whole:,}" if whole and whole > len(tail) else ""} '
+                f'{"line" if len(tail) == 1 and whole == 1 else "lines"}</span></div>'
                 f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # output that fits whole in the card above has nothing more to unfold
     if (not finished or log) and not (card and len(lines) <= _TAIL) and not (swarming and not log):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
-        line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
+        line_count = (f'{len(lines)} of {total:,} lines' if total and finished else
+                      f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}')
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
         output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
@@ -2658,7 +2662,8 @@ def _ib_job(ctx, entry, view):
     bad = job.state in _FAILED
     tail = str((view.get("tails") or {}).get(job.id) or "")
     n = len(tail.splitlines())
-    stopped = (f'<section class="out"><div class="head"><h2>Where it stopped</h2><span class="lines mono">{n} '
+    stopped = (f'<section class="out"><div class="head"><h2>{_ic("term", True)}Where it stopped</h2>'
+               f'<span class="lines mono">{n} '
                f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">'
                f'{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
                if tail else "")

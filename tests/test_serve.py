@@ -644,6 +644,13 @@ class ServeTest(unittest.TestCase):
         self.local_job("wide-local", log=b"".join(b"%04d " % i + b"x" * 995 + b"\n" for i in range(100)))
         page = self.request("/job/wide-local")[2]
         self.assertRegex(page, r'<span class="lines mono">last (6\d) lines</span>')
+        # a finished job's cut log names its real length, counted once per file version (r19 F4)
+        self.finished_local("long-done")
+        (self.home / "jobs" / "long-done").mkdir(parents=True)
+        (self.home / "jobs" / "long-done" / "out.log").write_bytes(lines)
+        page = self.request("/job/long-done")[2]
+        self.assertIn('<span class="lines mono">12 of 401 lines</span>', page)
+        self.assertIn('<span class="lines mono">200 of 401 lines</span>', page)
         self.assertIn(f"Added to run on {dashboard.HERE}", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)

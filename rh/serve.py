@@ -518,6 +518,32 @@ def _log(cfg, job):
     return "\n".join(lines[-_LOG_LINES:]), size > _LOG_TAIL or len(lines) > _LOG_LINES
 
 
+_TOTALS = {}  # out.log path -> ((mtime_ns, size), line count): a finished log is counted once
+_TOTAL_MAX = 256 * 1024 * 1024  # a longer log is not counted; its page names only the tail it holds
+
+
+def _log_total(cfg, job):
+    """How many lines a local job's whole out.log holds, or None when it cannot be read or is too long to count."""
+    path = Path(cfg["home"]) / "jobs" / job / "out.log"
+    try:
+        st = path.stat()
+        key = (st.st_mtime_ns, st.st_size)
+        if (hit := _TOTALS.get(str(path))) and hit[0] == key:
+            return hit[1]
+        if st.st_size > _TOTAL_MAX:
+            return None
+        n, last = 0, b"\n"
+        with path.open("rb") as file:
+            while chunk := file.read(1 << 20):
+                n += chunk.count(b"\n")
+                last = chunk[-1:]
+    except OSError:
+        return None
+    n += last != b"\n"  # a last line with no newline still counts
+    _TOTALS[str(path)] = (key, n)
+    return n
+
+
 def _outputs(cfg, shown):
     """The folder a job wrote into, or None: a local job's own folder under $RH_HOME, or a collected cloud job's
     write root in the scratch worktree the result was checked in. It always lies inside $RH_HOME."""
@@ -1078,6 +1104,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     self.page({"open": {"id": jid, "job": None}}, 404)
                     return
                 shown["log"], shown["log_cut"] = _log(cfg, jid)
+                if shown["log_cut"] and shown["job"]["state"] not in (*dashboard._PRE, *dashboard._LIVE):
+                    shown["log_total"] = _log_total(cfg, jid)  # a finished log no longer grows: name its length
                 if shown["job"]["kind"] == "gpt-chat":
                     shown["reply"] = chat.read_reply(cfg, jid)  # the job's result, read as the next message
                 elif shown["job"]["state"] == "handoff":

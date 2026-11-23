@@ -2731,14 +2731,30 @@ console.log(JSON.stringify([
         self.assertIn("Last output", card)
         # r18 F8: the title says 'last'; the count says how much of the whole it shows
         self.assertIn("12 of 30 lines", card)
+        # r19 F5: every log card opens on the Output row's terminal glyph, so the three read as one component
+        self.assertIn(f'<h2>{dashboard._ic("term", True)}Last output</h2>', card)
+        head = dashboard.STYLE.split("\n.out .head h2 > .ic {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: var(--faint)", head)
+        self.assertIn(".out .head h2 { display: flex; align-items: center; gap: 10px; }", dashboard.STYLE)
+        # r19 F7: the model picker's search text starts on its rows' icon edge, 14px in, not the 9px every text
+        # field gets (that rule outranked the field's own padding)
+        self.assertIn("padding: 0 14px", dashboard.STYLE.split(".mp-pop .mp-q, .mp-pop .mp-q:focus {", 1)[1].split("}", 1)[0])
         self.assertNotIn("last 12", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
         self.assertIn('<span class="worked-output">All output</span>', body)
         self.assertIn('<span class="lines mono">30 lines</span>', body)
         done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>',
-                      pane(dashboard.render(done, NOW, token=TOKEN)))
+        cut = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
+        # r19 F4: '12 of 30' named the kept tail as the whole. With no total known the card counts what it shows;
+        # with the log's real length both counts name it, one phrasing: 'N of M lines'
+        self.assertIn('<span class="lines mono">12 lines</span>', cut)
+        done["open"]["log_total"] = 2412
+        cut = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertIn('<span class="lines mono">12 of 2,412 lines</span>', cut)
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">30 of 2,412 lines</span>', cut)
+        del done["open"]["log_total"]
         done["open"]["log_cut"] = False
         done["open"]["log"] = "one\ntwo"
         body = pane(dashboard.render(done, NOW, token=TOKEN))
@@ -2774,6 +2790,7 @@ console.log(JSON.stringify([
         self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
         self.assertIn("12 of 30 lines", error)  # the exit code leads the page, not this card
+        self.assertIn(f'<h2>{dashboard._ic("term", True)}Where it stopped</h2>', error)
         self.assertNotIn("exit 2", error)
         self.assertIn("line 30", error)
         self.assertNotIn("line 18\n", error)  # only where it stopped: the last lines

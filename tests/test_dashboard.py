@@ -729,11 +729,17 @@ class ListsTest(unittest.TestCase):
         for spec in ("background: none", "padding: 0", "margin: 10px 0 0"):
             self.assertIn(spec, face)
         # and it reads below the failure and Run again, not over them (critic r9 F4): body weight, a step dimmer
-        self.assertIn("font: 500 16px/1.5 var(--ui)", face)
-        self.assertIn("color: #d9dce3", face)
+        # r13 F2: at 16px white it was still the pane's loudest text, so the failure read second: 15/22 #c3c8d2,
+        # 600px wide, two lines, with Show all at its right end as in the bubbles
+        self.assertIn("font: 500 15px/22px var(--ui)", face)
+        self.assertIn("color: #c3c8d2", face)
+        self.assertIn("max-width: 600px", face)
+        more = dashboard.STYLE.split(".q-head .q-title.user-message + .ask-more {", 1)[1].split("}", 1)[0]
+        for spec in ("display: block", "width: fit-content", "margin: 6px max(0px, calc(100% - 600px)) 0 auto"):
+            self.assertIn(spec, more)
         # folded, its last line fades out instead of taking the clamp's "…", which after a full stop read "...."
         fold = dashboard.STYLE.split(".q-head .q-title.user-message:has(+ .ask-more):not(.whole) {", 1)[1].split("}", 1)[0]
-        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 3lh", "overflow: hidden", "mask-image:"):
+        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 2lh", "overflow: hidden", "mask-image:"):
             self.assertIn(spec, fold)
         short = re.search(r'data-region="ib-detail".*?</section>',
                           inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
@@ -2331,6 +2337,13 @@ console.log(JSON.stringify([
         # keeps it in the header.
         rule = dashboard.STYLE.split("\n.jd-main:has(> .jd-dock .model-note) .job-worker {", 1)[1].split("}", 1)[0]
         self.assertIn("display: none", rule)
+
+    def test_the_failure_banner_is_a_quiet_field_under_one_red_chip(self):
+        # A dark red fill, a red border, a red icon and a red-bordered exit chip stacked four red signals: the stock
+        # alert-danger box (critic r13 F3). The field keeps its fill under a faint edge; the icon and chip carry the red.
+        rule = dashboard.STYLE.split("\n.s-j-fail, .q-fail {", 1)[1].split("}", 1)[0]
+        self.assertIn("border: 1px solid rgb(255 99 99 / .12)", rule)
+        self.assertIn("background: #1d1116", rule)
 
     def test_a_popover_sits_above_the_page(self):
         # The Cancel confirm, with no shadow and a fill near the brief bubble's, read as two panels colliding (critic

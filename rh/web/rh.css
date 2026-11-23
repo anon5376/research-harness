@@ -1715,7 +1715,8 @@ form.pop, .toast:not(.no) {
 form.pop :is(input[type="text"], textarea) { background: #0e1220; border-color: rgb(170 185 235 / .14); }
 /* A popover sits above the page it covers, as the menus do, not beside it as another panel. */
 form.pop { box-shadow: 0 16px 40px rgb(0 0 0 / .55); }
-.s-j-fail, .q-fail { border: 1px solid #57252b; border-radius: 10px; background: #2a1519; }
+/* a quiet field under a faint edge: its icon and exit chip are the only saturated red */
+.s-j-fail, .q-fail { border: 1px solid rgb(255 99 99 / .12); border-radius: 10px; background: #1d1116; }
 /* With the sidebar folded away, its amber count shows as a dot on the button that opens it. */
 body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; position: absolute; top: -3px;
   right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--amber);
@@ -2005,21 +2006,21 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
   .c-strip .compose:has(.mp-trigger[aria-expanded="true"], .ef-trigger[aria-expanded="true"], details.opts[open]) .where-bar {
     visibility: visible; }
 }
-/* In the Inbox a long brief is the item's title, not a message: it folds like the job page's brief, but keeps the
-   title's face and left edge with no bubble, and Show all sits under it. */
-.q-head .q-title.user-message { margin: 10px 0 0; width: auto; max-width: 640px; padding: 0; border: 0; border-radius: 0;
-  background: none; white-space: pre-line; font: 500 16px/1.5 var(--ui); letter-spacing: 0; color: #d9dce3; }
+/* In the Inbox a long brief is the item's title, not a message: no bubble, the title's left edge, two lines a step
+   under the failure it sits above (the Inbox is where failures are triaged), with Show all at its right end. */
+.q-head .q-title.user-message { margin: 10px 0 0; width: auto; max-width: 600px; padding: 0; border: 0; border-radius: 0;
+  background: none; white-space: pre-line; font: 500 15px/22px var(--ui); letter-spacing: 0; color: #c3c8d2; }
 .q-head .q-title.user-message:has(+ .ask-more) { padding: 0; border-bottom: 0; }
 /* Folded, its third line fades out at the end rather than taking the clamp's "…" (which after a full stop reads "....") */
 .q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;
-  -webkit-line-clamp: unset; max-height: 3lh; overflow: hidden;
+  -webkit-line-clamp: unset; max-height: 2lh; overflow: hidden;
   -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
   mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
   -webkit-mask-size: 100% calc(100% - 1lh), 100% 1lh; mask-size: 100% calc(100% - 1lh), 100% 1lh;
   -webkit-mask-position: top, bottom; mask-position: top, bottom;
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
-.q-head .q-title.user-message + .ask-more { position: static; height: auto; margin: 6px 0 0; padding: 0;
-  color: var(--faint); }
+.q-head .q-title.user-message + .ask-more { position: static; display: block; width: fit-content; height: auto;
+  margin: 6px max(0px, calc(100% - 600px)) 0 auto; padding: 0; color: var(--faint); }
 /* The one swarm model that costs says so, with the picker's API tag. */
 .swarm-m .swarm-cost { flex: none; padding: 1px 6px; border-radius: 5px; background: rgb(255 255 255 / .06);
   color: var(--muted); font: 11px var(--ui); }

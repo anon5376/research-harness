@@ -30,7 +30,9 @@ Read README.md and AGENTS.md first, then the code you touch and its tests.
 Pick a real defect or gap you can show: a bug, a missing check, a misleading error, a gap in the web
 app's behaviour, or a test that cannot fail. Prefer the least risky change that fixes it. Rules:
 - Python standard library only; match the surrounding style; no new files unless the change needs them.
-- Add or change a test that fails without your change and passes with it. Run `{check}` before you finish.
+- Add or change a test that fails without your change and passes with it. You can read and edit files in this
+  copy but cannot run commands here: the harness runs `{check}` on your change afterwards and keeps it only if
+  it passes, so do not spend turns asking to run anything.
 - Do not touch policy.toml, AGENTS.md, hooks/, rh/privacy.py or the README's claims about what was run.
 - Nothing private: no home-directory paths, emails, tokens or account ids.
 End with a short answer: a one-line title, then what was wrong, what you changed, and the test that proves it.

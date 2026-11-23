@@ -842,6 +842,19 @@ class ListsTest(unittest.TestCase):
         (["Opus"], "Opus", "Opus · Opus judges"),
     ]
 
+    def test_settled_inbox_rows_step_back(self):
+        # r23 F1: settled rows wore the white 15px title, row height and id line of the rows that need you; only the
+        # icon told them apart, so the list read as eight equal rows. A settled row's title is the meta grey at 400,
+        # its check at 60%, its padding 8px top and bottom. r23 F7: the detail's title wraps balanced, not with a
+        # two-word tail.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        done = rule(".ib.done .ib-t")
+        for spec in ("color: #8b92a3", "font-weight: 400"):
+            self.assertIn(spec, done)
+        self.assertIn("opacity: .6", rule(".ib.done .ib-ic"))
+        self.assertIn("padding-block: 8px", rule(".ib.done"))
+        self.assertIn("text-wrap: balance", rule(".q-head .q-title"))
+
     def test_the_swarm_glyph_is_many_into_one_not_a_fork(self):
         # r22 F5: three nodes joined in a Y read as git's fork, drawn just under the branch control. A swarm's mark
         # is many into one: three dots in a row over one, filled, with no strokes joining them.
@@ -1215,13 +1228,18 @@ class ListsTest(unittest.TestCase):
         # showed, over half a pane of blank. The follow-up is the owner's own words: it is quoted whole under the
         # actions, labelled, three lines at most, and the meta line no longer carries it.
         self.assertNotIn("Follow-up", sub)
-        self.assertIn('<div class="q-acts">', detail)
-        quote = detail.split('<div class="q-acts">', 1)[1]
-        self.assertIn('<figure class="q-fu"><figcaption>Follow-up</figcaption>'
-                      '<blockquote>skip the appendix</blockquote></figure>', quote)
+        # r23 F4: after the actions, 88px narrower than the column, it read as a stray note. It takes the job page's
+        # order, banner then what was asked then the output, so the actions close the stack: full column width, a
+        # quote on a 2px left rule rather than a third bordered card.
+        quote = '<figure class="q-fu"><figcaption>Follow-up</figcaption><blockquote>skip the appendix</blockquote></figure>'
+        self.assertIn(quote, detail)
+        self.assertLess(detail.index('class="q-fail"'), detail.index(quote))
+        self.assertLess(detail.index(quote), detail.index('<div class="q-acts">'))
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
-        for spec in ("margin: 24px 0 0", "border: 1px solid #2a3142", "border-radius: 12px"):
+        for spec in ("margin: 0", "padding: 0 0 0 12px", "border-left: 2px solid #2a3350"):
             self.assertIn(spec, rule(".q-fu"))
+        for gone in ("border-radius", "max-width", "border: 1px"):
+            self.assertNotIn(gone, rule(".q-fu"))
         for spec in ("font-size: 14px", "color: #c9ced8", "-webkit-line-clamp: 3"):
             self.assertIn(spec, rule(".q-fu blockquote"))
         self.assertNotIn(".q-who.q-sub > .q-fu", dashboard.STYLE)

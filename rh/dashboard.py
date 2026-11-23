@@ -2749,7 +2749,8 @@ def _ib_job(ctx, entry, view):
     # lines with a Show all in its foot, the fold the job's own page gives the ask. A brief the name
     # already says keeps the bare title.
     # A follow-up's brief ends with its follow-up ("Follow-up: ..."): the title is the brief as first asked, so the
-    # pane's loudest line is what the job is, and the follow-up, the owner's own words, is quoted under the actions.
+    # pane's loudest line is what the job is; the follow-up, the owner's own words, is quoted where the job page puts
+    # what was asked: under the banner, over the output, the actions closing the stack.
     brief, ask = job.brief, ""
     if job.meta.get("prior"):
         brief = brief.split("\n\nFollow-up: ", 1)[0]
@@ -2763,8 +2764,8 @@ def _ib_job(ctx, entry, view):
              f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2>')
     body = (f'<div class="q-head"><div class="q-head-in">{title}'
             f'<p class="q-who q-sub" data-clear>{_SEP_HTML.join(who)}</p></div></div>'
-            f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>{stopped}'
-            f'<div class="q-acts">{again}{open_it}</div>{quoted}</div>')
+            f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>{quoted}{stopped}'
+            f'<div class="q-acts">{again}{open_it}</div></div>')
     return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')
 
 

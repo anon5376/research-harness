@@ -25,14 +25,14 @@
 
   var TINT_STOPS = {
     cobalt: ['#050b1f', '#1d4fd8', '#eaf1ff'],
-    violet: ['#0b0618', '#6d3df2', '#f1ebff'],
-    teal: ['#03110f', '#0f9f8f', '#e6fffb'],
+    ice: ['#070a10', '#8a9bb8', '#f2f6fc'],
+    paper: ['#0c0b09', '#aaa292', '#f7f3ec'],
     mono: ['#0b0b0c', '#6b6b73', '#f4f4f5']
   };
   var TINTS = [
     { id: 'cobalt', label: 'Cobalt', swatch: '#1d4fd8' },
-    { id: 'violet', label: 'Violet', swatch: '#6d3df2' },
-    { id: 'teal', label: 'Teal', swatch: '#0f9f8f' },
+    { id: 'ice', label: 'Ice', swatch: '#a9b8d0' },
+    { id: 'paper', label: 'Paper', swatch: '#d9d3c7' },
     { id: 'mono', label: 'Mono', swatch: '#6b6b73' }
   ];
 

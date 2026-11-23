@@ -2099,7 +2099,16 @@ console.log(JSON.stringify([
         page = dashboard.render({**live_view(), "tint": "ember"}, NOW, token=TOKEN)
         self.assertIn('data-tint="cobalt"', page)
         self.assertEqual(re.findall(r'<span class="tint-dot" data-tint="(\w+)">', page),
-                         ["cobalt", "violet", "teal", "mono"])
+                         ["cobalt", "ice", "paper", "mono"])
+        # violet and teal beside blue were the stock AI-tool accent set, the one template palette in the app (critic
+        # r11 F11): every option is an ink tint of the same halftone, and a page saved with a retired one opens blue
+        bg = open(os.path.join(os.path.dirname(dashboard.__file__), "web", "bg.js"), encoding="utf-8").read()
+        for gone in ('data-tint="violet"', 'data-tint="teal"', "#6d3df2", "#0f9f8f", "#7347f0", "#13a393", "#7c4dff",
+                     "#14a394"):
+            self.assertNotIn(gone, dashboard.STYLE)
+        for gone in ("violet", "teal", "#6d3df2", "#0f9f8f"):
+            self.assertNotIn(gone, bg)
+        self.assertIn('data-tint="cobalt"', dashboard.render({**live_view(), "tint": "violet"}, NOW, token=TOKEN))
 
     def test_the_palette_has_a_way_out_without_a_keyboard(self):
         # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.

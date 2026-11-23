@@ -272,8 +272,8 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(self.request("/appearance", {"background": "off"}, token=False)[0], 403)
         self.assertEqual(self.request("/appearance", {"background": "not-a-preset"})[0], 400)
         self.assertEqual(self.request("/appearance", {"tint": "pink"})[0], 400)
-        self.assertEqual(self.request("/appearance", {"tint": "teal"})[0], 204)
-        self.assertIn('data-tint="teal"', self.request("/new")[2])
+        self.assertEqual(self.request("/appearance", {"tint": "paper"})[0], 204)
+        self.assertIn('data-tint="paper"', self.request("/new")[2])
         for preset in ("quiet", "clouds", "off", "arc", "aurora", "dunes", "orbit", "beam"):
             self.assertEqual(self.request("/appearance", {"background": preset})[0], 204)
             self.assertIn(f'data-background="{preset}"', self.request("/new")[2])

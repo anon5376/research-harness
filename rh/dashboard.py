@@ -27,7 +27,7 @@ BUILD = format(zlib.crc32((STYLE + SCRIPT).encode("utf-8")), "08x")
 FONTS = ("GeistSerif-Square.woff2", "GeistMono-VF.woff2")  # the only files GET /fonts/<name> serves
 BACKGROUNDS = ("halftone.webp", "clouds.webp")
 PRESETS = ("beam", "arc", "clouds", "aurora", "dunes", "orbit", "quiet", "off")
-TINTS = ("cobalt", "violet", "teal", "mono")  # no warm accent: amber is needs you, red is failed
+TINTS = ("cobalt", "ice", "paper", "mono")  # ink tints of one halftone; no warm accent: amber is needs you, red failed
 _LEGACY = {"halftone": "beam"}  # names saved by earlier versions
 _SEP = " · "
 _SEP_HTML = '<span class="sep">·</span>'

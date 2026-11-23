@@ -1014,8 +1014,8 @@ html[data-live-app] .sea-page::before { background: radial-gradient(ellipse at c
 .tint-dot { width: 22px; height: 22px; border-radius: 50%; box-shadow: inset 0 1px 0 rgb(255 255 255 / .3);
   outline: 2px solid transparent; outline-offset: 2px; transition: outline-color .12s; }
 .tint-dot[data-tint="cobalt"] { background: linear-gradient(135deg, #eaf1ff, #1d4fd8 45%, #050b1f); }
-.tint-dot[data-tint="violet"] { background: linear-gradient(135deg, #f1ebff, #6d3df2 45%, #0b0618); }
-.tint-dot[data-tint="teal"] { background: linear-gradient(135deg, #e6fffb, #0f9f8f 45%, #03110f); }
+.tint-dot[data-tint="ice"] { background: linear-gradient(135deg, #f2f6fc, #8a9bb8 45%, #070a10); }
+.tint-dot[data-tint="paper"] { background: linear-gradient(135deg, #f7f3ec, #aaa292 45%, #0c0b09); }
 .tint-dot[data-tint="mono"] { background: linear-gradient(135deg, #f4f4f5, #6b6b73 45%, #0b0b0c); }
 .tint:has(input:checked) .tint-dot { outline-color: rgb(255 255 255 / .85); }
 .tint:has(input:focus-visible) .tint-dot { outline-color: var(--focus-ring); }
@@ -1295,8 +1295,8 @@ html.lg-on[data-live-app] .app > .side.side { border: 0; border-radius: 0;
 .effort-picker { display: inline-flex; align-items: center; }
 .effort-picker select.effort-pick { display: none; }
 body { --ef-accent: #3b6cf0; }
-body[data-tint="violet"] { --ef-accent: #7c4dff; }
-body[data-tint="teal"] { --ef-accent: #14a394; }
+body[data-tint="ice"] { --ef-accent: #9fb1cf; }
+body[data-tint="paper"] { --ef-accent: #cfc6b6; }
 body[data-tint="mono"] { --ef-accent: #8a8a94; }
 .ef-trigger { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 0;
   border-radius: 14px; background: transparent; color: rgb(255 255 255 / .55); font: 500 13px var(--ui); cursor: pointer;
@@ -1428,8 +1428,8 @@ html[data-live-app] { --side: 288px; }
 html[data-live-app].has-sidebar-toggle .app.side-open .side { box-shadow: 8px 0 24px rgb(0 0 0 / .5); }
 /* One ground under every page: a dimmed backdrop keeps the tint's own dark, not a neutral grey. */
 html[data-live-app] body { --tint-ground: #050b1f; background: var(--tint-ground); }
-html[data-live-app] body[data-tint="violet"] { --tint-ground: #0b0618; }
-html[data-live-app] body[data-tint="teal"] { --tint-ground: #03110f; }
+html[data-live-app] body[data-tint="ice"] { --tint-ground: #070a10; }
+html[data-live-app] body[data-tint="paper"] { --tint-ground: #0c0b09; }
 html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 /* One sans voice for headings: no serif anywhere. */
 .q-title, .jd-head h1 { font-family: var(--ui); font-weight: 600; letter-spacing: -0.01em; }
@@ -1475,8 +1475,9 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 @media (min-width: 901px) { html[data-live-app]:not(.side-hidden) dialog.settings[open] { translate: calc(var(--side) / 2) 0; } }
 .settings footer { margin-left: -10px; }
 .tint-dot { box-shadow: none; }
-.tint-dot[data-tint="cobalt"] { background: #2f5fe0; } .tint-dot[data-tint="violet"] { background: #7347f0; }
-.tint-dot[data-tint="teal"] { background: #13a393; }
+/* Every colour is an ink tint of the same halftone: blue, a desaturated ice, a warm paper white, and grey. */
+.tint-dot[data-tint="cobalt"] { background: #2f5fe0; } .tint-dot[data-tint="ice"] { background: #a9b8d0; }
+.tint-dot[data-tint="paper"] { background: #d9d3c7; }
 .tint-dot[data-tint="mono"] { background: #8a8a94; }
 /* Off draws nothing, so its tile says so with a slash, apart from Quiet. */
 .background-preview[data-preview="off"] { background: linear-gradient(to top right, transparent calc(50% - .5px), rgb(255 255 255 / .2) 50%, transparent calc(50% + .5px)), #0b0b0c; }

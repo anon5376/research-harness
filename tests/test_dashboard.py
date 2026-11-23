@@ -355,6 +355,19 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn(".sw-run.lost { opacity", dashboard.STYLE)
         self.assertIn(".sw-run.lost > :not(.sw-id) { opacity: .6; }", dashboard.STYLE)
         self.assertIn("font-variant-numeric: tabular-nums", dashboard.STYLE.split(".sw-id {", 1)[1].split("}", 1)[0])
+        # each run row says it opens, as 'Preview ›' does: a trailing chevron and a soft hover (critic r11 F3)
+        for row in re.findall(r'<a class="sw-run[^"]*".*?</a>', card, re.S):
+            self.assertRegex(row, r'<span class="sw-go"[^>]*><svg[^>]*><path d="m10 7 5 5-5 5"/></svg></span></a>$')
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("background: rgb(255 255 255 / .04)", rule("a.sw-run:hover"))
+        self.assertIn("transition: background-color 120ms ease-out", rule("a.sw-run"))
+        # the state word sits in its own span, so a phone row can leave it to the ring
+        self.assertIn('<span class="sw-s"><span class="sw-w">Done</span>', card)
+        # on a phone each run is one 44px line: no answer line, no state word, no 'Check passed' (critic r11 F2)
+        phone = dashboard.STYLE.split("/* phone swarm rows */", 1)[1].split("\n}", 1)[0]
+        for spec in ("min-height: 44px", ".sw-a { display: none; }", ".sw-w, .sw-w + .sep { display: none; }",
+                     ".sw-c:not(.bad) { display: none; }"):
+            self.assertIn(spec, phone)
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 

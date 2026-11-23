@@ -2159,15 +2159,18 @@ def _swarm_card(ctx, runs, checks=None, kept=None):
             ok = verdict == "passed"
             took = (took + " " if took else "") + (f'<span class="sw-c{"" if ok else " bad"}">'
                                                    f'{"Check passed" if ok else "Check failed"}</span>')
+        state = f'<span class="sw-w">{_text(word)}</span>'  # in its own span: a phone row leaves it to the ring
         inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="sw-m">{_text(model)}</span>'
-                 f'<span class="sw-s">{_SEP_HTML.join(x for x in (_text(word), took) if x)}</span>'
+                 f'<span class="sw-s">{_SEP_HTML.join(x for x in (state, took) if x)}</span>'
                  + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))
         short = rid.rsplit(".", 1)[-1]
         won = kept in (rid, short)
         cls = "sw-run kept" if won else "sw-run lost" if kept and kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "sw-run"
         inner = f'<span class="sw-id mono">{_text(short)}</span>' + inner + (
             '<span class="sw-k">Kept</span>' if won else "")
-        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}</a></li>' if ctx["live"]
+        # a row opens its run, and says so as 'Preview ›' does
+        go = f'<span class="sw-go" aria-hidden="true">{_ic("chev", True)}</span>'
+        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}{go}</a></li>' if ctx["live"]
                      else f'<li><div class="{cls}">{inner}</div></li>')
     n = len(runs)
     note = " · combined" if kept == "combined" else ""

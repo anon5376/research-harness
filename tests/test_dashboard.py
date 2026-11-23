@@ -208,6 +208,14 @@ class ListsTest(unittest.TestCase):
                          "Reject a job whose accept is a list")
         self.assertEqual(dashboard.answer_head("# Fixed the typo.\nmore"), "Fixed the typo")
         self.assertEqual(dashboard.answer_head("\n \n"), "")
+        # r21 F1 (high): the harness's italic notice for a run that said nothing named it in the sidebar and palette
+        # as '_Devin ended its turn withou…'. Emphasis marks never reach a name, and the harness's own notice is no
+        # answer: the run keeps its brief's name.
+        self.assertEqual(dashboard.answer_head(
+            "_Devin ended its turn without a final message. Its work is in the output above._\n"), "")
+        self.assertEqual(dashboard.answer_head("_Renamed the label._"), "Renamed the label")
+        self.assertEqual(dashboard.answer_head("*Fixed the typo*"), "Fixed the typo")
+        self.assertEqual(dashboard.answer_head("Kept snake_case_names as is"), "Kept snake_case_names as is")
         # boilerplate never names a run: a status word alone, a lead-in ending in a colon, or a leading "Done."
         self.assertEqual(dashboard.answer_head("Done\n\nThe label is renamed in the header."), "The label is renamed in the header")
         self.assertEqual(dashboard.answer_head("Done. Summary of the diff:\n- Added a copy button to code blocks"),

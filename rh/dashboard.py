@@ -694,6 +694,9 @@ _SELF_REMARK = re.compile(r"(I|We)\s+(chose|kept|picked|took|went with|combined)
                           r"|(Everything|All( (checks|tests))?) (verifies|verified|checks out|pass|passes|passed)\b")
 
 
+_NO_FINAL = "Devin ended its turn without a final message"  # rh/agent.py writes it, in italics, as the answer
+
+
 def answer_head(text):
     """An agent's answer as a list label: its first line without Markdown marks, up to a dash or colon that starts an
     aside ("Fixed X — untested: …" names the run as "Fixed X"), at most 100 characters; "" when it has no words."""
@@ -702,6 +705,9 @@ def answer_head(text):
         # boilerplate never names a run: a status word alone ("Done."), a leading one ("Done. Rounded the ETA"), or a
         # lead-in that ends in a colon ("Summary of the diff:") gives way to the next line
         x = re.sub(r"^#+\s*|^[-*]\s+", "", raw.strip()).replace("**", "").replace("`", "").replace("__", "")
+        x = re.sub(r"^([_*])(?=\S)(.*\S)\1$", r"\2", x)  # a line in _italics_ or *italics* names a run without its marks
+        if x.startswith(_NO_FINAL):  # the harness's notice that the agent said nothing is no answer to name it by
+            return ""
         bare = _STATUS_LEAD.sub("", x).strip()
         if bare != x:  # what a status word leaves starts as a sentence: no stray mark, a capital
             bare = bare.lstrip("—–-:·•, ")

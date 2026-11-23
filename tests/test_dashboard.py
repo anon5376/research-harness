@@ -1006,6 +1006,23 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="st t-red"', row)
         self.assertIn('data-tone="bad"', row)
 
+    def test_a_failure_already_run_again_gets_a_quieter_ring(self):
+        # A rerun failure still drawn in the full red of one that needs you, a failure nobody ran again drawn
+        # quieter, or the quiet rule missing from the stylesheet, must fail.
+        view = live_view()
+        view["meta"] = {"broke-job": {"updated": NOW - 60}}
+        row = item(dashboard.render(view, NOW, token=TOKEN), "broke-job")
+        self.assertIn('class="st t-red"', row)
+        self.assertNotIn("past", row)
+        rerun = {**view, "meta": {**view["meta"], "broke-job-r2": {"prior": "broke-job"}}}
+        page = dashboard.render(rerun, NOW, token=TOKEN)
+        self.assertIn('class="st t-red past"', item(page, "broke-job"))
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        ring = re.search(r'href="/job/broke-job\?t=[^"]*" data-nav><span class="p-ic">(.*?)</span>',
+                         pal, re.S).group(1)
+        self.assertIn('class="st t-red past"', ring)
+        self.assertRegex(dashboard.STYLE, r"\.st\.past \{[^}]*opacity: \.45")
+
     def test_one_filled_button_per_page_and_destructive_actions_marked(self):
         # A page with no filled button or with two, or a pause or cancel styled like a safe action, must fail.
         home = pane(dashboard.render(live_view(), NOW, token=TOKEN))

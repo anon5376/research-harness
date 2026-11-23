@@ -285,12 +285,14 @@ def _mark(size=18):
             f'{rects}</svg>')
 
 
-def _ring(state, hue=None, kind=""):
-    """A job's state as one ring, named for a screen reader; `hue` overrides its colour (amber in Needs you)."""
+def _ring(state, hue=None, kind="", past=False):
+    """A job's state as one ring, named for a screen reader; `hue` overrides its colour (amber in Needs you), and
+    `past` draws a failure already run again quieter."""
     shape, tone = _RINGS.get(state, ("empty", "faint"))
     tone = hue or tone
     word = _CHAT_WAIT[0] if kind == "gpt-chat" and state == "handoff" else _STATES.get(state, (state,))[0]
-    return (f'<svg class="st t-{tone}" data-s="{shape}" viewBox="0 0 14 14" width="14" height="14" role="img" '
+    cls = f'st t-{tone}{" past" if past else ""}'
+    return (f'<svg class="{cls}" data-s="{shape}" viewBox="0 0 14 14" width="14" height="14" role="img" '
             f'aria-label="{_text(word)}">{_SHAPES[shape]}</svg>')
 
 
@@ -737,6 +739,8 @@ class _Job:
         self.failure = (self.state in _FAILED and where == "recent" and self.id not in ctx["followed"]
                         and not (_number(rerun) and _number(made) and made <= rerun)
                         and (not _number(ended) or ctx["now"] - ended < _FAILURE_WINDOW))
+        # a failure already run again (or past its window) keeps its ring's shape, not its urgency
+        self.past = self.state in _FAILED and not self.failure
         self.held = self.state == "held" and not self.items
         self.setup = bool(ctx["setup"]) and self.kind == "codex-cloud" and self.state in _PRE
         self.native = bool(ctx.get("native")) and self.kind == "codex-cloud" and self.state == "ready"
@@ -860,12 +864,13 @@ class _Job:
     def item(self, runs=1):
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
         and the one control it offers. In Needs you the ring is amber, or red for a failure; a failure repeated by
-        `runs` runs of its brief is one row, for its newest run."""
+        `runs` runs of its brief is one row, for its newest run, and one already run again draws quieter."""
         ctx = self.ctx
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
-        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{self.name_html()}</span>'
+        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind, self.past)}'
+                 f'<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
@@ -2390,7 +2395,7 @@ def _palette(jobs, ctx, keys):
             at = group(j)
             rows.append(f'<p class="p-sec">{names[at]}</p>')
         rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span>'
+                    f'<span class="p-ic">{_ring(j.state, kind=j.kind, past=j.past)}</span>'
                     # as the sidebar names it: when names clash the id leads and the shared name moves to the grey
                     # line, which leads with the state so states form one column
                     + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'

@@ -390,6 +390,13 @@ class ListsTest(unittest.TestCase):
         self.assertIn("Fable 5.2 Medium + SWE-2 High", text(row))
         self.assertIn('<span class="swarm-cost">API</span>', row)
 
+    def test_an_agent_pages_status_reads_on_its_model_line(self):
+        # An agent page whose Done/checks/time floats at the column's right edge, outside the answer's measure,
+        # while shell pages lead with it on the left, must fail: it follows the model on the same line.
+        rule = dashboard.STYLE.split("\n.who-status {", 1)[1].split("}", 1)[0]
+        self.assertNotIn("margin-left: auto", rule)
+        self.assertIn('.who-status::before { content: "·";', dashboard.STYLE)
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

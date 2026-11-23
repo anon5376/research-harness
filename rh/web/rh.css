@@ -1860,12 +1860,14 @@ a.sw-run:hover { background: var(--surface); }
 .swarm-judge + .set-hint { margin-top: 8px; }
 /* An agent turn opens with one line: who answered on the left, how the run went at the far right. */
 .msg.ai .who:has(.who-status) { display: flex; align-items: center; }
-.who-status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 12px; min-width: 0;
+.who-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
   color: var(--faint); font-size: 12.5px; font-weight: 400; white-space: nowrap; }
+/* The run's state follows the model on its line, inside the reading column, as a shell page leads with it. */
+.who-status::before { content: "·"; margin: 0; color: var(--faint); }
 .who-status .job-result-status { color: var(--faint); }
 .who-status svg.st { width: 13px; height: 13px; }
 @media (max-width: 600px) { .msg.ai .who:has(.who-status) { flex-wrap: wrap; row-gap: 4px; }
-  .who-status { margin-left: 0; padding-left: 0; flex-basis: 100%; } }
+  .who-status { margin-left: 0; padding-left: 0; flex-basis: 100%; } .who-status::before { content: none; } }
 /* A recognised /swarm is a token: an accent chip at the start of the composer's tool row, removable with its ×
    or Backspace at the start of the brief. */
 .swarm-chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 24px; padding: 0 4px 0 8px;

@@ -2355,6 +2355,14 @@ console.log(JSON.stringify([
         self.assertIn("font: 600 14px/20px var(--ui)", job)
         self.assertIn("color: #e8e9ec", job)
 
+    def test_an_inbox_rows_run_id_reads_as_an_identifier(self):
+        # The run id under the reason was the same sans one pixel smaller in a near-identical grey, so the two read
+        # as one level drawn twice (critic r13 F8). The live app sets .mono in the UI face with tabular figures by
+        # design, so the id keeps that face and steps apart by its grey: #9aa0ad under the reason's #c1c1c6.
+        rule = dashboard.STYLE.split("\n.ib-id {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: #9aa0ad", rule)
+        self.assertIn("html[data-live-app] :is(.when, .mono:not(code, pre, input, textarea)", dashboard.STYLE)
+
     def test_the_reply_box_says_reply_once(self):
         # 'Reply, or send empty to run again' beside a 'Run again' pill said the empty send twice in one box (critic
         # r13 F4): the pill explains it, and the placeholder is a word.

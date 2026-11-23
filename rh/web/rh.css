@@ -1796,8 +1796,9 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 /* A long identifier keeps whole: it moves to the next line, and breaks only when it is wider than the column. */
 .assistant-message.md code.tok { overflow-wrap: anywhere; word-break: normal; }
 /* An Inbox row's run id sits on a line of its own under the reason, at the reason's left edge, with no separator. */
-.ib-id { grid-column: 2 / 4; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--faint); white-space: nowrap;
-  overflow: hidden; text-overflow: ellipsis; }
+/* the run id steps apart from the reason above it by its grey (the live app sets ids in the UI face, tabular) */
+.ib-id { grid-column: 2 / 4; margin-top: 2px; font-size: 12px; line-height: 16px; color: #9aa0ad;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ib-ic { grid-row: 1 / 4; }
 /* A wrapped line in a stopped log hangs its continuation under the line's own start, two spaces in. */
 pre.log.ended .ln { display:block; padding-left:2ch; text-indent:-2ch; white-space:pre-wrap; }

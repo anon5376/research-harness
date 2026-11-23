@@ -1832,9 +1832,15 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .swarm-judge select { min-width: 0; max-width: 60%; height: 32px; padding: 0 10px; border: 1px solid var(--border);
   border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 @media (max-width: 600px) { .swarm-models { grid-template-columns: minmax(0, 1fr); } }
-/* A swarm's runs on its judge's page: one row each, model then state then the first line of its answer. */
+/* A swarm's runs on its judge's page: one row each, model then state then the first line of its answer.
+   While a run still works the head counts off the finished ones and draws the count as a thin bar. */
 .s-j-swarm .head h2 { display: flex; align-items: center; gap: 8px; }
 .s-j-swarm .head h2 svg { width: 16px; height: 16px; color: var(--muted); }
+.s-j-swarm .head .lines { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; }
+.sw-bar { display: block; width: 48px; height: 2px; border-radius: 1px; overflow: hidden;
+  background: rgb(255 255 255 / .08); }
+.sw-bar::before { content: ""; display: block; width: var(--p); height: 100%; border-radius: 1px;
+  background: rgb(var(--sea-accent)); transition: width .3s ease-out; }
 .sw-runs { margin: 0; padding: 6px; list-style: none; }
 .sw-run { display: grid; grid-template-columns: 16px 112px 148px minmax(0, 1fr); align-items: center;
   column-gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: var(--text); font-size: 13px;

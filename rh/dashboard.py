@@ -2171,8 +2171,14 @@ def _swarm_card(ctx, runs, checks=None, kept=None):
                      else f'<li><div class="{cls}">{inner}</div></li>')
     n = len(runs)
     note = " · combined" if kept == "combined" else ""
-    body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{n} {"run" if n == 1 else "runs"}'
-            f'{note}</span></div><ul class="sw-runs">{"".join(items)}</ul>')
+    ended = sum((ctx["states"].get(r) or "waiting") not in (*_LIVE, *_PRE) for r in runs)
+    if ended < n:  # while a run still works, the head says how far along the swarm is, and draws it
+        side = (f'{ended} of {n} finished<span class="sw-bar" role="progressbar" aria-label="Runs finished" aria-valuemin="0" '
+                f'aria-valuemax="{n}" aria-valuenow="{ended}" style="--p:{ended / n:.0%}"></span>')
+    else:
+        side = f'{n} {"run" if n == 1 else "runs"}{note}'
+    body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{side}</span></div>'
+            f'<ul class="sw-runs">{"".join(items)}</ul>')
     return _region("j-swarm", body, "section", "out s-j-swarm", ' aria-label="Swarm runs"')
 
 

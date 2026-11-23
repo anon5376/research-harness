@@ -322,7 +322,7 @@ class ListsTest(unittest.TestCase):
         live = re.search(r'Live.*?</ul>', side, re.S).group(0)
         self.assertIn('data-key="job:fix.best"', live)  # the swarm is live while a run works
         card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
-        self.assertIn("2 runs", text(card))
+        self.assertIn("1 of 2 finished", text(card))
         for word in ("SWE-2 Max", "SWE-2 Flash", "Done", "Running", "Renamed the label", "1 min"):
             self.assertIn(word, text(card))
         self.assertIn('href="/job/fix.w1?t=', card)
@@ -406,6 +406,35 @@ class ListsTest(unittest.TestCase):
         done["meta"]["fix.best"]["said"] = "Renamed the Options label to Run"
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("Renamed the Options label to Run", text(row))
+
+    def test_a_working_swarms_head_counts_off_its_finished_runs(self):
+        # "2 runs" reads the same at half-done and all-done: while a run still works the head must count the
+        # finished ones and draw the count, or the owner reads rows off to tell how far the swarm is.
+        view = live_view()
+        view["not_started"] = [{"id": "fix.best", "state": "waiting", "paused": False,
+                                "detail": "waiting for fix.w2", "external_id": None}]
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix"}
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "fix.w2": {**base, "state": "running", "updated": NOW - 5, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "updated": NOW - 5, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        page = dashboard.render(opened(view, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN)
+        head = re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>', page, re.S).group(1)
+        self.assertIn("1 of 2 finished", text(head))
+        bar = re.search(r'<span class="sw-bar"[^>]*>', head)
+        self.assertIsNotNone(bar)
+        for attr in ('role="progressbar"', 'aria-valuemin="0"', 'aria-valuemax="2"', 'aria-valuenow="1"',
+                     'style="--p:50%"'):
+            self.assertIn(attr, bar.group(0))
+        # once every run has ended the head reads as it always did, and the bar is gone
+        view["meta"]["fix.w2"]["state"] = "done"
+        page = dashboard.render(opened(view, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN)
+        head = re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>', page, re.S).group(1)
+        self.assertIn("2 runs", text(head))
+        self.assertNotIn("finished", text(head))
+        self.assertNotIn("progressbar", head)
 
     def test_an_answers_attachments_open_from_one_side(self):
         # Under an answer the file row opened from a trailing 'Preview ›' and the folded Output below it from a

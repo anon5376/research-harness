@@ -35,6 +35,11 @@ class LoadTest(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ContractError):
                 load(text)
 
+    def test_rejects_an_accept_that_is_not_a_string(self):
+        with self.assertRaisesRegex(ContractError, "accept must be a string"):
+            spec('accept = ["test", "-s", "runs/j1/out.md"]')
+        self.assertEqual(spec('accept = "test -s runs/j1/out.md"')["accept"], "test -s runs/j1/out.md")
+
 
 class PreflightTest(unittest.TestCase):
     def test_plain_job_is_ready(self):

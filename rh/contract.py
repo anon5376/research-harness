@@ -114,6 +114,8 @@ def normalize(raw):
         spec["model"] = {"requested": "gpt-6.1-sol-pro", **spec["model"]}
     else:
         spec.setdefault("accept", "")
+        if not isinstance(spec["accept"], str):
+            raise ContractError("accept must be a string holding one command, not a list like command")
     spec.setdefault("timeout_min", 120)
     # An agent's last message (answer.md) is shown as a message on the job page ("chat") or listed as a file ("file").
     if spec.get("answer", "chat") not in ("chat", "file"):

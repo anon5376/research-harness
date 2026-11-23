@@ -1749,13 +1749,26 @@ def _swarm_rows(swarm, form=""):
     groups = {}
     for m in choices:
         groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
-    boxes = "".join(
-        f'<p class="swarm-g">{_AGENT_WHO.get(prov, (prov.capitalize(),))[0]}</p>' + "".join(
-            f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
-            + ('<span class="swarm-cost">API</span>' if m.startswith("fusion-") else "") +
-            f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}{owner} '
-            f'data-name="{_text(_names([m]))}"><span class="swarm-x" aria-hidden="true"></span></label>' for m in models)
-        for prov, models in groups.items())
+    def row(prov, m):
+        return (f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
+                + ('<span class="swarm-cost">API</span>' if m.startswith("fusion-") else "") +
+                f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}{owner} '
+                f'data-name="{_text(_names([m]))}"><span class="swarm-x" aria-hidden="true"></span></label>')
+    parts = []
+    for prov, models in groups.items():
+        if prov != "devin":
+            parts.append(f'<p class="swarm-g">{_AGENT_WHO.get(prov, (prov.capitalize(),))[0]}</p>')
+            parts += [row(prov, m) for m in models]
+            continue
+        # Devin's models under the picker's heads and in its order, peers of the Claude head (each row wears the
+        # Devin glyph): Fusion, which costs and says so, then the free SWE-2 models
+        for head, picked in (("Fusion", [m for m in models if m.startswith("fusion-")]),
+                             ("SWE-2 · Free", [m for m in models if m.startswith("swe-2")]),
+                             ("Devin", [m for m in models if not m.startswith(("fusion-", "swe-2"))])):
+            if picked:
+                parts.append(f'<p class="swarm-g">{_text(head)}</p>')
+            parts += [row(prov, m) for m in picked]
+    boxes = "".join(parts)
     judges = "".join(f'<option value="{_text(m)}"{" selected" if m == judge else ""}>{_text(_names([m]))}</option>'
                      for m in choices)
     judge_row = (f'<label class="swarm-judge"><span>Judge</span><span class="swarm-sel"><select name="judge"{owner}>'

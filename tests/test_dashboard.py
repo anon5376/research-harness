@@ -695,6 +695,26 @@ class ListsTest(unittest.TestCase):
         self.assertIn("Fable 5.2 Medium + SWE-2 High", text(row))
         self.assertIn('<span class="swarm-cost">API</span>', row)
 
+    def test_the_swarm_ticks_list_devin_as_the_picker_does(self):
+        # r19 F6: the picker lists Devin's Fusion first, under its own head with its API tag, then 'SWE-2 · Free';
+        # Settings listed all four under 'Devin' in another order with no Free mark, so cost showed in one place
+        # only, where ticking several models at once is where it matters. Both lists (Settings and the composer's
+        # popover) take the picker's order and heads.
+        fusion = "fusion-claude-fable-5-2-medium-sidekick-swe-2-high"
+        swarm = {"models": ["swe-2-max"], "judge": "swe-2-max",
+                 "choices": ["swe-2-high", "swe-2-max", "swe-2-flash-high", fusion, "claude-opus-5-5"]}
+        boxes, _ = dashboard._swarm_rows(swarm)
+        # Devin's families are heads of their own, peers of Claude's (a 'Devin' head over bolder sub-heads read upside
+        # down); every Devin row keeps the Devin glyph
+        heads = re.findall(r'<p class="swarm-g">([^<]*)</p>', boxes)
+        self.assertEqual(heads, ["Fusion", "SWE-2 · Free", "Claude"])
+        order = re.findall(r'name="models" value="([^"]+)"', boxes)
+        self.assertEqual(order, [fusion, "swe-2-high", "swe-2-max", "swe-2-flash-high", "claude-opus-5-5"])
+        # with no Fusion offered, the free models still say so
+        only = dashboard._swarm_rows({**swarm, "choices": ["swe-2-max", "swe-2-high"]})[0]
+        self.assertIn('<p class="swarm-g">SWE-2 · Free</p>', only)
+        self.assertNotIn(">Fusion<", only)
+
     def test_the_swarm_options_form_one_grouped_list(self):
         # Judge and Check each run as two loose rows under the model ticks, and a hint that starts at the label's
         # edge instead of under the field it explains, must fail: they sit in a second panel like the models',

@@ -2316,6 +2316,19 @@ console.log(JSON.stringify([
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
 
+    def test_cancel_says_what_it_does_to_a_job_that_already_ran(self):
+        # A stalled job's Cancel said "It will not start", about a job that has been running for hours. rh job cancel
+        # only marks a stalled job cancelled and stops nothing (it says so), so the popover must say that, and a job
+        # that has not started keeps its own line.
+        stalled = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        page = dashboard.render(stalled, NOW, token=TOKEN)
+        pop = page.split('action="/job/cancel"', 1)[1].split("</form>", 1)[0]
+        self.assertNotIn("It will not start", pop)
+        self.assertIn("It ends here as cancelled. If its process still runs, end it yourself.", pop)
+        queued = dashboard.render(opened(live_view(), "queued-job"), NOW, token=TOKEN)
+        self.assertIn("It will not start. You can run it again later.",
+                      queued.split('action="/job/cancel"', 1)[1].split("</form>", 1)[0])
+
     def test_on_a_phone_pause_and_stop_are_one_capsule(self):
         # Four equal glass squares made the running header four unrelated buttons around a squeezed name (critic r9
         # F3). Pause and Stop must join into one 72px capsule split by a hairline, their touch areas must not

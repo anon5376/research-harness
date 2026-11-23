@@ -1136,9 +1136,12 @@ def _pause(ctx, jid):
                     "quiet danger", "Nothing new starts for it until you resume it. Work already running continues.")
 
 
-def _cancel(ctx, jid):
+def _cancel(ctx, jid, stalled=False):
+    # rh job cancel only marks a stalled job ended and stops nothing, so its note says so
+    note = ("It ends here as cancelled. If its process still runs, end it yourself." if stalled else
+            "It will not start. You can run it again later.")
     return _popover(ctx, "/job/cancel", [("job", jid)], "Cancel job", "c", _field("Why?", "reason", required=True),
-                    "Cancel job", "quiet danger", "It will not start. You can run it again later.")
+                    "Cancel job", "quiet danger", note)
 
 
 def _resume(ctx, stop, lead, what, fields):
@@ -2102,7 +2105,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if ctx["live"] and not finished and not entry.mine:
         acts.append(_pause(ctx, jid))
     if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
-        acts.append(_cancel(ctx, jid))
+        acts.append(_cancel(ctx, jid, stalled=state == "stalled"))
     named = entry.label if entry.label != entry.title else (_lead(spec)[0] or jid)  # as the sidebar names it
     head = _job_head(jid, kind, entry.label) if entry.dup else _job_head(named, kind)
     work = []

@@ -2345,6 +2345,13 @@ console.log(JSON.stringify([
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
 
+    def test_a_phones_new_page_has_no_shade_over_empty_water(self):
+        # The centre shade behind the desktop composer showed on a phone as a dark oval over empty water, its
+        # composer being at the foot (critic r9 F15); the desktop keeps it.
+        self.assertIn("@media (max-width: 600px) { html[data-live-app] .sea-page::before { background: none; } }",
+                      dashboard.STYLE)
+        self.assertIn("html[data-live-app] .sea-page::before { background: radial-gradient(", dashboard.STYLE)
+
     def test_a_files_preview_toggle_sits_on_its_row(self):
         # 'Preview' hung 18px in under its file while 'Output' sat on the column edge, so two sibling folds read as a
         # nesting (critic r9 F11). It is a trailing 'Preview ›' on the file's own row, and a long name stops short of it.

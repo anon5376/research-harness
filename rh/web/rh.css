@@ -1725,4 +1725,13 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .p-s { flex-wrap: nowrap; justify-content: flex-start; }
 .p-s > .p-w { flex: none; max-width: 60%; }
 .p-s > span:last-child { flex: 0 1 auto; width: auto; }
-.p-s > .p-w + *::before { content: "·"; margin-right: 8px; color: var(--faint); }
+.p-s > * + *::before { content: "·"; margin-right: 8px; color: var(--faint); }
+.p-s > .p-when { flex: none; }
+/* The exit code is a drawn chip beside the command, like the picker's tags. */
+.fail-c .exit { padding: 1px 6px; border: 1px solid #6e2a30; border-radius: 4px; background: #3a1519;
+  font-size: 12px; font-weight: 500; line-height: 18px; color: #f07a7a; }
+/* Sidebar rows hang from one grid: every icon centred on one line and every label starting on one edge. */
+.nav a, .ws .new-job { padding-left: 7px; gap: 5px; }
+.lane .row a.item { column-gap: 8px; }
+/* An answer's heading reads as one statement: tight leading and lines of even length. */
+.assistant-message.md .md-title { line-height: 26px; text-wrap: balance; }

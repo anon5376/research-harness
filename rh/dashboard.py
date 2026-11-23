@@ -143,8 +143,7 @@ _ICONS = {
     "step": '<path d="M4 6.5h16M4 12h16M4 17.5h9"/>',
     "again": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
     "resume": '<path d="M8 5.5v13l10-6.5z"/>',
-    "chat": ('<path d="M12 3.5 13.7 9a2 2 0 0 0 1.3 1.3l5.5 1.7-5.5 1.7a2 2 0 0 0-1.3 1.3L12 20.5l-1.7-5.5A2 2 0 0 0 9 '
-             '13.7L3.5 12 9 10.3A2 2 0 0 0 10.3 9z"/>'),
+    "chat": '<path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/>',
     "jobs": '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
     "inspector": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M14 5v14"/>',
     "sidebar": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 5v14"/>',
@@ -758,7 +757,6 @@ class _Job:
         # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
         self.label = (self.meta.get("said") if self.state == "done" else "") or self.title
         self.dup = False  # set once every job is known: another listed job has the same name
-        self.after = "earlier" if _number(ended) and ended < ctx["midnight"] else "ended"  # its group once nothing waits
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
     def headline_parts(self, runs=1):
@@ -2102,7 +2100,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
-        output_status = (f'{"Full output" if card else "Output"}{_SEP_HTML}{_text(line_count)}' if log
+        output_status = (f'{"All output" if card and not last else "Output"}{_SEP_HTML}{_text(line_count)}' if log
                          else "No output received yet")
         work_summary = (f'<summary class="worked-summary">'
                         f'<span class="worked-output">{output_status}</span>{tag}</summary>')
@@ -2370,9 +2368,10 @@ def _palette(jobs, ctx, keys):
     # grouped and named as the sidebar groups them; an older run folded into a newer one's Needs you row sits with the
     # runs that ended, so the first group holds exactly what the badge counts
     heads = {e["jid"] for e in ctx["needs"] if e.get("job")}
-    group = lambda j: j.group if j.group != "needs" or j.id in heads else j.after  # noqa: E731
-    order = {"needs": 0, "live": 1, "next": 2, "ended": 3, "earlier": 4}
-    names = {"needs": "Needs you", "live": "Live", "next": "Up next", "ended": "Ended today", "earlier": "Earlier"}
+    group = lambda j: j.group if j.group != "needs" or j.id in heads else "folded"  # noqa: E731
+    order = {"needs": 0, "live": 1, "next": 2, "ended": 3, "earlier": 4, "folded": 5}
+    names = {"needs": "Needs you", "live": "Live", "next": "Up next", "ended": "Ended today", "earlier": "Earlier",
+             "folded": "Earlier runs of what needs you"}
     rows, at = [], None
     for j in sorted(jobs, key=lambda j: order[group(j)]):
         if group(j) != at:
@@ -2384,6 +2383,8 @@ def _palette(jobs, ctx, keys):
                     # line, which leads with the state so states form one column
                     + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'
                     f'<span class="p-s"><span class="p-w">{_text(j.word)}</span>'
+                    # the time the sidebar shows, so runs of one brief tell apart at a glance
+                    + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
                     + (f'<span>{_text(j.label)}</span>' if j.dup else f'<span class="mono">{_text(j.id)}</span>')
                     + '</span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')

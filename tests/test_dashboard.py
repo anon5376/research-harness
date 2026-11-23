@@ -222,7 +222,7 @@ class ListsTest(unittest.TestCase):
             self.assertIn(f'<span class="name"><span class="nm" title="Same brief">{jid}</span></span>', row)
             # the palette too: the id leads, and the shared name moves to the grey line
             self.assertRegex(page, rf'<span class="p-t">{jid}</span><span class="p-s"><span class="p-w">[^<]+</span>'
-                                   rf'<span>Same brief</span>')
+                                   rf'(?:<span class="p-when mono num">[^<]+</span>)?<span>Same brief</span>')
             # and the job's own page names it as the sidebar does, so the two never disagree
             one = opened(view, jid, kind="local-shell")
             one["open"]["job"]["spec"]["brief"] = "Same brief."
@@ -1550,7 +1550,10 @@ console.log(JSON.stringify([
         self.assertIn("last 12 lines", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
-        self.assertIn("Full output", body)
+        self.assertIn("All output<span class=\"sep\">·</span>30 lines", body)
+        done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
+        self.assertIn("Output<span class=\"sep\">·</span>last 30 lines", pane(dashboard.render(done, NOW, token=TOKEN)))
+        done["open"]["log_cut"] = False
         done["open"]["log"] = "one\ntwo"
         body = pane(dashboard.render(done, NOW, token=TOKEN))
         self.assertIn('data-region="j-last"', body)
@@ -1802,6 +1805,11 @@ console.log(JSON.stringify([
         listed = lambda v: re.findall(r'data-key="job:(sweep[^"]*)"', needs(v))  # noqa: E731
         page = dashboard.render(view, NOW, token=TOKEN)
         self.assertEqual(listed(view), ["sweep-odd", "sweep-3"])  # newest first, as the Inbox lists them
+        # the palette keeps the older runs findable, under their own heading rather than among what needs you
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        folded = pal.split('<p class="p-sec">Earlier runs of what needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]
+        self.assertEqual(sorted(re.findall(r'href="/job/(sweep[^"?]*)', folded)), ["sweep", "sweep-2"])
+        self.assertNotIn("/job/sweep-2", pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0])
         self.assertIn("Failed 3 times: ", text(item(page, "sweep-3")))
         self.assertNotIn("times", re.search(r'<span class="sub">([^<]*)', item(page, "sweep-odd")).group(1))
         count = lambda p: int(re.search(r'data-need="(\d+)"', p).group(1))  # noqa: E731
@@ -1955,7 +1963,8 @@ console.log(JSON.stringify([
         # A job's id and state run together in one ellipsised line, or a meta column that can show part of the state
         # word, must fail.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
-        self.assertRegex(page, r'<span class="p-s"><span class="p-w">Launch by hand</span><span class="mono">web-job</span></span>')
+        self.assertRegex(page, r'<span class="p-s"><span class="p-w">Launch by hand</span>'
+                               r'(?:<span class="p-when mono num">[^<]+</span>)?<span class="mono">web-job</span></span>')
         # its jobs are grouped as the sidebar groups them, and Needs you holds exactly what the badge counts
         pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
         needs = pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]

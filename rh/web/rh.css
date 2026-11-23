@@ -1790,3 +1790,12 @@ a.sw-run:hover { background: var(--surface); }
   .sw-a { grid-column: 2 / 4; } }
 /* The Preview chevron starts at the filename's text edge, so the attachment hangs from one line. */
 .file-preview > summary::before { text-align: left; width: 9px; }
+/* A long brief folds to three whole lines with the bubble's own padding below them, and Show all sits inside the
+   bubble at its foot, so the fold reads as a fold and not a crop. */
+.user-message:has(+ .ask-more), .user-message.whole:has(+ .ask-more) { padding-bottom: 8px;
+  border-bottom: 28px solid transparent; }  /* a border, not padding: overflow is cut at the padding edge */
+.user-message:has(+ .ask-more):not(.whole) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3;
+  overflow: hidden; max-height: none; padding-bottom: 0; border-bottom-width: 36px; -webkit-mask-image: none;
+  mask-image: none; }
+.user-message + .ask-more { position: relative; height: 22px; margin: -32px 16px 10px auto; padding: 0 2px;
+  color: var(--muted); }

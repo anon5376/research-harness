@@ -2843,11 +2843,12 @@ def _swarm_settings(ctx):
             f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
             '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
             f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
+            '<div class="swarm-opts">'
             f'<label class="swarm-judge"><span>Judge</span><span class="swarm-sel"><select name="judge">{judges}</select>'
             f'{_ic("chev", True)}</span></label>'
             '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
             f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
-            f'value="{_text(swarm.get("check") or "")}"></label>'
+            f'value="{_text(swarm.get("check") or "")}"></label></div>'
             '<p class="set-hint">The harness runs it on each run\'s changes in a clean copy before the judge reads '
             'them. Leave empty to judge without it.</p></fieldset></form>')
 

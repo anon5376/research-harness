@@ -1886,7 +1886,6 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .sw-c { margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: rgb(255 255 255 / .06); color: var(--muted);
   font-size: 12px; }
 .sw-c.bad { background: #2a1519; color: #f2a3a8; }
-.settings .swarm-judge + .swarm-judge { margin-top: 8px; }
 .swarm-judge input[type="text"] { min-width: 0; width: 60%; height: 32px; padding: 0 10px; border: 1px solid var(--border);
   border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12.5px; }
 .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 16px 112px 236px minmax(0, 1fr); }
@@ -1932,12 +1931,16 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
   .sw-go { grid-column: 6; grid-row: 1; }
 }
 /* Settings › Swarm as the app's own list: rows grouped by provider with the picker's glyphs and the app's own check,
-   on one quiet panel; the Judge select wears the app's chevron, not the system's. Section labels step up from the
-   text under them. */
+   on one quiet panel; judge and check are a second such panel, its rows split by a hairline, and the Judge select
+   wears the app's chevron, not the system's. Section labels step up from the text under them. */
 .settings legend { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
 .settings fieldset { margin-bottom: 28px; }
 .swarm-models { display: block; margin-bottom: 14px; padding: 4px; border-radius: 10px; background: rgb(255 255 255 / .03);
   border: 1px solid rgb(255 255 255 / .06); }
+.swarm-opts { margin-bottom: 8px; padding: 4px; border-radius: 10px; background: rgb(255 255 255 / .03);
+  border: 1px solid rgb(255 255 255 / .06); }
+.swarm-opts > .swarm-judge { min-height: 44px; padding: 0 10px; }  /* text on the model rows' edge */
+.swarm-opts > .swarm-judge + .swarm-judge { border-top: 1px solid rgb(255 255 255 / .06); }
 .swarm-g { margin: 0; padding: 8px 10px 4px; font-size: 11px; color: var(--faint); }
 .swarm-m { position: relative; display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px;
   border: 0; border-radius: 7px; background: none; cursor: pointer; }
@@ -1957,7 +1960,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .swarm-sel svg { position: absolute; right: 10px; top: 50%; width: 14px; height: 14px; margin-top: -7px;
   transform: rotate(90deg); color: var(--muted); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .swarm-x { transition: none; } }
-.swarm-judge + .set-hint { margin-top: 8px; }
+.swarm-opts + .set-hint { margin-top: 8px; padding-left: 15px; font-size: 12px; color: #9aa0ad; }
 /* An agent turn opens with one line: who answered on the left, how the run went at the far right. */
 .msg.ai .who:has(.who-status) { display: flex; align-items: center; }
 .who-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0;

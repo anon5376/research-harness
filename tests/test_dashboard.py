@@ -580,6 +580,33 @@ class ListsTest(unittest.TestCase):
         self.assertIn("Fable 5.2 Medium + SWE-2 High", text(row))
         self.assertIn('<span class="swarm-cost">API</span>', row)
 
+    def test_the_swarm_options_form_one_grouped_list(self):
+        # Judge and Check each run as two loose rows under the model ticks, and a hint that starts at the label's
+        # edge instead of under the field it explains, must fail: they sit in a second panel like the models',
+        # one 44px row each with a hairline between, and the hint drops 8px under the panel, indented to the
+        # rows' text: panel 1px border + 4px padding + the rows' 10px, the edge the model rows' group labels use.
+        page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
+                                                          "choices": ["swe-2-max", "swe-2-high"]}}, NOW, token=TOKEN)
+        groups = re.findall(r'<div class="swarm-opts">(.*?)</div>', page, re.S)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].count('class="swarm-judge"'), 2)
+        for name in ('name="judge"', 'name="check"'):
+            self.assertIn(name, groups[0])
+        self.assertIn('</div><p class="set-hint">The harness runs it', page)
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        panel = rule(".swarm-opts")
+        for spec in ("border-radius: 10px", "background: rgb(255 255 255 / .03)",
+                     "border: 1px solid rgb(255 255 255 / .06)"):
+            self.assertIn(spec, panel)
+        for spec in ("min-height: 44px", "padding: 0 10px"):
+            self.assertIn(spec, rule(".swarm-opts > .swarm-judge"))
+        self.assertIn("border-top: 1px solid rgb(255 255 255 / .06)",
+                      rule(".swarm-opts > .swarm-judge + .swarm-judge"))
+        for spec in ("margin-top: 8px", "font-size: 12px", "color: #9aa0ad", "padding-left: 15px"):
+            self.assertIn(spec, rule(".swarm-opts + .set-hint"))
+        self.assertNotIn(".settings .swarm-judge + .swarm-judge", dashboard.STYLE)
+        self.assertNotIn(".swarm-judge + .set-hint", dashboard.STYLE)
+
     def test_the_settings_grid_and_head_keep_their_measure(self):
         # Names spaced as far from the row below as from their own thumbnail read as that row's titles, and a
         # sheet that scrolled whole cut its contents mid-glyph at its top edge (critic r9 F10, r10 F5): 24px between

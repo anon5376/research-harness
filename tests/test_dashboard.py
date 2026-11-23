@@ -1146,6 +1146,20 @@ class ListsTest(unittest.TestCase):
         first = {**view, "meta": {"broke-job": {"kind": "local-shell", "brief": "Count the words.", "updated": NOW}}}
         self.assertNotIn('class="q-fu"', inbox(first))
 
+    def test_the_runner_picker_keeps_its_padding_in_webkit(self):
+        # Seen in the packaged app (WKWebView, Devin macOS DMG check): WebKit has no appearance: base-select, so the
+        # runner select stayed native, its 27px left padding computed to 0, and the 'This Mac' icon covered 'Th' by
+        # 13px. Where base-select is missing the select draws itself: no native chrome, so its padding holds, and a
+        # chevron of its own, on hover too (the hover rule's background shorthand would wipe it).
+        fallback = dashboard.STYLE.split("@supports not (appearance: base-select) {", 1)[1].split("\n}", 1)[0]
+        rule = fallback.split(".worker-picker select.ghost, .worker-picker select.ghost:hover {", 1)[1].split("}", 1)[0]
+        for spec in ("-webkit-appearance: none", "appearance: none", "padding-inline: 27px 22px",
+                     "background-image: linear-gradient(45deg", "background-repeat: no-repeat",
+                     "background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%"):
+            self.assertIn(spec, rule)
+        self.assertLess(dashboard.STYLE.index(".worker-picker select.ghost:hover { background: transparent; }"),
+                        dashboard.STYLE.index("@supports not (appearance: base-select) {"))
+
     def test_every_inbox_reason_is_one_line(self):
         # r21 F5: one reason ('Ended early 2 times: runner ended without an exit record') wrapped to two lines where
         # every other was cut to one, so that row grew and drew the eye. Every reason keeps one line, and the

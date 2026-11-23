@@ -2286,3 +2286,14 @@ details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summa
 /* a running job's log stays open: its head wears the glyph and no toggle */
 .worked:has(> .worked-content > pre.log[data-follow]) > summary::before { content: none; }
 .worked:has(> .worked-content > pre.log[data-follow]) > summary > .ic { display: block; flex: none; color: var(--faint); }
+/* WebKit (the desktop app's own window) has no base-select: a native select ignores its padding, so the runner's icon
+   covered its first letters. There the runner select draws itself: no native chrome, its padding kept, its own
+   chevron, on hover too. */
+@supports not (appearance: base-select) {
+  .worker-picker select.ghost, .worker-picker select.ghost:hover { -webkit-appearance: none; appearance: none;
+    padding-inline: 27px 22px;
+    background-image: linear-gradient(45deg, transparent 50%, rgb(255 255 255 / .45) 50%),
+      linear-gradient(135deg, rgb(255 255 255 / .45) 50%, transparent 50%);
+    background-repeat: no-repeat; background-position: calc(100% - 13px) 50%, calc(100% - 9px) 50%;
+    background-size: 4px 4px; }
+}

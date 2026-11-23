@@ -2606,15 +2606,24 @@ def _swarm_settings(ctx):
         return ""
     ticked = set(swarm.get("models") or [])
     judge = swarm.get("judge") or ""
-    boxes = "".join(f'<label class="swarm-m"><input type="checkbox" name="models" value="{_text(m)}"'
-                    f'{" checked" if m in ticked else ""}><span>{_text(_names([m]))}</span></label>' for m in choices)
+    # rows grouped by provider, with the glyphs the model picker uses, and a check of the app's own
+    groups = {}
+    for m in choices:
+        groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
+    boxes = "".join(
+        f'<p class="swarm-g">{_AGENT_WHO.get(prov, (prov.capitalize(),))[0]}</p>' + "".join(
+            f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
+            f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}>'
+            '<span class="swarm-x" aria-hidden="true"></span></label>' for m in models)
+        for prov, models in groups.items())
     judges = "".join(f'<option value="{_text(m)}"{" selected" if m == judge else ""}>{_text(_names([m]))}</option>'
                      for m in choices)
     return ('<form action="/settings/swarm" method="post" data-swarm-form>'
             f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
             '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
             f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
-            f'<label class="swarm-judge"><span>Judge</span><select name="judge">{judges}</select></label>'
+            f'<label class="swarm-judge"><span>Judge</span><span class="swarm-sel"><select name="judge">{judges}</select>'
+            f'{_ic("chev", True)}</span></label>'
             '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
             f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
             f'value="{_text(swarm.get("check") or "")}"></label>'

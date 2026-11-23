@@ -220,6 +220,8 @@ class ListsTest(unittest.TestCase):
         for jid in ("live-job", "web-job"):
             row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
             self.assertIn(f'<span class="name"><span class="nm" title="Same brief">{jid}</span></span>', row)
+            # the palette too: the id leads, and the shared name moves to the grey line
+            self.assertRegex(page, rf'<span class="p-t">{jid}</span><span class="p-s"><span>Same brief</span>')
             # and the job's own page names it as the sidebar does, so the two never disagree
             one = opened(view, jid, kind="local-shell")
             one["open"]["job"]["spec"]["brief"] = "Same brief."
@@ -728,7 +730,7 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(view, NOW, token=TOKEN)
         right = text(pane(page))
         for value in ("Write the notes", "Done", "2/3 checks", "1 min 20 s", "finished-job", dashboard.HERE,
-                      "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Cite each source.",
+                      "exit 0", "test -s notes.md", "exit 1", "Last output", "<tail> & end", "Cite each source.",
                       "notes.md exists", "runs/finished-job/", "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",
                       f"Asked you: {ASK.capitalize()}{dashboard._clock(NOW - 31, NOW)}",
                       f"Mystery thing: raw zz{dashboard._clock(NOW - 5, NOW)}",
@@ -1498,6 +1500,10 @@ console.log(JSON.stringify([
                           "rows": str(needs.count('<li class="row"')), "inbox rows": str(waiting.count('<li class="ib-li"'))}
                 self.assertEqual(set(counts.values()), {str(int(expected))}, counts)
                 self.assertIn(f'aria-label="{int(expected)} need you"', home)
+                # with the sidebar folded away (a phone), that count shows as a dot on the button that opens it
+                side = re.search(r'<aside class="side".*?</aside>', home, re.S).group(0)
+                self.assertIn('<b class="count num" data-need=', side)
+                self.assertIn("body:has(.side .count[data-need]) .app .sidebar-toggle::before", dashboard.STYLE)
                 self.assertIn(f"{int(expected)} need you", text(box))
         empty = {**view, "live": [], "not_started": [], "recent": [], "inbox": [], "stops": []}
         home, box = dashboard.render(empty, NOW, token=TOKEN), inbox(empty)
@@ -1511,6 +1517,36 @@ console.log(JSON.stringify([
         link = re.search(r'<a class="item".*?</a>', row, re.S).group(0)
         self.assertRegex(link, rf'<span class="name">live-job</span><span class="sub">{re.escape(ASK.capitalize())}</span>')
         self.assertNotIn('class="sub', row.split("</a>", 1)[1])  # the control stands alone
+
+    def test_the_palette_has_a_way_out_without_a_keyboard(self):
+        # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.
+        pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(live_view(), NOW, token=TOKEN), re.S).group(0)
+        self.assertIn('<button type="button" class="p-x" data-pal-close>Cancel</button>', pal)
+        self.assertIn("[data-pal-close]", dashboard.SCRIPT)
+
+    def test_a_done_job_with_no_answer_shows_what_it_printed_last(self):
+        # A finished shell job's result is its output: hidden behind a fold the page looks empty. Its last lines show
+        # open in a card; the rest folds below only when there is more. A job that answered keeps the fold alone.
+        log = "\n".join(f"line {n}" for n in range(1, 31))
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"]["log"] = log
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last", "j-output"])
+        card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
+        self.assertIn("Last output", card)
+        self.assertIn("last 12 lines", card)
+        self.assertIn("line 30", card)
+        self.assertNotIn("line 18\n", card)
+        self.assertIn("Full output", body)
+        done["open"]["log"] = "one\ntwo"
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertIn('data-region="j-last"', body)
+        self.assertNotIn('data-region="j-output"', body)
+        self.assertEqual(body.count("two"), 1)
+        done["open"].update(log=log, answer="Fixed it.")
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertNotIn('data-region="j-last"', body)
+        self.assertIn('data-region="j-output"', body)
 
     def test_finished_pages_keep_output_collapsible_and_the_reply_in_the_dock(self):
         # Output stays folded in Worked and the real Run again form lives after the session scroll area.
@@ -1751,7 +1787,7 @@ console.log(JSON.stringify([
                                     dashboard.render(v, NOW, token=TOKEN), re.S).group(0)
         listed = lambda v: re.findall(r'data-key="job:(sweep[^"]*)"', needs(v))  # noqa: E731
         page = dashboard.render(view, NOW, token=TOKEN)
-        self.assertEqual(listed(view), ["sweep-3", "sweep-odd"])
+        self.assertEqual(listed(view), ["sweep-odd", "sweep-3"])  # newest first, as the Inbox lists them
         self.assertIn("Failed 3 times: ", text(item(page, "sweep-3")))
         self.assertNotIn("times", re.search(r'<span class="sub">([^<]*)', item(page, "sweep-odd")).group(1))
         count = lambda p: int(re.search(r'data-need="(\d+)"', p).group(1))  # noqa: E731
@@ -1783,7 +1819,7 @@ console.log(JSON.stringify([
         once = copy.deepcopy(view)
         once["live"].append({"id": "sweep-r", "state": "running", "paused": False, "detail": "", "external_id": None})
         once["meta"]["sweep-r"] = {"brief": brief, "prior": "sweep", "created": NOW - 10}
-        self.assertEqual(listed(once), ["sweep-3", "sweep-odd"])
+        self.assertEqual(listed(once), ["sweep-odd", "sweep-3"])
         self.assertIn("Failed 2 times: ", text(item(dashboard.render(once, NOW, token=TOKEN), "sweep-3")))
 
     def test_the_check_loop_keeps_one_left_edge(self):

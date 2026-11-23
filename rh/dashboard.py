@@ -1230,7 +1230,7 @@ def _reruns(meta):
 
 
 def _needs(jobs, inbox, stops, ctx):
-    """Everything that waits on you, once each and oldest first: a job that needs you (with its open items), the
+    """Everything that waits on you, once each and newest first: a job that needs you (with its open items), the
     app's own pause on no listed job, and an open item for no listed job. Runs of one brief that failed the same way
     and need nothing else are one entry, its runs newest first. Today's Needs you, the top bar, the Inbox badge and
     the Inbox all show this one list and its length, so they cannot disagree."""
@@ -1272,7 +1272,9 @@ def _needs(jobs, inbox, stops, ctx):
         out.append({"key": f"stop:{stop.get('id', stop['scope'])}", "job": None, "item": None, "stop": stop,
                     "ask": f"{verb} from the app: {_sentence(_clause(stop['reason']))}", "tab": "other",
                     "icon": "resume", "jid": None, "first": stop.get("created"), "created": stop.get("created")})
-    return sorted(out, key=lambda e: e["first"] if _number(e["first"]) else float("inf"))
+    # newest first, as the Inbox lists it, so an entry holds one place in both
+    return sorted(out, key=lambda e: (-(e["created"] if _number(e["created"]) else 0),
+                                      -(e["item"]["id"] if e["item"] and _number(e["item"].get("id")) else 0)))
 
 
 def _need_word(n):
@@ -2080,21 +2082,25 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                              f'{details}</li>')
         work.append(_region("session-files", '<ul class="session-files">' + "".join(file_rows) + '</ul>',
                             "section", "session-file-list", ' aria-label="Files produced"'))
-    if failed and log:
+    # A done job that gave no answer made its output: its last lines show open, as a failed one's do.
+    answered = any(isinstance(opened.get(k), str) and opened[k].strip() for k in ("answer", "reply"))
+    card = bool(log) and (failed or (finished and state == "done" and not answered))
+    if card:
         tail = lines[-_TAIL:]
         # the failed check and its exit code lead the page; the card adds only what the run printed last
-        body = (f'<div class="head"><h2>Where it stopped</h2><span class="lines mono">'
+        name, region = ("Where it stopped", "j-error") if failed else ("Last output", "j-last")
+        body = (f'<div class="head"><h2>{name}</h2><span class="lines mono">'
                 f'{"last " if len(lines) > len(tail) else ""}{len(tail)} {"line" if len(tail) == 1 else "lines"}</span></div>'
-                f'<pre class="log ended err" tabindex="0">{_text(chr(10).join(tail))}</pre>')
-        work.append(_region("j-error", body, "section", "out", ' aria-label="Where it stopped"'))
-    # a failed run whose whole output fits in the card above has nothing more to unfold
-    if (not finished or log) and not (failed and len(lines) <= _TAIL):
+                f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{_text(chr(10).join(tail))}</pre>')
+        work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
+    # output that fits whole in the card above has nothing more to unfold
+    if (not finished or log) and not (card and len(lines) <= _TAIL):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
         line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
-        output_status = (f'{"Full output" if failed else "Output"}{_SEP_HTML}{_text(line_count)}' if log
+        output_status = (f'{"Full output" if card else "Output"}{_SEP_HTML}{_text(line_count)}' if log
                          else "No output received yet")
         work_summary = (f'<summary class="worked-summary">'
                         f'<span class="worked-output">{output_status}</span>{tag}</summary>')
@@ -2294,9 +2300,7 @@ def _ib_detail(ctx, entry, settled, view, missing, lead=None):
 
 def _inbox_pane(view, ctx, feedback):
     """The Inbox: what waits on you, newest first, and what was settled today, beside the item it shows."""
-    waiting = sorted(ctx["needs"], key=lambda e: (-(e["created"] if _number(e["created"]) else 0),
-                                                   -(e["item"]["id"] if e["item"] and _number(e["item"].get("id"))
-                                                     else 0)))
+    waiting = ctx["needs"]  # already newest first
     midnight = ctx["midnight"]
     settled = sorted((i for i in view.get("settled", []) if isinstance(i, dict) and _number(i.get("resolved"))
                       and i["resolved"] >= midnight), key=lambda i: -i["resolved"])
@@ -2362,8 +2366,12 @@ def _palette(jobs, ctx, keys):
     rows = ['<p class="p-sec">Jobs</p>'] if jobs else []
     for j in sorted(jobs, key=lambda j: order[j.group]):
         rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span><span class="p-t">{_text(j.label)}</span>'
-                    f'<span class="p-s"><span class="mono">{_text(j.id)}</span><span>{_text(j.word.lower())}</span></span>'
+                    f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span>'
+                    # as the sidebar names it: when names clash the id leads and the shared name moves to the grey line
+                    + (f'<span class="p-t">{_text(j.id)}</span><span class="p-s"><span>{_text(j.label)}</span>'
+                       if j.dup else
+                       f'<span class="p-t">{_text(j.label)}</span><span class="p-s"><span class="mono">{_text(j.id)}</span>')
+                    + f'<span>{_text(j.word.lower())}</span></span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:
@@ -2380,8 +2388,8 @@ def _palette(jobs, ctx, keys):
                  f'{_ic("chev")}</span><span class="p-t">{word}</span><span class="p-s">{sub}</span>'
                  f'<span class="p-a"><kbd>{k}</kbd></span></button>' for k, word, sub in acts]
     body = (f'<div class="p-in">{_ic("search")}<input class="p-q" type="text" aria-label="Jump to a job, a page or an '
-            'action" placeholder="Jump to a job, a page or an action" autocomplete="off" spellcheck="false">'
-            '<kbd>esc</kbd></div>'
+            'action" placeholder="Jump to anything" autocomplete="off" spellcheck="false">'
+            '<kbd>esc</kbd><button type="button" class="p-x" data-pal-close>Cancel</button></div>'
             f'<div class="p-list" role="listbox" aria-label="Results">{"".join(rows)}'
             '<p class="p-none" hidden>Nothing matches.</p></div>'
             f'<div class="p-foot">{_mark(16)}<span>research-harness</span><span class="p-f-r"><span>Open</span>'

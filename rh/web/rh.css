@@ -1658,3 +1658,18 @@ svg.st[data-s="cancelled"] circle { stroke-dasharray: 2.2 1.6; }
   background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38 / .96);
   border-color: rgb(170 185 235 / .14); }
 .s-j-fail, .q-fail { border: 1px solid #57252b; border-radius: 10px; background: #2a1519; }
+/* With the sidebar folded away, its amber count shows as a dot on the button that opens it. */
+body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; position: absolute; top: -3px;
+  right: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--amber);
+  box-shadow: 0 0 0 2px #070b16; pointer-events: none; }
+/* With no esc key on a phone, the palette search row ends in a close button. */
+.p-x { display: none; flex: none; margin: 0 -8px 0 0; padding: 0 8px; height: 44px; border: 0; background: none;
+  font: 15px/20px var(--ui); color: var(--muted); cursor: pointer; }
+@media (pointer: coarse) { .p-x { display: block; } }
+/* A failure banner reads in body colour; red marks only its icon, its border and its exit code. */
+.fail-k { color: var(--text); }
+.fail-k > :first-child { color: var(--red); }
+/* Inline code sits a step under the prose, so a run of it reads as words, not a striped block. */
+.assistant-message.md :not(pre) > code { font-size: .875em; padding: .1em .3em; border-radius: 4px; }
+/* A card holds at most twelve lines of output: all of them show, with no scroll inside the card. */
+.out > pre.log.ended { max-height: none; }

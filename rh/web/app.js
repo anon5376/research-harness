@@ -1020,7 +1020,7 @@ document.addEventListener('click', e => {
   const pick = $('.file-pick');
   if (pick && !pick.hidden && !pick.contains(e.target)) closeFiles();
   const d = pal();
-  if (d && e.target === d) { closePal(); return; }  // a click on the backdrop
+  if (d && (e.target === d || (e.target.closest && e.target.closest('[data-pal-close]')))) { closePal(); return; }  // the backdrop or Cancel
   const row = e.target.closest && e.target.closest('#pal .p-row');
   if (row) { e.preventDefault(); run(row); return; }
   const tab = e.target.closest && e.target.closest('[role="tab"][data-kind]');

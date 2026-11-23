@@ -1412,8 +1412,8 @@ class DashboardTest(unittest.TestCase):
         answer = "Fixed the **typo** & <tag>.\n\n- one\n- two"
         view["open"]["answer"] = answer
         page = dashboard.render(view, NOW, token=TOKEN)
-        self.assertEqual(page.count('class="msg-copy"'), 1)
         message = re.search(r'<section[^>]*class="msg ai"[^>]*>.*?</section>', page, re.S).group(0)
+        self.assertEqual(message.count('class="msg-copy"'), 1)  # the brief's own Copy sits outside the message
         acts = re.search(r'<div class="msg-acts"><button type="button" class="msg-copy" data-copy="([^"]+)"'
                          r'([^>]*)>(.*?)</button></div>', message, re.S)
         self.assertIsNotNone(acts)
@@ -1456,6 +1456,97 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(".msg.ai:is(:hover, :focus-within) .msg-copy { opacity: 1", dashboard.STYLE)
         hiding = dashboard.STYLE.split(".session-file:not(:has(> .file-preview[open])) .peek-copy", 1)[1]
         self.assertNotIn("msg-copy", hiding.split("}", 1)[0])
+
+    def test_a_brief_offers_to_copy_it_as_written(self):
+        # No Copy under the brief, a Copy outside its region, a button naming no held source, a held source that is
+        # the reflowed text and not the brief as written, the controls inside the bubble or ahead of it (the
+        # script's Show all must still land right after the bubble), or a control in the script-less snapshot,
+        # must fail.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        brief = ("Fix the **flaky** test & <it>.\nIts second line runs on.\n\n- first\n- second\n\n```\nkeep\nas\n```")
+        view["open"]["job"]["spec"]["brief"] = brief
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        region = re.search(r'<section class="s-j-brief".*?</section>', page, re.S).group(0)
+        self.assertEqual(page.count('aria-label="Copy the brief"'), 1)
+        acts = re.search(r'<div class="msg-acts me"><button type="button" class="msg-copy" data-copy="([^"]+)"'
+                         r'([^>]*)>(.*?)</button></div>', region, re.S)
+        self.assertIsNotNone(acts)
+        self.assertIn('aria-label="Copy the brief"', acts.group(2))
+        self.assertIn("<svg", acts.group(3))
+        self.assertIn('<span class="pc-t">Copy</span>', acts.group(3))
+        aid = "ask-" + hashlib.sha1(brief.encode()).hexdigest()[:10]
+        self.assertEqual(acts.group(1), aid)
+        held = re.search(rf'<textarea hidden id="{re.escape(aid)}" readonly>(.*?)</textarea>', region, re.S)
+        self.assertIsNotNone(held)
+        self.assertEqual(html.unescape(held.group(1)), brief)  # as written: hard-wrapped lines keep their breaks
+        # the controls are the bubble's next siblings, so the script's Show all still inserts beside the bubble
+        # (.user-message + .ask-more); inside it or ahead of it, the fold's adjacency would break
+        self.assertIsNotNone(re.search(r'<div class="user-message"><span class="um-t">.*?</span></div>'
+                                        r'<textarea hidden', region, re.S))
+        self.assertIn('</textarea><div class="msg-acts me">', region)
+        bubble = re.search(r'<div class="user-message">.*?</div>', region, re.S).group(0)
+        self.assertNotIn("msg-copy", bubble)
+        self.assertNotIn("<textarea", bubble)
+        # the snapshot has no script to run it, so it offers no control (its <style> still carries the rules)
+        still = dashboard.render(view, NOW, result="x")
+        self.assertNotIn('aria-label="Copy the brief"', still)
+        self.assertNotIn('id="ask-', still)
+        self.assertNotIn('class="msg-acts me"', still)
+
+    def test_each_earlier_ask_offers_to_copy_it(self):
+        # A follow-up's chat shows each earlier ask with its own Copy inside an .ask-turn, so the reveal wakes on
+        # that ask alone; asks sharing one control, a control naming another ask's text, or the current run's
+        # brief left without one, must fail.
+        view = live_view()
+        view["recent"] += [{"id": "finished-job-r1", "state": "done", "paused": False,
+                            "detail": "accepted output", "external_id": None},
+                           {"id": "finished-job-r2", "state": "done", "paused": False,
+                            "detail": "accepted output", "external_id": None}]
+        view = opened(view, "finished-job-r2", kind="local-shell")
+        view["open"]["job"]["spec"].update(brief="Tidy the README.", prior="finished-job-r1",
+                                           changed="and the license")
+        asks = ["Tidy the README.\nIts second line runs on.", "now the install part"]
+        view["open"]["thread"] = [
+            {"id": "finished-job", "state": "done", "ask": asks[0], "answer": "Tidied it.",
+             "provider": "claude", "model": "claude-sonnet-5-5"},
+            {"id": "finished-job-r1", "state": "done", "ask": asks[1], "answer": "",
+             "provider": "", "model": ""}]
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        thread = re.search(r'<section class="s-j-thread".*?</section>', page, re.S).group(0)
+        turns = re.findall(r'<div class="ask-turn">(.*?)</div></div>', thread, re.S)
+        self.assertEqual(len(turns), len(asks))
+        self.assertEqual(page.count('aria-label="Copy the brief"'), len(asks) + 1)  # plus this run's own brief
+        for block, ask in zip(turns, asks):
+            self.assertEqual(block.count('aria-label="Copy the brief"'), 1)
+            aid = "ask-" + hashlib.sha1(ask.encode()).hexdigest()[:10]
+            held = re.search(rf'<textarea hidden id="{re.escape(aid)}" readonly>(.*?)</textarea>', block, re.S)
+            self.assertIsNotNone(held)
+            self.assertEqual(html.unescape(held.group(1)), ask)
+            self.assertIn(f'data-copy="{aid}"', block)
+            self.assertIsNotNone(re.search(r'<div class="user-message"><span class="um-t">.*?</span></div>'
+                                            r'<textarea hidden', block, re.S))
+        brief = re.search(r'<section class="s-j-brief".*?</section>', page, re.S).group(0)
+        self.assertEqual(brief.count('aria-label="Copy the brief"'), 1)
+        # the snapshot wraps nothing and offers nothing
+        still = dashboard.render(view, NOW, result="x")
+        self.assertNotIn('aria-label="Copy the brief"', still)
+        self.assertNotIn('class="ask-turn"', still)
+        self.assertNotIn('id="ask-', still)
+
+    def test_the_brief_copy_is_revealed_with_its_own_bubble(self):
+        # A brief Copy restyled apart from the answer's, hidden where a hover-less pointer or an unfocused tab
+        # cannot reach it, revealed by hovering the whole thread instead of its own ask's turn, or a .msg-copy
+        # rule the brief row does not share, must fail.
+        self.assertIn(".msg-acts.me { justify-content: flex-end; margin: 4px -10px -12px 0; }", dashboard.STYLE)
+        media = dashboard.STYLE.split("@media (hover: hover) {\n  .msg-copy {", 1)[1].split("\n}", 1)[0]
+        for scope in (".s-j-brief", ".ask-turn"):
+            self.assertIn(f"{scope}:is(:hover, :focus-within) .msg-copy {{ opacity: 1;", media)
+        # with a pointer the answer's Copy leaves its row — a brief's keeps it, so the absolute row is the
+        # answer's alone; unscoped it would pin a brief's Copy to the page, not the bubble
+        self.assertIn(".msg.ai .msg-acts { position: absolute;", media)
+        self.assertNotIn("\n  .msg-acts { position: absolute", media)
+        # and a brief's row takes no height there either, so the brief sits as close to what follows as before
+        self.assertIn(".msg-acts.me { height: 0; margin: 0 -10px 0 0;", media)
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without

@@ -1411,6 +1411,7 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 /* An answer's Copy rests under it, one control with a patch's Copy: quiet until the message is hovered or holds
    focus; on touch it stays. */
 .msg-acts { display: flex; margin: 4px 0 -12px -10px; }  /* glyph on the text edge; the row gives back its height */
+.msg-acts.me { justify-content: flex-end; margin: 4px -10px -12px 0; }  /* a brief's Copy: the same row, mirrored to the bubble's right edge */
 .msg-copy { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px;
   border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 12px; cursor: pointer;
   transition: opacity 150ms ease-out, background-color 120ms ease-out, color 120ms ease-out; }
@@ -1431,10 +1432,15 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 @media (hover: hover) {
   .msg-copy { opacity: 0; }
   .msg.ai:is(:hover, :focus-within) .msg-copy { opacity: 1; }
-  /* with a pointer the Copy takes no row: it rests at the answer's bottom right, on its last line, so the answer's
-     patch and Output sit right under it */
+  .s-j-brief:is(:hover, :focus-within) .msg-copy { opacity: 1; }
+  .ask-turn:is(:hover, :focus-within) .msg-copy { opacity: 1; }
+  /* with a pointer the answer's Copy takes no row: it rests at its bottom right, on its last line, so the answer's
+     patch and Output sit right under it (a brief's keeps its row under the bubble) */
   .msg.ai { position: relative; }
-  .msg-acts { position: absolute; right: -10px; bottom: -4px; margin: 0; }
+  .msg.ai .msg-acts { position: absolute; right: -10px; bottom: -4px; margin: 0; }
+  /* a brief's Copy takes no row either: it hangs under the bubble's right edge, in the gap before what follows */
+  .msg-acts.me { height: 0; margin: 0 -10px 0 0; align-items: flex-start; }
+  .msg-acts.me .msg-copy { margin-top: -2px; }
 }
 /* an answer's attachments are its results: 20px under its last line, and 4px apart */
 .jd-body > .msg.ai + .session-file-list { margin-top: -7px; }

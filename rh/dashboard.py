@@ -2132,6 +2132,15 @@ def _said(provider, model, text, link="", inner=False, role="", status="", live=
     return body if inner else f'<div class="msg ai">{body}</div>'
 
 
+def _brief_copy(text):
+    """A brief bubble's Copy on a live page: a hidden textarea holding the ask as written — the bubble shows it
+    reflowed — and the row that copies it."""
+    aid = "ask-" + hashlib.sha1(text.encode()).hexdigest()[:10]
+    return (f'<textarea hidden id="{aid}" readonly>{_text(text)}</textarea>'
+            f'<div class="msg-acts me"><button type="button" class="msg-copy" data-copy="{aid}" '
+            f'aria-label="Copy the brief">{_ic("copy", True)}<span class="pc-t">Copy</span></button></div>')
+
+
 def short_cmd(spec, cmd):
     """A failed command as a person reads it: an agent run is its CLI and model, not the agent.py line with the brief."""
     agent = agent_of(spec.get("command"))
@@ -2256,7 +2265,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             if not isinstance(run, dict):
                 continue
             if run.get("ask"):
-                turns.append(f'<div class="user-message"><span class="um-t">{_text(_reflow(run["ask"]))}</span></div>')
+                ask = str(run["ask"])
+                bubble = f'<div class="user-message"><span class="um-t">{_text(_reflow(ask))}</span></div>'
+                # each ask's Copy wakes on its own turn's hover, so the bubble and its row share an .ask-turn
+                turns.append(f'<div class="ask-turn">{bubble}{_brief_copy(ask)}</div>' if ctx["live"] else bubble)
             link = (f'<a class="mono" href="{_url(ctx, "/job/" + str(run.get("id")))}" data-nav>{_text(run.get("id"))}</a>'
                     if ctx["live"] else f'<span class="mono">{_text(run.get("id"))}</span>')
             # each earlier turn wears the status row the current one does, above what its agent said
@@ -2271,9 +2283,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         work.append(_region("j-thread", "".join(turns), "section", "s-j-thread", ' aria-label="Earlier runs"'))
     original_prompt = ask_of(spec)
     if original_prompt:
-        # the ask's text has its own span: it folds and fades there, and the bubble keeps its fill
-        work.append(_region("j-brief", f'<div class="user-message"><span class="um-t">{_text(_reflow(original_prompt))}'
-                                       '</span></div>',
+        # the ask's text has its own span: it folds and fades there, and the bubble keeps its fill; a live page's
+        # Copy sits after the bubble, so the script's Show all still lands beside it
+        bubble = f'<div class="user-message"><span class="um-t">{_text(_reflow(original_prompt))}</span></div>'
+        work.append(_region("j-brief", bubble + (_brief_copy(original_prompt) if ctx["live"] else ""),
                             "section", "s-j-brief", ' aria-label="Original request"' if not spec.get("prior")
                             else ' aria-label="Follow-up"'))
     elif spec.get("prior"):

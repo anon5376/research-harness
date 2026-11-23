@@ -611,6 +611,22 @@ def _fails(cfg, ids):
 _HEADS = {}  # answer.md path -> (mtime_ns, first line): the list asks for every done job's on each page
 
 
+def _kept(cfg, job):
+    """The run a finished swarm judge kept ("w1", "combined" or "none"), from its swarm-result.json; "" for any other
+    job or when the judge left none."""
+    if not job["spec"].get("after_any") or job.get("state") != "done":
+        return ""
+    root = _outputs(cfg, {"job": job})
+    found = root / "swarm-result.json" if root else None
+    try:
+        if found is None or found.is_symlink() or not found.is_file():
+            return ""
+        value = json.loads(found.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return str(value.get("kept") or "") if isinstance(value, dict) else ""
+
+
 def _said_head(cfg, job):
     """The first line of a done local job's answer.md, which names the run in the lists better than its brief when
     the same brief ran many times; "" when it left none."""
@@ -642,7 +658,8 @@ def _meta(cfg):
                           "model": (dashboard.agent_of(j["spec"].get("command")) or ("", ""))[1],
                           "goal": j["spec"].get("goal", ""),
                           # a swarm's judge names its runs, so the app shows them as its work
-                          "after": list(j["spec"].get("after") or []) if j["spec"].get("after_any") else []}
+                          "after": list(j["spec"].get("after") or []) if j["spec"].get("after_any") else [],
+                          "state": j["state"], "kept": _kept(cfg, j)}
                 for j in led.jobs()}
         since = time.time() - _SETTLED
         items = led.inbox(open_only=False)

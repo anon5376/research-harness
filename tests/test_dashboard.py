@@ -327,6 +327,34 @@ class ListsTest(unittest.TestCase):
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 
+    def test_a_finished_swarm_reads_finished_and_is_named_by_the_work_it_kept(self):
+        # Runs that ended long ago leave the status view: a card that then calls them 'Waiting' with no time, or a
+        # swarm named by its judge's 'I chose run w1' instead of what the kept run did, must fail.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 900, "started": NOW - 890,
+                "goal": "fix"}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                             "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "updated": NOW - 700, "state": "done", "model": "swe-2-max",
+                                   "said": "The label is renamed in the header"},
+                        "fix.w2": {**base, "updated": NOW - 650, "state": "failed", "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "updated": NOW - 600, "state": "done", "model": "swe-2-max",
+                                     "said": "I chose run w1", "kept": "w1", "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"]["swarm_kept"] = "fix.w1"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        card = text(re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0))
+        self.assertNotIn("Waiting", card)
+        self.assertIn("Done", card)
+        self.assertIn("Failed", card)
+        self.assertIn("3 min", card)  # w1 ran from NOW-890 to NOW-700
+        side = re.search(r'<aside class="side".*?</aside>', page, re.S).group(0)
+        row = re.search(r'data-key="job:fix.best".*?</a>', side, re.S).group(0)
+        self.assertIn("The label is renamed in the header", text(row))
+        self.assertNotIn("I chose run w1", text(row))
+        self.assertIn("The label is renamed in the header", text(re.search(r"<h1.*?</h1>", pane(page), re.S).group(0)))
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

@@ -2709,9 +2709,19 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     rows = [(row, where) for where in ("live", "not_started", "recent") for row in view.get(where, [])]
     known = {row["id"] for row, _ in rows}
     meta = view.get("meta") if isinstance(view.get("meta"), dict) else {}
+    # A finished swarm is named by what the run its judge kept did, not by the judge's own "I chose run w1".
+    for jid, m in list(meta.items()):
+        runs = m.get("after") if isinstance(m, dict) and isinstance(m.get("after"), list) else []
+        kept = str(m.get("kept") or "") if runs else ""
+        won = next((r for r in runs if isinstance(r, str) and kept in (r, r.rsplit(".", 1)[-1])), None) if kept else None
+        said = str((meta.get(won) or {}).get("said") or "") if won and isinstance(meta.get(won), dict) else ""
+        if said:
+            meta = {**meta, jid: {**m, "said": said}}
     # A swarm's runs are its judge's work: the swarm is one row, live while any of its runs works. A run keeps a row
     # only while its own page is open, so the sidebar lights what the header names.
-    states = {row["id"]: row["state"] for row, _ in rows}
+    # a job the status view no longer lists (a swarm's runs that ended long ago) keeps its state from the ledger
+    states = {**{jid: m["state"] for jid, m in meta.items() if isinstance(m, dict) and isinstance(m.get("state"), str)},
+              **{row["id"]: row["state"] for row, _ in rows}}
     swarms = {jid: [r for r in m["after"] if isinstance(r, str)] for jid, m in meta.items()
               if isinstance(m, dict) and isinstance(m.get("after"), list) and m["after"]}
     in_swarm = {r for runs in swarms.values() for r in runs}

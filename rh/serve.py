@@ -638,6 +638,33 @@ def _kept(cfg, job):
     return str(value.get("kept") or "") if isinstance(value, dict) else ""
 
 
+def _swarm_stats(cfg, job):
+    """Each of a swarm judge's runs' diff size as [added, removed], counted from the changes.patch its own
+    folder holds (its first megabyte, counted as dashboard._diff_parse counts a patch); a run that left no
+    patch has no entry."""
+    stats = {}
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        for rid in (job.get("spec") or {}).get("after") or []:
+            if not isinstance(rid, str):
+                continue
+            row = led.job(rid)
+            root = _outputs(cfg, {"job": row, "receipt": led.receipt(rid)}) if row else None
+            patch = root / "changes.patch" if root else None
+            try:
+                if patch is None or patch.is_symlink() or not patch.is_file():
+                    continue
+                with patch.open("rb") as f:
+                    text = f.read(_FILE_MAX).decode("utf-8", errors="replace")
+            except OSError:
+                continue
+            files = dashboard._diff_parse(text)[1]
+            stats[rid] = [sum(f[1] for f in files), sum(f[2] for f in files)]
+    finally:
+        led.close()
+    return stats
+
+
 def _said_head(cfg, job):
     """The first line of a done local job's answer.md, which names the run in the lists better than its brief when
     the same brief ran many times; "" when it left none."""
@@ -1078,6 +1105,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                                 shown[key] = value.get("kept") if key == "swarm_kept" and isinstance(value, dict) else value
                             skip += (name,)
                     shown["files"], shown["peek"] = _files(root, skip=skip)
+                if shown["job"].get("spec", {}).get("after_any"):  # a swarm judge: each run's diff size
+                    shown["swarm_stats"] = _swarm_stats(cfg, shown["job"])
                 if shown["job"].get("spec", {}).get("prior"):
                     shown["thread"] = _thread(cfg, shown["job"])  # the chat so far, while this run works too
                 self.page({"open": shown})

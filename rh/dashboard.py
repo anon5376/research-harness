@@ -2163,11 +2163,12 @@ def _fail_banner(state, spec, bad):
             f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
 
 
-def _swarm_card(ctx, runs, checks=None, kept=None):
-    """A swarm's runs on its judge's page: each run's model, state, time, check verdict and first answer line, linked
-    to its page."""
+def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
+    """A swarm's runs on its judge's page: each run's model, state, time, diff size, check verdict and first
+    answer line, linked to its page."""
     now, items = ctx["now"], []
     checks = checks if isinstance(checks, dict) else {}
+    stats = stats if isinstance(stats, dict) else {}
     for rid in runs:
         m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
         st = ctx["states"].get(rid) or "waiting"
@@ -2177,6 +2178,9 @@ def _swarm_card(ctx, runs, checks=None, kept=None):
                      else _duration(now - start) if st in _LIVE and _number(start) else "")
         model = _names([m["model"]]) if m.get("model") else rid
         said = str(m.get("said") or "")
+        pair = stats.get(rid)
+        if isinstance(pair, (list, tuple)) and len(pair) == 2:  # the run's diff size, right after its time
+            took += f'<span class="sw-d">{_counts(pair[0], pair[1])}</span>'
         verdict = str(checks.get(rid.rsplit(".", 1)[-1]) or checks.get(rid) or "")
         if verdict and verdict != "no changes":
             ok = verdict == "passed"
@@ -2350,7 +2354,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     status_at, status_html = len(work), "".join(result)
     work.append(_region("job-result", status_html, "p", "job-result"))
     if runs:
-        work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept")))
+        work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept"),
+                                opened.get("swarm_stats")))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     chat_dock = ""

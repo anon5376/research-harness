@@ -399,6 +399,42 @@ class ListsTest(unittest.TestCase):
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 
+    def test_a_swarm_row_shows_each_runs_diff_size(self):
+        # To compare runs the judge's page needs each run's diff size beside its time: a run whose folder held a
+        # patch shows its added and removed counts inside .sw-s after the time and before the check chip, in the
+        # diff preview's own colours; a run with no patch entry shows nothing there.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix"}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                            "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max",
+                                   "said": "Renamed the label"},
+                        "fix.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"].update(swarm_stats={"fix.w1": [3, 1]}, swarm_checks={"w1": "passed"})
+        card = re.search(r'data-region="j-swarm".*?</section>',
+                         dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        rows = {m.group(1): m.group(0) for m in re.finditer(
+            r'<a class="sw-run[^"]*"[^>]*><span class="sw-id mono">(\w+)</span>.*?</a>', card, re.S)}
+        self.assertIn('<span class="sw-d"><span class="n add">+3</span><span class="n del">−1</span></span>',
+                      rows["w1"])
+        self.assertIn("1 min 0 s<span class=\"sw-d\"", rows["w1"])  # right after the time, no separator
+        self.assertLess(rows["w1"].index('class="sw-d"'), rows["w1"].index('class="sw-c"'))  # before the chip
+        self.assertNotIn("sw-d", rows["w2"])
+        # on a phone a row with a diff size drops its time instead, so the model keeps its name (critic r17 F4)
+        phone = dashboard.STYLE.split("/* phone swarm rows */", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".sw-run .sw-s:has(> .sw-d) { font-size: 0; }", phone)
+        # the counts wear the diff preview's colours, not a second palette
+        self.assertIn(".sw-d { display: inline-flex; gap: 6px; margin-left: 10px;", dashboard.STYLE)
+        for line in (":is(.peek-sum, .peek .dl.file, .sw-d) .n.add { color: #7ee2a0; }",
+                     ":is(.peek-sum, .peek .dl.file, .sw-d) .n.del { color: #f69a9a; }",
+                     ":is(.peek-sum, .peek .dl.file, .sw-d) .n.zero { color: var(--faint); }"):
+            self.assertIn(line, dashboard.STYLE)
+
     def test_a_finished_swarm_reads_finished_and_is_named_by_the_work_it_kept(self):
         # Runs that ended long ago leave the status view: a card that then calls them 'Waiting' with no time, or a
         # swarm named by its judge's 'I chose run w1' instead of what the kept run did, must fail.
@@ -705,7 +741,7 @@ class ListsTest(unittest.TestCase):
         # a hunk whose head over-counts (x.py's says 3 old lines, its body has 2) ends at a line no body line starts
         # with, so the next file's header is not read as code
         self.assertNotIn("diff --git", dashboard._peek_html("changes.patch", two))
-        self.assertIn(":is(.peek-sum, .peek .dl.file) .n.add", dashboard.STYLE)
+        self.assertIn(":is(.peek-sum, .peek .dl.file, .sw-d) .n.add", dashboard.STYLE)
         self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono">2 files</span>'))
         self.assertIn('<span class="n del zero">−0</span>', dashboard._diff_head("+++ b/x.py\n@@ -0,0 +1 @@\n+a\n"))
         self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")

@@ -768,6 +768,34 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             self.assertIsNone(led.job("do-more.best"))
 
+    def test_a_swarms_judge_page_shows_each_runs_diff_size(self):
+        # The Swarm card compares runs: each run's changes.patch in its own folder under $RH_HOME counts as
+        # +added/−removed in that run's row; a run that left no patch shows nothing there.
+        patch = ("diff --git a/a.txt b/a.txt\nindex 1111111..2222222 100644\n--- a/a.txt\n+++ b/a.txt\n"
+                 "@@ -1,3 +1,5 @@\n keep\n-gone\n+one\n+two\n+three\n keep2\n")
+        for jid, after, after_any in (("swarm-fix.w1", [], False), ("swarm-fix.w2", [], False),
+                                      ("swarm-fix.best", ["swarm-fix.w1", "swarm-fix.w2"], True)):
+            spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Fix the typo.",
+                                       "command": ["true"], "after": after, "after_any": after_any})
+            with self.ledger() as led:
+                led.add_job(spec)
+                for step in ("ready", "launching", "running"):
+                    led.set_state(jid, step)
+                led.finish(jid, "done", {"route": "local-shell", "checks": [], "model_requested": None,
+                                         "model_served": None, "ended": time.time(), "detail": "ok"})
+        (self.home / "runs" / "swarm-fix.w1").mkdir(parents=True)
+        (self.home / "runs" / "swarm-fix.w1" / "changes.patch").write_text(patch, encoding="utf-8")
+        (self.home / "runs" / "swarm-fix.w2").mkdir(parents=True)  # ran clean: no patch, no counts
+        (self.home / "runs" / "swarm-fix.best").mkdir(parents=True)
+        code, _, page = self.request("/job/swarm-fix.best")
+        self.assertEqual(code, 200)
+        card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
+        rows = {m.group(1): m.group(0) for m in re.finditer(
+            r'<a class="sw-run[^"]*"[^>]*><span class="sw-id mono">(\w+)</span>.*?</a>', card, re.S)}
+        self.assertIn('<span class="sw-d"><span class="n add">+3</span><span class="n del">−1</span></span>',
+                      rows["w1"])
+        self.assertNotIn("sw-d", rows["w2"])
+
     def test_refused_new_job_returns_to_the_form_with_the_draft(self):
         cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},
                  {"id": "bad-quote", "kind": "local-shell", "brief": "x <b>", "command": "echo 'open"},

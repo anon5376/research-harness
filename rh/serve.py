@@ -452,8 +452,8 @@ def _swarm_said(swarm):
     if not models:
         return "Swarm started."
     judge = swarm.get("judge") or models[0]
-    return (f"Swarm started · {' + '.join(dashboard._names([m]) for m in models)}, "
-            f"judged by {dashboard._names([judge])}")
+    # the composer's own line: runs by comma ('A + B' names one Fusion model), the judge as a verb
+    return f"Swarm started · {', '.join(dashboard._names([m]) for m in models)} · {dashboard._names([judge])} judges"
 
 
 def _say(path, fields, ok, made=None, swarm=None):

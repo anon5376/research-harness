@@ -447,7 +447,17 @@ class ListsTest(unittest.TestCase):
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
                                                           "judge": "swe-2-max"}}, NOW, token=TOKEN)
         says = re.search(r'<span class="swarm-says">(.*?)</span></p>', page).group(1)
-        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max + SWE-2 Flash · judge SWE-2 Max".split())
+        # 'A + B' names one Fusion model everywhere else, so the runs are listed with commas and the judge is a verb
+        # (critic r11 F1)
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, SWE-2 Flash · SWE-2 Max judges".split())
+        # the chip's × shows on hover or focus where there is a pointer, always on touch, with a 24px hit area
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("gap: 12px", rule(".swarm-note"))
+        hover = dashboard.STYLE.split("@media (hover: hover) {\n  .swarm-off {", 1)[1].split("}", 1)[0]
+        self.assertIn("opacity: 0", hover)
+        self.assertIn(".swarm-chip:is(:hover, :focus-within) .swarm-off { opacity: 1", dashboard.STYLE)
+        for spec in ("inset: -3px", 'content: ""'):
+            self.assertIn(spec, rule(".swarm-off::after"))
 
     def test_an_unticked_swarm_box_is_visible(self):
         # An unticked model box drawn at 28% white (about 2.5:1 on the settings panel, under the 3:1 a control

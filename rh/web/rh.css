@@ -1809,7 +1809,7 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .slash-o svg, .swarm-note svg { width: 16px; height: 16px; color: var(--muted); }
 .slash-n { color: var(--text); }
 .slash-d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.swarm-note { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 0 0 4px; color: var(--muted);
+.swarm-note { display: flex; align-items: center; gap: 12px; min-width: 0; margin: 0 0 0 4px; color: var(--muted);
   font-size: 12.5px; line-height: 18px; }
 .swarm-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swarm-note[hidden], .slash[hidden] { display: none; }
@@ -1932,6 +1932,14 @@ a.sw-run:hover { background: var(--surface); }
 .swarm-off { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px;
   background: none; color: #a9bcff; font-size: 14px; line-height: 1; cursor: pointer; }
 .swarm-off:hover { background: rgb(79 124 255 / .22); color: #fff; }
+/* The × is a 24px target drawn at 18px; with a pointer it shows only while the chip is hovered or focused, so the
+   row reads 'Swarm  SWE-2 Max, SWE-2 Flash' and not 'Swarm × SWE-2 Max'. Touch keeps it in view. */
+.swarm-off { position: relative; transition: opacity 120ms ease-out; }
+.swarm-off::after { content: ""; position: absolute; inset: -3px; }
+@media (hover: hover) {
+  .swarm-off { opacity: 0; }
+  .swarm-chip:is(:hover, :focus-within) .swarm-off { opacity: 1; }
+}
 .swarm-note > svg { display: none; }
 .swarm-says { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 @media (max-width: 600px) { .swarm-says { display: none; } }

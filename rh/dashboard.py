@@ -1743,8 +1743,8 @@ def _swarm_note(ctx):
     judge = swarm.get("judge") or models[0]
     return (f'<p class="swarm-note" data-swarm-note hidden><span class="swarm-chip">{_ic("swarm", True)}Swarm'
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
-            f'×</button></span><span class="swarm-says">{_text(" + ".join(_names([m]) for m in models))}'
-            f'{_SEP_HTML}judge {_text(_names([judge]))}</span></p>')
+            f'×</button></span><span class="swarm-says">{_text(", ".join(_names([m]) for m in models))}'
+            f'{_SEP_HTML}{_text(_names([judge]))} judges</span></p>')  # 'A + B' would read as one Fusion model
 
 
 def _composer(ctx, draft, ready, policy):

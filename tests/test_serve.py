@@ -84,7 +84,7 @@ class SayTest(unittest.TestCase):
         from rh import serve
         said = serve._say("/job", {"swarm": ["1"]}, True, "fix.best",
                           swarm={"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max"})
-        self.assertEqual(said, "Swarm started · SWE-2 Max + SWE-2 Flash, judged by SWE-2 Max")
+        self.assertEqual(said, "Swarm started · SWE-2 Max, SWE-2 Flash · SWE-2 Max judges")  # no '+': not Fusion
         self.assertNotIn("fix.best", said)
 
     def test_a_done_toast_carries_no_cli_details(self):

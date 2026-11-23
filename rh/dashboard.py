@@ -588,12 +588,25 @@ def _progress(log):
     return None
 
 
+_STATUS_LEAD = re.compile(r"^(?:(?:done|finished|ok|okay|complete|completed|all done)[.!]?(?:\s+|$))+", re.I)
+
+
 def answer_head(text):
     """An agent's answer as a list label: its first line without Markdown marks, up to a dash or colon that starts an
     aside ("Fixed X — untested: …" names the run as "Fixed X"), at most 100 characters; "" when it has no words."""
-    line = next((x.strip() for x in str(text or "").splitlines() if x.strip()), "")
-    line = re.sub(r"^#+\s*|^[-*]\s+", "", line).replace("**", "").replace("`", "").replace("__", "")
-    line = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)[0].strip().rstrip(".")
+    line = ""
+    for raw in str(text or "").splitlines():
+        # boilerplate never names a run: a status word alone ("Done."), a leading one ("Done. Rounded the ETA"), or a
+        # lead-in that ends in a colon ("Summary of the diff:") gives way to the next line
+        x = re.sub(r"^#+\s*|^[-*]\s+", "", raw.strip()).replace("**", "").replace("`", "").replace("__", "")
+        x = _STATUS_LEAD.sub("", x).strip()
+        if x and not x.endswith(":"):
+            line = x
+            break
+    head, *rest = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)
+    if rest and not re.search(r"\s", head.strip()):  # "rh/dashboard.py — X did Y": a lone label; the words name it
+        head = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)[0]
+    line = head.strip().rstrip(".")
     if len(line) > 100:
         line = line[:98].rsplit(" ", 1)[0].rstrip(",;:") + "…"
     return line
@@ -2742,10 +2755,13 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     rows = [(row, where) for where in ("live", "not_started", "recent") for row in view.get(where, [])]
     known = {row["id"] for row, _ in rows}
     meta = view.get("meta") if isinstance(view.get("meta"), dict) else {}
-    # A finished swarm is named by what the run its judge kept did, not by the judge's own "I chose run w1".
+    # A finished swarm is named by what the run its judge kept did when the judge itself led with "I chose run w1";
+    # a judge that leads with the change's own title keeps it.
     for jid, m in list(meta.items()):
         runs = m.get("after") if isinstance(m, dict) and isinstance(m.get("after"), list) else []
-        kept = str(m.get("kept") or "") if runs else ""
+        meta_line = re.match(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The (applied )?(diff|patch) is\b"
+                             r"|(Both|Neither|All) runs?\b", str(m.get("said") or "")) if runs else None
+        kept = str(m.get("kept") or "") if runs and (meta_line or not m.get("said")) else ""
         won = next((r for r in runs if isinstance(r, str) and kept in (r, r.rsplit(".", 1)[-1])), None) if kept else None
         said = str((meta.get(won) or {}).get("said") or "") if won and isinstance(meta.get(won), dict) else ""
         if said:

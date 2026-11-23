@@ -207,6 +207,16 @@ class ListsTest(unittest.TestCase):
                          "Reject a job whose accept is a list")
         self.assertEqual(dashboard.answer_head("# Fixed the typo.\nmore"), "Fixed the typo")
         self.assertEqual(dashboard.answer_head("\n \n"), "")
+        # boilerplate never names a run: a status word alone, a lead-in ending in a colon, or a leading "Done."
+        self.assertEqual(dashboard.answer_head("Done\n\nThe label is renamed in the header."), "The label is renamed in the header")
+        self.assertEqual(dashboard.answer_head("Done. Summary of the diff:\n- Added a copy button to code blocks"),
+                         "Added a copy button to code blocks")
+        self.assertEqual(dashboard.answer_head("Finished.\nOK\nHere is what changed:\n\nRounded the ETA"), "Rounded the ETA")
+        self.assertEqual(dashboard.answer_head("Done. Rounded the ETA to whole hours."), "Rounded the ETA to whole hours")
+        self.assertEqual(dashboard.answer_head("OK"), "")
+        # a lone path or name before the aside is a label, not what was done: the words after it name the run
+        self.assertEqual(dashboard.answer_head("**`rh/dashboard.py`** — `_left` rounds an hour or more to whole hours. More."),
+                         "_left rounds an hour or more to whole hours")
         view = live_view()
         view["meta"] = {**view.get("meta", {}), "finished-job": {"kind": "local-shell", "brief": "Improve it.",
                                                                 "said": "Fixed the typo"}}
@@ -354,6 +364,14 @@ class ListsTest(unittest.TestCase):
         self.assertIn("The label is renamed in the header", text(row))
         self.assertNotIn("I chose run w1", text(row))
         self.assertIn("The label is renamed in the header", text(re.search(r"<h1.*?</h1>", pane(page), re.S).group(0)))
+        # a judge that leads with the change's own title keeps it
+        for said in ("The applied diff is verified by inspection", "Both runs passed"):  # also the judge on itself
+            done["meta"]["fix.best"]["said"] = said
+            row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+            self.assertIn("The label is renamed in the header", text(row))
+        done["meta"]["fix.best"]["said"] = "Renamed the Options label to Run"
+        row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn("Renamed the Options label to Run", text(row))
 
     def test_the_inbox_carries_no_label_that_says_nothing(self):
         # 'newest first' over a list with no other order, or '0 settled today' beside the count of what waits, must

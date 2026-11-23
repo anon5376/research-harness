@@ -78,7 +78,11 @@ def normalize(raw):
         raise ContractError(f"kind must be one of {', '.join(KINDS)}")
     if not isinstance(spec.get("brief"), str) or not spec["brief"].strip():
         raise ContractError("brief must be a non-empty string")
-    spec.setdefault("needs", [])
+    for key, what in (("needs", "capabilities"), ("write_paths", "paths"), ("after", "job ids")):
+        value = spec.setdefault(key, [])
+        if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) for v in value):
+            raise ContractError(f"{key} must be a list of {what}, not {type(value).__name__} {value!r}"
+                                if not isinstance(value, (list, tuple)) else f"{key} must be a list of {what}")
     unknown = [n for n in spec["needs"] if n not in CAPABILITIES]
     if unknown:
         raise ContractError(f"unknown needs {unknown}; known: {', '.join(CAPABILITIES)}")
@@ -88,8 +92,6 @@ def normalize(raw):
     if spec["kind"] in ("codex-cloud", "gpt-chat") and spec["write_root"] != f"runs/{jid}/":
         label = "cloud" if spec["kind"] == "codex-cloud" else "chat"
         raise ContractError(f"{label} jobs write to runs/<id>/; put other paths in write_paths")
-    spec.setdefault("write_paths", [])
-    spec.setdefault("after", [])
     spec.setdefault("inputs", [])
     for i in spec["inputs"]:
         if not isinstance(i, dict) or not isinstance(i.get("path"), str):

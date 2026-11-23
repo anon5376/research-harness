@@ -107,14 +107,15 @@ _WHY = ((r"web route", "Cloud jobs here are set to start by hand (cloud.route is
 _KEYS = (("⌘K / Ctrl K", "Jump to a job, a page or an action"), ("j / ↓", "Next row"), ("k / ↑", "Previous row"),
          ("Enter", "Open it"), ("n", "New job"), ("i", "Open the Inbox"), ("r", "Answer or mark done"),
          ("a", "Link a Codex task"), ("h", "Paste a patch"), ("u", "Resume"), ("s", "Pause"),
-         ("c", "Cancel a job that has not started"), ("l", "Save a result to a branch"), ("t", "Check now"),
-         ("⌘ / Ctrl Enter", "Send the form you are typing in"), ("Esc", "Close or leave a field"), ("?", "This sheet"))
+         ("c", "Cancel a job that has not started"), ("l", "Save a result to a branch"), ("y", "Copy the answer"),
+         ("t", "Check now"), ("⌘ / Ctrl Enter", "Send the form you are typing in"), ("Esc", "Close or leave a field"),
+         ("?", "This sheet"))
 # What the palette can press on a page, by the key that already does it there.
 _PRESS = (("t", "Check now", "the harness, once"), ("u", "Resume", "lift the app's pause"),
           ("s", "Pause this job", "nothing new starts for it"), ("c", "Cancel this job", "before it starts"),
           ("a", "Link the Codex task", "paste the task link"), ("h", "Paste the patch", "from the Codex web view"),
           ("r", "Answer or mark done", "what this page asks"), ("l", "Save to a branch", "the finished result"),
-          ("x", "Dismiss", "close the item without doing it"))
+          ("y", "Copy the answer", "its Markdown, as written"), ("x", "Dismiss", "close the item without doing it"))
 _ENV = re.compile(r"in environment (\S+?),")
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -2110,12 +2111,12 @@ def _job_head(title, kind, tip=""):
     return _region("j-head", body, "section", "jd-head")
 
 
-def _said(provider, model, text, link="", inner=False, role="", status="", live=True):
+def _said(provider, model, text, link="", inner=False, role="", status="", live=True, key=""):
     """An agent's answer as a chat message: who answered and on which model, then the answer rendered from Markdown.
     `role` names what the agent was (a swarm's "Judge") in place of its provider; `status` (the run's ring and status
     line) sits at the far end of the same line, so a turn opens with one line of chrome, not two. A live page adds a
     Copy under the answer, fed by a hidden textarea holding the Markdown as written; the snapshot has no script, so
-    it gets no control."""
+    it gets no control. `key` gives the Copy its single-key shortcut — only the page's latest answer passes one."""
     who, mark = _AGENT_WHO.get(provider or "", ("Answer", "chat"))
     who = role or who
     name = _MODEL_NAMES.get(model, model) if model else ""
@@ -2126,8 +2127,9 @@ def _said(provider, model, text, link="", inner=False, role="", status="", live=
     body = f'{head}<div class="assistant-message md">{_markdown(text)}</div>'
     if live and text:
         aid = "ans-" + hashlib.sha1(text.encode()).hexdigest()[:10]
+        k = f' data-k="{key}" aria-keyshortcuts="{key}"' if key else ""
         body += (f'<textarea hidden id="{aid}" readonly>{_text(text)}</textarea>'
-                 f'<div class="msg-acts"><button type="button" class="msg-copy" data-copy="{aid}" '
+                 f'<div class="msg-acts"><button type="button" class="msg-copy" data-copy="{aid}"{k} '
                  f'aria-label="Copy the answer">{_ic("copy", True)}<span class="pc-t">Copy</span></button></div>')
     return body if inner else f'<div class="msg ai">{body}</div>'
 
@@ -2397,7 +2399,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         if merge:
             work.pop(status_at)
         work.append(_region("j-answer", _said(provider, model, said, inner=True, role="Judge" if runs else "",
-                                              status=status_html if merge else "", live=ctx["live"]),
+                                              status=status_html if merge else "", live=ctx["live"], key="y"),
                             "section", "msg ai",
                             ' aria-label="The answer"'))
     if not finished:

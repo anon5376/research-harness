@@ -1440,6 +1440,7 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 }
 @media (hover: hover) {
   .msg-copy { opacity: 0; }
+  .msg-copy.shown { opacity: 1; }  /* a Copy its key just ran stays in sight while it says Copied */
   .msg.ai:is(:hover, :focus-within) .msg-copy { opacity: 1; }
   .s-j-brief:is(:hover, :focus-within) .msg-copy { opacity: 1; }
   .ask-turn:is(:hover, :focus-within) .msg-copy { opacity: 1; }

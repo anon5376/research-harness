@@ -922,7 +922,8 @@ async function copy(b) {
   const was = b.dataset.was || label.textContent;
   b.dataset.was = was;
   label.textContent = done ? 'Copied' : 'Select it and copy';
-  setTimeout(() => { label.textContent = was; }, 1600);
+  b.classList.add('shown');  // hover-hidden, it still has to be seen saying Copied
+  setTimeout(() => { label.textContent = was; b.classList.remove('shown'); }, 1600);
 }
 
 // A patch preview's Copy fetches the file's whole text at the row link's URL: the preview itself may be cut short.
@@ -1326,9 +1327,11 @@ document.addEventListener('keydown', e => {
     if (f && f.getClientRects().length) f.focus(); else go($('[data-k="n"]').href, true);
   }
   else if (e.key === 't' && $('[data-k="t"]')) $('[data-k="t"]').focus();
-  else if (/^[rahusclx]$/.test(e.key) && act(e.key)) {
+  else if (/^[rahusclxy]$/.test(e.key) && act(e.key)) {
     const c = act(e.key);
-    if (c.matches('a[data-nav]')) go(c.href, true); else activate(c);
+    if (c.matches('a[data-nav]')) go(c.href, true);
+    else if (c.hasAttribute('data-copy')) c.click();  // a Copy runs on its key; the rest only point at their control
+    else activate(c);
   }
   else return;
   e.preventDefault();

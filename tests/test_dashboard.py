@@ -1405,7 +1405,8 @@ class DashboardTest(unittest.TestCase):
 
     def test_an_agents_answer_offers_to_copy_it_as_written(self):
         # No Copy under the answer, a Copy outside its message, a button naming no held source, a held source
-        # that is not the Markdown as written, or a control in the script-less snapshot, must fail.
+        # that is not the Markdown as written, a Copy the y key cannot find, or a control in the script-less
+        # snapshot, must fail.
         view = opened(live_view(), "finished-job", kind="local-shell")
         view["open"]["job"]["spec"].update(kind="local-shell", answer="chat",
                                            command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"])
@@ -1418,6 +1419,8 @@ class DashboardTest(unittest.TestCase):
                          r'([^>]*)>(.*?)</button></div>', message, re.S)
         self.assertIsNotNone(acts)
         self.assertIn('aria-label="Copy the answer"', acts.group(2))
+        self.assertIn('data-k="y"', acts.group(2))  # the page's y key presses it
+        self.assertIn('aria-keyshortcuts="y"', acts.group(2))
         self.assertIn("<svg", acts.group(3))
         self.assertIn('<span class="pc-t">Copy</span>', acts.group(3))
         self.assertEqual(acts.group(1), "ans-" + hashlib.sha1(answer.encode()).hexdigest()[:10])
@@ -1429,6 +1432,7 @@ class DashboardTest(unittest.TestCase):
         still = dashboard.render(view, NOW, result="x")
         self.assertNotIn('class="msg-copy"', still)
         self.assertNotIn('id="ans-', still)
+        self.assertNotIn('data-k="y"', still)
 
     def test_copy_marks_the_label_so_the_button_keeps_its_glyph(self):
         # copy() that rewrites the whole button drops its icon: the .pc-t label takes 'Copied' when the button
@@ -1438,7 +1442,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("const label = b.querySelector('.pc-t') || b;", body)
         self.assertIn("const was = b.dataset.was || label.textContent;", body)
         self.assertIn("label.textContent = done ? 'Copied' : 'Select it and copy';", body)
-        self.assertIn("setTimeout(() => { label.textContent = was; }, 1600);", body)
+        self.assertIn("setTimeout(() => { label.textContent = was; b.classList.remove('shown'); }, 1600);", body)
 
     def test_the_answer_copy_is_the_peek_copy_revealed_with_its_message(self):
         # A Copy styled apart from the patch preview's, one a touch screen or an unhovered pointer cannot use,
@@ -1511,8 +1515,14 @@ class DashboardTest(unittest.TestCase):
              "provider": "claude", "model": "claude-sonnet-5-5"},
             {"id": "finished-job-r1", "state": "done", "ask": asks[1], "answer": "",
              "provider": "", "model": ""}]
+        view["open"]["answer"] = "All tidied."
         page = pane(dashboard.render(view, NOW, token=TOKEN))
         thread = re.search(r'<section class="s-j-thread".*?</section>', page, re.S).group(0)
+        # the page's y key presses the latest answer's Copy alone: an earlier turn's answer offers Copy too, but
+        # none of the thread's copies may carry the key
+        self.assertIn('data-copy="ans-', thread)
+        self.assertNotIn('data-k="', thread)
+        self.assertEqual(page.count('data-k="y"'), 1)
         turns = re.findall(r'<div class="ask-turn">(.*?)</div></div>', thread, re.S)
         self.assertEqual(len(turns), len(asks))
         self.assertEqual(page.count('aria-label="Copy the brief"'), len(asks) + 1)  # plus this run's own brief
@@ -1532,6 +1542,7 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn('aria-label="Copy the brief"', still)
         self.assertNotIn('class="ask-turn"', still)
         self.assertNotIn('id="ask-', still)
+        self.assertNotIn('data-k="y"', still)
 
     def test_the_brief_copy_is_revealed_with_its_own_bubble(self):
         # A brief Copy restyled apart from the answer's, hidden where a hover-less pointer or an unfocused tab
@@ -1547,6 +1558,63 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("\n  .msg-acts { position: absolute", media)
         # and a brief's row takes no height there either, so the brief sits as close to what follows as before
         self.assertIn(".msg-acts.me { height: 0; margin: 0 -10px 0 0;", media)
+
+    def test_the_latest_answers_copy_alone_carries_the_y_key(self):
+        # The 'y' key copies the latest answer: its Copy alone carries data-k/aria-keyshortcuts — an earlier turn's
+        # Copy, the brief's, or a second y control, and pressing y finds nothing or the wrong text, must fail.
+        view = live_view()
+        view["recent"] += [{"id": "finished-job-r1", "state": "done", "paused": False,
+                            "detail": "accepted output", "external_id": None}]
+        view = opened(view, "finished-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", answer="chat",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"])
+        view["open"]["thread"] = [{"id": "finished-job-r1", "state": "done", "ask": "Tidy the README.",
+                                   "answer": "Tidied it.", "provider": "claude", "model": "claude-sonnet-5-5"}]
+        view["open"]["answer"] = "Fixed the **typo**."
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        self.assertEqual(page.count('data-k="y"'), 1)
+        self.assertEqual(page.count('aria-keyshortcuts="y"'), 1)
+        latest = re.search(r'<section class="msg ai" data-region="j-answer".*?</section>', page, re.S).group(0)
+        self.assertIn('class="msg-copy" data-copy="ans-', latest)
+        self.assertIn('data-k="y"', latest)
+        self.assertIn('aria-keyshortcuts="y"', latest)
+        for region in ("j-thread", "j-brief"):
+            block = re.search(rf'<section class="[^"]*" data-region="{region}".*?</section>', page, re.S).group(0)
+            self.assertIn('class="msg-copy"', block)  # each still offers its own Copy
+            self.assertNotIn('data-k="', block)
+            self.assertNotIn("aria-keyshortcuts", block)
+        # the sheet lists it, and the palette offers it on this page because a [data-k="y"] control exists
+        self.assertIn("<dt><kbd>y</kbd></dt><dd>Copy the answer</dd>", page)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        self.assertIn('data-press="y"', pal)
+        self.assertIn("Copy the answer", pal)
+        # a job page with no answer has no [data-k="y"] control, so the palette never offers the press
+        pal = re.search(r'<dialog class="pal".*?</dialog>',
+                        pane(dashboard.render(opened(live_view(), "finished-job", kind="local-shell"),
+                                              NOW, token=TOKEN)), re.S).group(0)
+        self.assertNotIn('data-press="y"', pal)
+
+    def test_y_copies_the_answer_from_the_keyboard(self):
+        # 'y' missing from the single-key regex, a press that only focuses the Copy (activate() never clicks, so
+        # copy() would not run), copy() not holding the button visible while it says Copied, no .msg-copy.shown
+        # rule beating the hover-hidden one, or _KEYS/_PRESS missing what the sheet and palette list, must fail.
+        single = re.search(r"/\^\[([a-z]+)\]\$/\.test\(e\.key\)", dashboard.SCRIPT)
+        self.assertIsNotNone(single)
+        self.assertIn("y", single.group(1))
+        branch = dashboard.SCRIPT.split("act(e.key)) {", 1)[1].split("else return;", 1)[0]
+        self.assertIn("c.hasAttribute('data-copy')", branch)
+        self.assertIn("c.click()", branch)
+        copy_body = dashboard.SCRIPT[dashboard.SCRIPT.index("async function copy(b) {"):
+                                 dashboard.SCRIPT.index("async function copyUrl")]
+        self.assertIn("b.classList.add('shown')", copy_body)
+        self.assertIn("setTimeout(() => { label.textContent = was; b.classList.remove('shown'); }, 1600);",
+                      copy_body)
+        hover = dashboard.STYLE.split("@media (hover: hover) {\n  .msg-copy { opacity: 0; }", 1)[1]
+        self.assertIn(".msg-copy.shown { opacity: 1; }", hover.split("\n}", 1)[0])
+        self.assertIn(("y", "Copy the answer"), dashboard._KEYS)
+        self.assertIn(("y", "Copy the answer", "its Markdown, as written"), dashboard._PRESS)
+        keys = [k for k, _ in dashboard._KEYS]
+        self.assertEqual(keys[keys.index("l") + 1], "y")
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without

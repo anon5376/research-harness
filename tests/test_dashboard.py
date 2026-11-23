@@ -2345,6 +2345,16 @@ console.log(JSON.stringify([
         self.assertIn("border: 1px solid rgb(255 99 99 / .12)", rule)
         self.assertIn("background: #1d1116", rule)
 
+    def test_every_page_header_title_wears_one_style(self):
+        # 'Inbox' was 15px bold and a job's title 13px medium in the same header bar, so moving between pages felt
+        # like two apps (critic r13 F7): one style, 14px 600 #e8e9ec.
+        top = dashboard.STYLE.split("\n.top h1 {", 1)[1].split("}", 1)[0]
+        job = dashboard.STYLE.split("\n.detail .jd-head h1 {", 1)[1].split("}", 1)[0]
+        for spec in ("font-size: 14px", "font-weight: 600", "color: #e8e9ec"):
+            self.assertIn(spec, top)
+        self.assertIn("font: 600 14px/20px var(--ui)", job)
+        self.assertIn("color: #e8e9ec", job)
+
     def test_the_reply_box_says_reply_once(self):
         # 'Reply, or send empty to run again' beside a 'Run again' pill said the empty send twice in one box (critic
         # r13 F4): the pill explains it, and the placeholder is a word.

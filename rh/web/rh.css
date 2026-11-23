@@ -257,7 +257,8 @@ a.ws-btn:hover { background: var(--raised); }
 @keyframes enter { from { opacity: 0; transform: translateY(4px); } }
 .top { min-height: 46px; flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 0 12px 0 24px;
   border-bottom: 1px solid var(--rule); min-width: 0; }
-.top h1 { font-size: 15px; font-weight: 600; line-height: 20px; white-space: nowrap; outline: none; }
+/* one header title style on every page: 14px 600 #e8e9ec (Inbox and a job's title alike) */
+.top h1 { font-size: 14px; font-weight: 600; line-height: 20px; color: #e8e9ec; white-space: nowrap; outline: none; }
 .top-meta { color: var(--faint); white-space: nowrap; }
 .top-r { margin-left: auto; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .fresh { color: var(--faint); margin-right: 6px; white-space: nowrap; }
@@ -787,7 +788,7 @@ body[data-background="off"] { --art: none; }
 .detail .jd-head .tank-c { display: none; }
 .detail .jd-head-in { display: flex; align-items: center; min-height: 56px; padding: 0 136px 0 24px; }
 .detail .jd-head h1 { order: -1; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font: 500 13px/20px var(--ui); letter-spacing: 0; }
+  font: 600 14px/20px var(--ui); letter-spacing: 0; color: #e8e9ec; }
 .job-worker { flex: none; color: var(--faint); font-size: 12px; }
 .jd-scroll { flex: 1; min-height: 0; overflow: auto; }
 .detail .jd-body { width: 100%; max-width: 768px; gap: 24px; margin: 0 auto; padding: 16px 24px 24px; font-size: 13px; }

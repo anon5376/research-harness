@@ -161,8 +161,9 @@ def _judge(work, runs, brief):
             "final answer (answer.md) and its changes (changes.patch, a git diff) are in this folder:\n\n"
             + "\n".join(shown) + "\n\nRead them all. Choose the best work, or combine the best parts of several, "
             "and make this copy hold that result (git apply a patch, then edit as needed); check it the way the "
-            "request needs. Do not edit .swarm, which is removed afterwards. Answer with which run you chose and "
-            "why in two or three sentences, then what the change does.\n\nThe request:\n\n" + brief)
+            "request needs. Do not edit .swarm, which is removed afterwards. Start your answer with a one-line "
+            "title of the change itself (what it does, not which run you chose), then say which run you chose and "
+            "why in two or three sentences.\n\nThe request:\n\n" + brief)
 
 
 def main(argv):

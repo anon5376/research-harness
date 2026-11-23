@@ -182,6 +182,7 @@ class SwarmJudgeTest(unittest.TestCase):
             for seen in ("fix.w1/answer.md", "fix.w1/changes.patch", "fix.w2/answer.md", "fix.w2/changes.patch"):
                 self.assertIn("SEEN .swarm/" + seen, said)
             self.assertNotIn("--swarm", said)
+            self.assertIn("one-line title of the change itself", said)  # the swarm is listed by that line
             patch = (out / "changes.patch").read_text(encoding="utf-8")
             self.assertIn("+two", patch)
             self.assertNotIn("deux", patch)

@@ -1132,10 +1132,11 @@ function drawField() {
 function drawPreviews() {
   const bg = window.RHBackground;
   if (!bg) return;
-  // A scene drawn at thumbnail size is a handful of dots; draw it at window size and shrink it instead.
+  // A scene drawn at thumbnail size is a handful of dots, and one drawn at window size shrinks to a grey haze; at
+  // twice the thumbnail each dot keeps about a pixel, so the scene's shape reads.
   const big = document.createElement('canvas');
   for (const c of $$('canvas.background-preview')) {
-    bg.render(big, {preset: c.dataset.preview, tint: document.body.dataset.tint, width: 1440, height: 900, dpr: 1});
+    bg.render(big, {preset: c.dataset.preview, tint: document.body.dataset.tint, width: 528, height: 320, dpr: 1});
     c.width = 264; c.height = 160;
     const g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';

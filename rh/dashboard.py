@@ -2336,12 +2336,15 @@ def _inbox_pane(view, ctx, feedback):
         if counts.get(tab):
             tabs.append(f'<button type="button" role="tab" aria-selected="false" data-kind="{tab}">{word} '
                         f'<span class="num">{counts[tab]}</span></button>')
-    tabbar = (f'<div class="tabs" role="tablist" aria-label="Filter">{"".join(tabs)}</div>' if ctx["live"] else "")
+    # Tabs filter only a mix of kinds; then the All tab is the list's count, so the heading carries none.
+    tabbed = ctx["live"] and len(tabs) > 2
+    tabbar = f'<div class="tabs" role="tablist" aria-label="Filter">{"".join(tabs)}</div>' if tabbed else ""
     top = _top('<h1 tabindex="-1">Inbox</h1>'
                     f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>{_SEP_HTML}'
                     f'<span class="num">{len(settled)}</span> settled today</span>')
     lists = (_section("ib-wait", "Needs you", _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
-                      f'<span class="n num">{len(waiting)}</span><span class="ib-gh-r mono">newest first</span>{tabbar}')
+                      ("" if tabbed else f'<span class="n num">{len(waiting)}</span>')
+                      + f'<span class="ib-gh-r mono">newest first</span>{tabbar}')
              + _section("ib-settled", "Settled today", _rows(done), f'<span class="n num">{len(settled)}</span>',
                         hidden=not done))
     ctx["back"] = "/inbox"

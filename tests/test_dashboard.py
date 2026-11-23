@@ -226,6 +226,17 @@ class ListsTest(unittest.TestCase):
             head = re.search(r'data-region="j-head".*?</section>', dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
             self.assertIn(f'<h1 tabindex="-1" data-clear title="Same brief">{jid}</h1>', head)
 
+    def test_the_inbox_counts_what_waits_once_in_its_list(self):
+        # Mixed kinds get filter tabs, and the All tab is the list's count; one kind needs no tabs, so the heading
+        # keeps the count. A count shown both beside the heading and on the All tab, or a lone tab, must fail.
+        head = lambda v: re.search(r'<section class="s-ib-wait".*?<div class="body"', inbox(v), re.S).group(0)
+        mixed = head(live_view())
+        self.assertIn('role="tablist"', mixed)
+        self.assertNotIn('<span class="n num">', mixed)
+        one = {**live_view(), "inbox": live_view()["inbox"][:1], "live": [], "not_started": [], "recent": [], "stops": []}
+        self.assertNotIn('role="tablist"', head(one))
+        self.assertIn('<span class="n num">1</span>', head(one))
+
     def test_the_inbox_opens_on_the_newest_job_that_waits_when_nothing_asks(self):
         page = inbox({**live_view(), "inbox": []})
         self.assertNotIn("No questions to answer.", page)

@@ -1427,7 +1427,7 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
      a brief needs none on touch (a long press selects and copies its text) */
   .msg.ai { position: relative; }
   .msg.ai > .who { padding-right: 32px; }
-  .msg.ai .msg-acts { position: absolute; top: -4px; right: -7px; margin: 0; }
+  .msg.ai .msg-acts { position: absolute; top: -1px; right: -7px; margin: 0; }
   .msg-acts.me { display: none; }
   .msg-copy { position: relative; width: 28px; padding: 0; justify-content: center; }
   .msg-copy .pc-t { display: none; }
@@ -1637,6 +1637,7 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] .ic.again {
   display: block; order: -1; width: 12px; height: 12px; }
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]::before { content: "Run again"; }
+.composer[data-label="Judge again"]:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]::before { content: "Judge again"; }
 /* How far a run has got is the page's headline while it runs. */
 .jd[data-state="running"] .job-result-status { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .run-progress { height: 4px; border-radius: 2px; }
@@ -2009,7 +2010,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
   .sw-w, .sw-w + .sep { display: none; }
   .sw-c:not(.bad) { display: none; }
   /* a run with a diff size shows that instead of its time, so the model's name keeps its whole width */
-  .sw-run .sw-s:has(> .sw-d) { font-size: 0; }
+  .sw-run .sw-s:has(> .sw-d) { display: flex; align-items: center; font-size: 0; }
   .sw-run .sw-s > :is(.sw-d, .sw-c) { font-size: 12px; }
   .sw-run .sw-s > .sw-d { margin-left: 0; }
   .sw-k { grid-column: 5; grid-row: 1; }
@@ -2115,7 +2116,7 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
 .q-head .q-title.user-message:has(+ .ask-more) { padding: 0; border-bottom: 0; }
 /* Folded, its third line fades out at the end rather than taking the clamp's "…" (which after a full stop reads "....") */
 .q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;
-  -webkit-line-clamp: unset; max-height: 2lh; overflow: hidden;
+  -webkit-line-clamp: unset; max-height: 2lh; overflow: hidden; white-space: normal;
   -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
   mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
   -webkit-mask-size: 100% calc(100% - 1lh), 100% 1lh; mask-size: 100% calc(100% - 1lh), 100% 1lh;

@@ -425,9 +425,17 @@ class ListsTest(unittest.TestCase):
         self.assertIn("1 min 0 s<span class=\"sw-d\"", rows["w1"])  # right after the time, no separator
         self.assertLess(rows["w1"].index('class="sw-d"'), rows["w1"].index('class="sw-c"'))  # before the chip
         self.assertNotIn("sw-d", rows["w2"])
+        # r18 F2: 'Run again' beside 'SWE-2 Max' read as 'run SWE-2 Max alone', while it re-runs only the judge on
+        # the runs' work. A judge's dock says what it does: 'Judge again', and a typed follow-up still says Send
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn('aria-label="Judge again" title="Judge again" data-followup>', page)
+        self.assertNotIn('aria-label="Run again"', page)
+        self.assertIn('.composer[data-label="Judge again"]:has(.c-text:placeholder-shown) .compose-tools '
+                      '.send[data-followup]::before { content: "Judge again"; }', dashboard.STYLE)
+        self.assertIn("t.value.trim() ? 'Send follow-up' : (form.dataset.label || 'Run again')", dashboard.SCRIPT)
         # on a phone a row with a diff size drops its time instead, so the model keeps its name (critic r17 F4)
         phone = dashboard.STYLE.split("/* phone swarm rows */", 1)[1].split("\n}", 1)[0]
-        self.assertIn(".sw-run .sw-s:has(> .sw-d) { font-size: 0; }", phone)
+        self.assertIn(".sw-run .sw-s:has(> .sw-d) { display: flex; align-items: center; font-size: 0; }", phone)
         # the counts wear the diff preview's colours, not a second palette
         self.assertIn(".sw-d { display: inline-flex; gap: 6px; margin-left: 10px;", dashboard.STYLE)
         for line in (":is(.peek-sum, .peek .dl.file, .sw-d) .n.add { color: #7ee2a0; }",
@@ -567,7 +575,8 @@ class ListsTest(unittest.TestCase):
         # r16 F3: the sidebar draws a failure as an outlined ring; the Inbox, palette and banner keep the disc
         self.assertIn("fill: none", rule('.side svg.st[data-s="failed"] circle'))
         # r16 F2: a swarm's kept run says the header's words too
-        self.assertIn(".sw-run.kept .sw-a", dashboard.SCRIPT.split("function echoTitle()", 1)[1].split("\n}", 1)[0])
+        # r18 F3 reverses that: a kept run's grey answer cell is no heading, so the swarm page keeps its title
+        self.assertNotIn(".sw-run.kept .sw-a", dashboard.SCRIPT.split("function echoTitle()", 1)[1].split("\n}", 1)[0])
         # r16 F6, F7: touch shows Copy as its glyph; a phone palette fades its last row over 48px
         self.assertIn(".msg-copy .pc-t { display: none; }", dashboard.STYLE.split("@media (hover: none) {\n  .msg-acts", 1)[1])
         self.assertIn("linear-gradient(#000 calc(100% - 48px), transparent)", dashboard.STYLE)
@@ -892,6 +901,9 @@ class ListsTest(unittest.TestCase):
         fold = dashboard.STYLE.split(".q-head .q-title.user-message:has(+ .ask-more):not(.whole) {", 1)[1].split("}", 1)[0]
         for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 2lh", "overflow: hidden", "mask-image:"):
             self.assertIn(spec, fold)
+        # folded, its paragraphs run on, so a brief and its follow-up fill both lines instead of a line and a blank
+        # (critic r18 F4: 'Show all' under one visible line read as a control with nothing to show)
+        self.assertIn("white-space: normal", fold)
         # r15 F1: the pane opens on what the job is, not its run id: the brief comes first, and the id closes a
         # quiet 12px meta line under it ('This Mac · since … · broke-job'), as the Inbox rows end on it
         self.assertLess(detail.index('id="q-h"'), detail.index('class="q-who q-sub"'))
@@ -1727,7 +1739,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("@media (max-width: 600px) { .toasts { left: 16px; right: 16px; width: auto;", dashboard.STYLE)
         self.assertIn("setTimeout(() => drop(t), 4000)", dashboard.SCRIPT)
         touch = dashboard.STYLE.split("@media (hover: none) {\n  .msg-acts", 1)[1].split("\n}", 1)[0]
-        self.assertIn(".msg.ai .msg-acts { position: absolute; top: -4px; right: -7px; margin: 0; }", touch)
+        self.assertIn(".msg.ai .msg-acts { position: absolute; top: -1px; right: -7px; margin: 0; }", touch)
         self.assertIn(".msg-acts.me { display: none; }", touch)
         # r17 F5-F7: the Inbox Show all ends on the content edge; an open patch says Hide and its Show all sits
         # right; an open Options is a pressed rounded square, not the send disc's shape
@@ -2624,7 +2636,9 @@ console.log(JSON.stringify([
         self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last", "j-output"])
         card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
         self.assertIn("Last output", card)
-        self.assertIn("last 12 lines", card)
+        # r18 F8: the title says 'last'; the count says how much of the whole it shows
+        self.assertIn("12 of 30 lines", card)
+        self.assertNotIn("last 12", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
         self.assertIn('<span class="worked-output">All output</span>', body)
@@ -2666,7 +2680,7 @@ console.log(JSON.stringify([
         self.assertEqual(order, ["j-error", "j-output"])
         self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
-        self.assertIn("last 12 lines", error)  # the exit code leads the page, not this card
+        self.assertIn("12 of 30 lines", error)  # the exit code leads the page, not this card
         self.assertNotIn("exit 2", error)
         self.assertIn("line 30", error)
         self.assertNotIn("line 18\n", error)  # only where it stopped: the last lines

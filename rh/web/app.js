@@ -1093,7 +1093,7 @@ document.addEventListener('input', e => {
   if (!form) return;
   if (t.matches('textarea[name="changed"]')) {
     const send = $('[data-followup]', form);
-    const label = t.value.trim() ? 'Send follow-up' : 'Run again';
+    const label = t.value.trim() ? 'Send follow-up' : (form.dataset.label || 'Run again');
     send.setAttribute('aria-label', label);
     send.title = label;
   }
@@ -2020,7 +2020,7 @@ function echoTitle() {
   const norm = s => s.replace(/\s+/g, ' ').trim().replace(/[.…]+$/, '').toLowerCase();
   const said = norm(h.textContent);
   const twin = said && scroller && 'IntersectionObserver' in window
-    ? $$('.assistant-message > :first-child, .user-message, .sw-run.kept .sw-a', scroller).find(el => norm(el.textContent).startsWith(said))
+    ? $$('.assistant-message > :first-child, .user-message', scroller).find(el => norm(el.textContent).startsWith(said))
     : null;
   head.classList.toggle('echo', !!twin);
   if (!twin) return;

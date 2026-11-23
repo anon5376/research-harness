@@ -2471,7 +2471,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         # the failed check and its exit code lead the page; the card adds only what the run printed last
         name, region = ("Where it stopped", "j-error") if failed else ("Last output", "j-last")
         body = (f'<div class="head"><h2>{name}</h2><span class="lines mono">'
-                f'{"last " if len(lines) > len(tail) else ""}{len(tail)} {"line" if len(tail) == 1 else "lines"}</span></div>'
+                f'{len(tail)}{f" of {len(lines)}" if len(lines) > len(tail) else ""} '
+                f'{"line" if len(tail) == 1 and len(lines) == 1 else "lines"}</span></div>'
                 f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # output that fits whole in the card above has nothing more to unfold
@@ -2492,6 +2493,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'
         work.append(_region("j-output", worked_body, "details", "worked",
                             ' aria-label="Worked and output"' + ("" if finished else " open")))
+    again_word = "Judge again" if runs else "Run again"
     if finished and ctx["live"]:
         again = state != "done" or spec.get("kind") != "codex-cloud"
         message = ('<label class="sr" for="changed">What should change?</label>'
@@ -2501,7 +2503,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         # An agent's next run may use another model or effort: the reply box has the composer's pickers.
         picker = (_model_picker(view.get("job_policy") or {}, "local-agent", {"model": agent[1], "effort": agent[2]},
                                 only=True) if agent else "")
-        reply = _composer_form(ctx, "/again", "Run again", message, job=jid, files=True, worker=picker,
+        # a swarm judge's next run judges the same runs' work again, on the model picked here: it says so
+        reply = _composer_form(ctx, "/again", again_word, message, job=jid, files=True, worker=picker,
                                controls=_worker_note(_platform(kind)), followup=True,
                                primary=lead and again and state != "done")
     else:
@@ -2513,7 +2516,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     else:
         dock_content = reply
         dock_region = "j-reply"
-        dock_label = "Run again"
+        dock_label = again_word
     scroll = f'<div class="jd-scroll"><div class="jd-body">{"".join(work)}</div></div>'
     dock = (_region(dock_region, dock_content, "section", "jd-compose session-dock", f' aria-label="{dock_label}"')
             if dock_content else "")
@@ -2598,7 +2601,7 @@ def _ib_job(ctx, entry, view):
     bad = job.state in _FAILED
     tail = str((view.get("tails") or {}).get(job.id) or "")
     n = len(tail.splitlines())
-    stopped = (f'<section class="out"><div class="head"><h2>Where it stopped</h2><span class="lines mono">last {n} '
+    stopped = (f'<section class="out"><div class="head"><h2>Where it stopped</h2><span class="lines mono">{n} '
                f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">'
                f'{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
                if tail else "")

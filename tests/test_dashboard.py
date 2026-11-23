@@ -2420,6 +2420,11 @@ console.log(JSON.stringify([
         self.assertIn('placeholder="Reply…"', page)
         self.assertNotIn("send empty to run again", page)
 
+    def test_an_inbox_rows_title_stands_apart_by_weight(self):
+        # Title, reason and id step 14/13/12px but all at weight 400, so on a phone the reason read as a third line of
+        # the title (critic r14 F3): the title is weight 500.
+        self.assertIn("font-weight: 500", dashboard.STYLE.split("\n.ib-t {", 1)[1].split("}", 1)[0])
+
     def test_a_popovers_confirm_sits_under_its_trigger(self):
         # The Cancel confirm sat at the popover's bottom-left, 190px from the header button that opened it; a Mac app
         # puts the confirming action bottom-right (critic r14 F6).

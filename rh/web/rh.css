@@ -2119,7 +2119,20 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .swarm-pop > .swarm-models { display: block; }
 .swarm-pop > .swarm-opts { display: block; margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .swarm-pick > summary { transition: none; } }
-@media (max-width: 600px) { .swarm-pick { display: none; } }
+/* On a phone the models line is a glyph-only ghost button beside the chip — its words stay hidden, the chevron
+   stays — with a 44px touch area drawn past its edges; the popover is a sheet above the composer, which sits at
+   the foot of the screen, as wide as the screen allows and capped at 60vh with its own scroll. */
+@media (max-width: 600px) {
+  /* phone swarm models */
+  .swarm-pick > summary { position: relative; width: 28px; margin-left: 0; padding: 0; justify-content: center; }
+  .swarm-pick > summary::after { content: ""; position: absolute; inset: -8px; }
+  /* the sheet hangs from the composer itself (positioned, and as wide as the screen less its 16px gutters), never
+     from the viewport, so it opens just above the composer whatever its glass does */
+  .swarm-pick { position: static; }
+  .swarm-pop { position: absolute; top: auto; bottom: calc(100% + 8px); left: 0; right: 0; width: auto;
+    max-height: 60vh; overflow-y: auto; }
+  .swarm-pop .swarm-m { min-height: 44px; }
+}
 /* An Inbox with nothing in it is one calm note in the middle of the pane, not an empty list beside a second note. */
 .ibx[data-view="empty"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .ibx[data-view="empty"] > .ib-detail { display: grid; place-content: start center; padding: 22vh 24px 0; text-align: center; }

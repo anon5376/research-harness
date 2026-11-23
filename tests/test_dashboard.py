@@ -744,6 +744,53 @@ class ListsTest(unittest.TestCase):
         for spec in ("inset: -3px", 'content: ""'):
             self.assertIn(spec, rule(".swarm-off::after"))
 
+    def test_the_swarm_models_button_works_on_a_phone(self):
+        # On a phone the models line was display:none, so a swarm's ticks and judge could only be changed in
+        # Settings. The line is a glyph-only ghost button beside the chip — its words stay hidden, the chevron
+        # and its 'Swarm models' name stay — with a 44px touch area drawn past its edges, and the popover is a
+        # sheet above the composer, which sits at the foot of the screen, with 44px rows.
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "check": "pytest -q",
+                 "choices": ["swe-2-max", "swe-2-flash-high", "claude-opus-5-5"]}
+        page = dashboard.render({**live_view(), "swarm": swarm}, NOW, token=TOKEN)
+        pick = re.search(r'<details class="swarm-pick">.*?</details>', page, re.S).group(0)
+        self.assertIn('<summary aria-label="Swarm models"', pick)
+        self.assertIn('class="swarm-says"', pick)
+        # the pick shows again on a phone: no display:none for it at phone width
+        self.assertNotIn(".swarm-pick { display: none", dashboard.STYLE)
+        phone = dashboard.STYLE.split("/* phone swarm models */", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("display: none", phone)
+        self.assertIn('@media (max-width: 600px) { .swarm-says { display: none; } }', dashboard.STYLE)
+        # its summary is a 28px square ghost button, its 44px touch area drawn past its edges like .swarm-off's
+        summary = phone.split(".swarm-pick > summary {", 1)[1].split("}", 1)[0]
+        for spec in ("position: relative", "width: 28px", "margin-left: 0", "padding: 0",
+                     "justify-content: center"):
+            self.assertIn(spec, summary)
+        hit = phone.split(".swarm-pick > summary::after {", 1)[1].split("}", 1)[0]
+        for spec in ('content: ""', "position: absolute", "inset: -8px"):
+            self.assertIn(spec, hit)
+        # the popover is a fixed sheet above the foot-sitting composer, across the width, scrolling past 60vh
+        pop = phone.split(".swarm-pop {", 1)[1].split("}", 1)[0]
+        # positioned against the composer, not the viewport: a fixed sheet with bottom: calc(100% + 8px) opened
+        # off the top of the screen wherever the composer's glass did not make it the containing block
+        for spec in ("position: absolute", "top: auto", "bottom: calc(100% + 8px)", "left: 0", "right: 0",
+                     "width: auto", "max-height: 60vh", "overflow-y: auto"):
+            self.assertIn(spec, pop)
+        self.assertIn(".swarm-pick { position: static; }", phone)
+        self.assertNotIn("position: fixed", pop)
+        self.assertIn("min-height: 44px", phone.split(".swarm-pop .swarm-m {", 1)[1].split("}", 1)[0])
+        # the desktop keeps its own popover: absolute under the line, capped, with the wide text summary
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        desk = rule(".swarm-pop")
+        for spec in ("position: absolute", "top: calc(100% + 8px)", "left: -8px",
+                     "width: min(360px, calc(100vw - 32px))", "max-height: 50vh"):
+            self.assertIn(spec, desk)
+        self.assertNotIn("position: fixed", desk)
+        desk_sum = rule(".swarm-pick > summary")
+        for spec in ("height: 28px", "margin-left: -8px", "padding: 0 8px"):
+            self.assertIn(spec, desk_sum)
+        self.assertNotIn("width: 28px", desk_sum)
+        self.assertNotIn("position: relative", desk_sum)
+
     def test_an_unticked_swarm_box_is_visible(self):
         # An unticked model box drawn at 28% white (about 2.5:1 on the settings panel, under the 3:1 a control
         # needs) must fail.

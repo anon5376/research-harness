@@ -949,7 +949,7 @@ class DashboardTest(unittest.TestCase):
                 self.assertEqual(page.count(f'data-key="job:{jid}"'), 1)
                 self.assertEqual(group(page, jid), where)
         self.assertIn(ASK.capitalize(), item(page, "live-job"))
-        self.assertIn("Failed: The command exited with code 2", item(page, "broke-job"))
+        self.assertIn("Failed: the command exited with code 2", item(page, "broke-job"))
         self.assertNotIn("4242", item(page, "broke-job"))
         self.assertIn('href="/inbox/7?t=', item(page, "live-job"))  # its Answer opens the question in the Inbox
         detail = re.search(r'<section class="ib-detail".*?</section>', inbox(view, 7), re.S).group(0)
@@ -1610,8 +1610,8 @@ console.log(JSON.stringify([
         fail = re.search(r'<section class="s-j-fail".*?</section>', body, re.S).group(0)
         self.assertLess(body.index('class="s-j-fail"'), body.index('class="s-j-brief"'))
         words = lambda h: html.unescape(re.sub(r"<[^>]+>", " ", h)).split()  # noqa: E731
-        self.assertEqual(words(fail), ["The", "command", "failed:", "it", "exited", "with", "code", "2", "sh", "run.sh",
-                                       "exit", "2"])
+        # the sentence the Inbox uses too, then the command and its exit chip
+        self.assertEqual(words(fail), ["The", "command", "exited", "with", "code", "2", "sh", "run.sh", "exit", "2"])
         broke["open"]["receipt"]["checks"] = [{"cmd": "sh run.sh", "exit": 0}, {"cmd": "notes.md exists", "exit": 1}]
         fail = re.search(r'<section class="s-j-fail".*?</section>', dashboard.render(broke, NOW, token=TOKEN), re.S)
         self.assertEqual(words(fail.group(0))[:4], ["The", "done-when", "check", "failed:"])

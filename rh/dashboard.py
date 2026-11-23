@@ -779,6 +779,10 @@ class _Job:
             parts.append("Paused")
         if self.failure or self.held:
             word = f"{self.word} {runs} times" if runs > 1 else self.word
+            # a sentence after a colon runs on in lower case ("Failed: the command exited with code 1"); an
+            # acronym or a name in capitals keeps them
+            if detail[:1].isupper() and detail[1:2].islower():
+                detail = detail[0].lower() + detail[1:]
             return parts + [f"{word}: {detail}" if detail else word]
         if self.setup:
             return parts + ["Waits for Codex cloud to be set up"]
@@ -1940,7 +1944,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         said_fail = ""
         if bad:
             what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"
-            said_fail = (f'<p class="fail-k">{_ring(state)}{what} failed: {_text(_found(bad[0], bad[1]))}</p>'
+            found = _found(bad[0], bad[1])
+            # an exit code says itself: "The command exited with code 1", the sentence the Inbox uses too
+            sentence = (f"{what} exited with code {bad[1]}"
+                        if what == "The command" and found == f"it exited with code {bad[1]}"
+                        else f"{what} failed: {found}")
+            said_fail = (f'<p class="fail-k">{_ring(state)}{_text(sentence)}</p>'
                          f'<p class="fail-c"><code>{_text(bad[0])}</code><span class="exit mono">exit '
                          f'{_text(bad[1])}</span></p>')
         work.append(_region("j-fail", said_fail + others, "section", "s-j-fail", ' aria-label="What failed"'))

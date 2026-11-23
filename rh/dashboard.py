@@ -679,6 +679,12 @@ def _progress(log):
 _STATUS_LEAD = re.compile(r"^(?:(?:done|finished|ok|okay|complete|completed|all done)(?:[.!]|\s*[—–:])?(?:\s+|$))+",
                           re.I)
 _LINE_NO = re.compile(r"(\.[A-Za-z0-9]{1,6})(?::\d+(?:[-–]\d+)?)+\b")  # rh/serve.py:12:5 -> rh/serve.py
+# A swarm's judge or run talking about its own review rather than the work: which run it chose, the applied diff or
+# patch, how the tests or the test run went. Such a line never names the swarm.
+_SELF_REMARK = re.compile(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The applied\b"
+                          r"|The (\w+ )?(diff|patch) is\b"
+                          r"|The (\w+ )?tests?( runs?)? (was|were|is|are|pass|passes|passed|fail|fails|failed"
+                          r"|asserts?|covers?)\b|(Both|Neither|All) runs?\b")
 
 
 def answer_head(text):
@@ -2869,13 +2875,11 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     # a judge that leads with the change's own title keeps it.
     for jid, m in list(meta.items()):
         runs = m.get("after") if isinstance(m, dict) and isinstance(m.get("after"), list) else []
-        # a judge on its own review: what it chose, or the applied diff, patch or tests
-        meta_line = re.match(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The applied\b"
-                             r"|The (\w+ )?(diff|patch) is\b|The (\w+ )?tests? (pass|passes|passed|asserts?|covers?)\b"
-                             r"|(Both|Neither|All) runs?\b", str(m.get("said") or "")) if runs else None
+        meta_line = _SELF_REMARK.match(str(m.get("said") or "")) if runs else None
         kept = str(m.get("kept") or "") if runs and (meta_line or not m.get("said")) else ""
         won = next((r for r in runs if isinstance(r, str) and kept in (r, r.rsplit(".", 1)[-1])), None) if kept else None
         said = str((meta.get(won) or {}).get("said") or "") if won and isinstance(meta.get(won), dict) else ""
+        said = "" if _SELF_REMARK.match(said) else said  # the kept run on its own process names nothing either
         if said or meta_line:  # with no one run to name it by (a combined judge), the brief names it, not the remark
             meta = {**meta, jid: {**m, "said": said}}
     # A swarm's runs are its judge's work: the swarm is one row, live while any of its runs works. A run keeps a row

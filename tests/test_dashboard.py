@@ -395,6 +395,13 @@ class ListsTest(unittest.TestCase):
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertNotIn("diff is clean", text(row))
         self.assertIn("Fix the typo", text(row))
+        # the kept run's own words are a remark on its process, not the work: the brief names it
+        done["meta"]["fix.best"].update(said="I chose run w1", kept="w1")
+        done["meta"]["fix.w1"]["said"] = "The test run was refused twice, so per the repo rules I'm not retrying"
+        row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        self.assertNotIn("refused", text(row))
+        self.assertIn("Fix the typo", text(row))
+        done["meta"]["fix.w1"]["said"] = "The label is renamed in the header"
         done["meta"]["fix.best"]["kept"] = "w1"
         done["meta"]["fix.best"]["said"] = "Renamed the Options label to Run"
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)

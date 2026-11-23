@@ -2211,6 +2211,12 @@ console.log(JSON.stringify([
         self.assertEqual(" ".join(words(fail)), "The done-when check failed: flaky.md is missing or empty")
         self.assertEqual(dashboard._found("[ -f 'out dir/a.txt' ]", 1), "out dir/a.txt is missing or not a file")
         self.assertEqual(dashboard._found("test -s flaky.md", 2), "it exited with code 2")
+        # Under the banner the status line said 'failed' again, a second red ring and word 150px below the first
+        # (critic r12 F1): with a banner it keeps only its facts, the checks and the time.
+        status = re.search(r'data-region="job-result".*?</p>', dashboard.render(broke, NOW, token=TOKEN), re.S).group(0)
+        self.assertNotIn("<svg", status)
+        self.assertNotIn("Failed", status)
+        self.assertRegex(text(status), r"checks")
         page = dashboard.render(done, NOW, token=TOKEN)
         self.assertNotIn('class="s-j-fail"', page)
         # In the Inbox a failed job wears the red ring it wears on Today.

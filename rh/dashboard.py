@@ -2311,6 +2311,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         spent = now - started_at if _number(started_at) else 0
         if spent > 30 and done_n < total:
             status_line.append(_text(_left(spent * (total - done_n) / done_n)))
+    if failed and bad and len(status_line) > 1:  # the banner above already says it failed, in red: say it once
+        result, status_line = result[1:], status_line[1:]
     # each part keeps the dot that leads it, so a wrapped line can hide its leading dot (see .sl in rh.css)
     status_line = [f'<span class="nowrap">{_SEP_HTML if i else ""}{part}</span>' for i, part in enumerate(status_line)]
     result.append(f'<span class="job-result-status sl">{"<wbr>".join(status_line)}</span>')

@@ -323,8 +323,10 @@ class ListsTest(unittest.TestCase):
         self.assertIn('data-key="job:fix.best"', live)  # the swarm is live while a run works
         card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
         self.assertIn("1 of 2 finished", text(card))
-        for word in ("SWE-2 Max", "SWE-2 Flash", "Done", "Running", "Renamed the label", "1 min"):
+        for word in ("SWE-2 Max", "SWE-2 Flash", "Running", "Renamed the label", "1 min"):
             self.assertIn(word, text(card))
+        # a done run's ring already says it: its row shows the time alone, with no "Done" said a second time
+        self.assertNotIn("Done", text(card))
         self.assertIn('href="/job/fix.w1?t=', card)
         self.assertIn("keeps the best work once every run has ended", text(page))
         self.assertNotIn("waiting for fix.w2", page)
@@ -361,8 +363,15 @@ class ListsTest(unittest.TestCase):
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("background: rgb(255 255 255 / .04)", rule("a.sw-run:hover"))
         self.assertIn("transition: background-color 120ms ease-out", rule("a.sw-run"))
-        # the state word sits in its own span, so a phone row can leave it to the ring
-        self.assertIn('<span class="sw-s"><span class="sw-w">Done</span>', card)
+        # the state word sits in its own span, so a phone row can leave it to the ring; a done run's ring already
+        # says 'done', so its column is the time (and verdict) alone, every other state keeps word and separator
+        rows = {m.group(1): m.group(0) for m in re.finditer(
+            r'<a class="sw-run[^"]*"[^>]*><span class="sw-id mono">(\w+)</span>.*?</a>', card, re.S)}
+        self.assertNotIn('class="sw-w"', rows["w1"])
+        self.assertNotIn('class="sep"', rows["w1"])
+        self.assertIn('<span class="sw-s">1 min 0 s <span class="sw-c">Check passed</span></span>', rows["w1"])
+        self.assertIn('<span class="sw-w">Running</span><span class="sep">·</span>', rows["w2"])
+        self.assertIn("color: #9aa0ad", rule(".sw-id"))
         # on a phone each run is one 44px line: no answer line, no state word, no 'Check passed' (critic r11 F2)
         phone = dashboard.STYLE.split("/* phone swarm rows */", 1)[1].split("\n}", 1)[0]
         for spec in ("min-height: 44px", ".sw-a { display: none; }", ".sw-w, .sw-w + .sep { display: none; }",
@@ -390,7 +399,7 @@ class ListsTest(unittest.TestCase):
         page = dashboard.render(done, NOW, token=TOKEN)
         card = text(re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0))
         self.assertNotIn("Waiting", card)
-        self.assertIn("Done", card)
+        self.assertNotIn("Done", card)  # a done run's ring says it; the row keeps only its time
         self.assertIn("Failed", card)
         self.assertIn("3 min", card)  # w1 ran from NOW-890 to NOW-700
         side = re.search(r'<aside class="side".*?</aside>', page, re.S).group(0)
@@ -421,6 +430,14 @@ class ListsTest(unittest.TestCase):
         done["meta"]["fix.best"]["said"] = "Renamed the Options label to Run"
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("Renamed the Options label to Run", text(row))
+        # a done run with no known time leaves its column empty, not a dangling separator
+        del done["meta"]["fix.w1"]["updated"]
+        card = re.search(r'data-region="j-swarm".*?</section>',
+                         dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        row = re.search(r'<a class="sw-run[^"]*"[^>]*><span class="sw-id mono">w1</span>.*?</a>', card, re.S).group(0)
+        self.assertNotIn('class="sw-w"', row)
+        self.assertNotIn('class="sep"', row)
+        self.assertEqual(re.search(r'<span class="sw-s">(.*?)</span>', row).group(1), "")
 
     def test_a_working_swarms_head_counts_off_its_finished_runs(self):
         # "2 runs" reads the same at half-done and all-done: while a run still works the head must count the

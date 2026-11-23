@@ -1893,7 +1893,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
    rule doubles it; a left rule means the failing line elsewhere), and the runs it passed over step back. */
 .sw-run { grid-template-columns: 22px 16px 112px 148px minmax(0, 1fr) auto; position: relative; }
 .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 22px 16px 112px 236px minmax(0, 1fr) auto; }
-.sw-id { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+.sw-id { color: #9aa0ad; font-size: 12px; font-variant-numeric: tabular-nums; }
 /* a passed-over run steps back, all but its id, which the judge's answer names it by */
 .sw-run.lost > :not(.sw-id) { opacity: .6; }
 .sw-k { padding: 1px 7px; border-radius: 5px; background: rgb(79 124 255 / .16); color: #a9bcff; font-size: 12px; }

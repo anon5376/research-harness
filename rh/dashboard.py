@@ -2160,7 +2160,8 @@ def _swarm_card(ctx, runs, checks=None, kept=None):
             ok = verdict == "passed"
             took = (took + " " if took else "") + (f'<span class="sw-c{"" if ok else " bad"}">'
                                                    f'{"Check passed" if ok else "Check failed"}</span>')
-        state = f'<span class="sw-w">{_text(word)}</span>'  # in its own span: a phone row leaves it to the ring
+        # in its own span: a phone row leaves it to the ring; a done run's ring already says 'done'
+        state = f'<span class="sw-w">{_text(word)}</span>' if st != "done" else ""
         inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="sw-m">{_text(model)}</span>'
                  f'<span class="sw-s">{_SEP_HTML.join(x for x in (state, took) if x)}</span>'
                  + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))

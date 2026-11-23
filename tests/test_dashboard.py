@@ -473,7 +473,8 @@ class ListsTest(unittest.TestCase):
         view["meta"]["fix.w2"]["state"] = "done"
         page = dashboard.render(opened(view, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN)
         head = re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>', page, re.S).group(1)
-        self.assertIn("2 runs", text(head))
+        # ended, it counts nothing the rows below already show (critic r14 F2)
+        self.assertNotIn("runs", text(head))
         self.assertNotIn("finished", text(head))
         self.assertNotIn("progressbar", head)
 
@@ -2418,6 +2419,11 @@ console.log(JSON.stringify([
         page = dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN)
         self.assertIn('placeholder="Reply…"', page)
         self.assertNotIn("send empty to run again", page)
+
+    def test_a_popovers_confirm_sits_under_its_trigger(self):
+        # The Cancel confirm sat at the popover's bottom-left, 190px from the header button that opened it; a Mac app
+        # puts the confirming action bottom-right (critic r14 F6).
+        self.assertIn("justify-self: end", dashboard.STYLE.split("\nform.pop .btn.danger.fill {", 1)[1].split("}", 1)[0])
 
     def test_a_popover_sits_above_the_page(self):
         # The Cancel confirm, with no shadow and a fill near the brief bubble's, read as two panels colliding (critic

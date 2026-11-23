@@ -2031,7 +2031,7 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
 @media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px; padding: 0 12px; } }
 .act > .pop .btn { border-radius: 999px; }
 /* A popover's destructive confirm is the header's outlined pill in the app's red, not a one-off salmon fill. */
-form.pop .btn.danger.fill { display: inline-flex; align-items: center; width: fit-content; height: 28px; padding: 0 12px;
+form.pop .btn.danger.fill { justify-self: end; display: inline-flex; align-items: center; width: fit-content; height: 28px; padding: 0 12px;
   color: var(--red); border-color: rgb(255 146 155 / .5); background: rgb(255 146 155 / .08); }
 form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-color: rgb(255 146 155 / .7); }
 /* A patch preview reads as a diff: added lines green, removed red, hunk heads in the accent, file headers quiet. */

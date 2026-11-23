@@ -229,6 +229,42 @@ class ListsTest(unittest.TestCase):
             head = re.search(r'data-region="j-head".*?</section>', dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
             self.assertIn(f'<h1 tabindex="-1" data-clear title="Same brief">{jid}</h1>', head)
 
+    def test_a_follow_up_keeps_the_name_its_thread_first_said(self):
+        # A follow-up's own answer ("Yes, the change is in this copy") must not rename the thread: the sidebar row
+        # and the page header wear the first run's said, and the later answer's line shows only inside the thread.
+        view = live_view()
+        view["recent"] += [{"id": "finished-job-r2", "state": "done", "paused": False,
+                            "detail": "accepted output", "external_id": None},
+                           {"id": "finished-job-r3", "state": "done", "paused": False,
+                            "detail": "accepted output", "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "finished-job": {"kind": "local-shell", "brief": "Improve it.", "said": "Fixed the typo"},
+                        "finished-job-r2": {"kind": "local-shell", "brief": "Improve it.", "prior": "finished-job",
+                                            "said": "Yes, the change is in this copy"},
+                        "finished-job-r3": {"kind": "local-shell", "brief": "Improve it.",
+                                            "prior": "finished-job-r2", "said": "Confirmed it once more"}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        for jid in ("finished-job", "finished-job-r2", "finished-job-r3"):
+            row = item(page, jid)
+            self.assertIn('<span class="name">Fixed the typo</span>', row)
+            self.assertNotIn("this copy", row)
+            self.assertNotIn("once more", row)
+        # and each run's page is headed as the sidebar names it
+        for jid, before in (("finished-job-r2", "finished-job"), ("finished-job-r3", "finished-job-r2")):
+            one = opened(view, jid, kind="local-shell")
+            one["open"]["job"]["spec"].update(brief="Improve it.", prior=before)
+            head = re.search(r'data-region="j-head".*?</section>',
+                             dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
+            self.assertIn('<h1 tabindex="-1" data-clear>Fixed the typo</h1>', head)
+        # the later answer's first line shows inside the thread, not in the name
+        one = opened(view, "finished-job-r2", kind="local-shell")
+        one["open"]["job"]["spec"].update(brief="Improve it.", prior="finished-job")
+        one["open"]["answer"] = "Yes, the change is in this copy\n\nIt sits in runs/finished-job-r2."
+        body = pane(dashboard.render(one, NOW, token=TOKEN))
+        self.assertIn("Yes, the change is in this copy", body)
+        head = re.search(r'data-region="j-head".*?</section>', body, re.S).group(0)
+        self.assertNotIn("this copy", head)
+
     def test_the_open_job_is_always_in_the_sidebar(self):
         # A job opened from its address after it fell off the recent list must still have a row to light, or the
         # page header names a job the sidebar does not.

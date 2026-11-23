@@ -582,6 +582,22 @@ def _title(meta, jid):
     return line or str(jid)
 
 
+def _chain(meta, jid, all_meta):
+    """A job's place in its run chain: (the chain's root id, the said that names it). A follow-up (meta "prior") is
+    named by the first run of its chain that left an answer's first line, walking back to the root — a later answer's
+    line shows inside the thread, it does not rename it. A chain where no run has a said gets ""; a job the meta does
+    not list or a "prior" loop ends the walk."""
+    said, root, seen = "", jid, {jid}
+    while isinstance(meta, dict):
+        said = str(meta.get("said") or "") or said
+        prior = str(meta.get("prior") or "")
+        if not prior or prior in seen or not isinstance(all_meta.get(prior), dict):
+            return root, said
+        seen.add(prior)
+        root, meta = prior, all_meta[prior]
+    return root, said
+
+
 def _size(n):
     if not _number(n):
         return ""
@@ -769,8 +785,10 @@ class _Job:
         times += [s["created"] for s in self.mine if _number(s.get("created"))]
         self.first = min(times, default=float("inf"))
         self.title = _title(self.meta, self.id)
+        self.root, self.said = _chain(self.meta, self.id, ctx["meta"])
         # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
-        self.label = (self.meta.get("said") if self.state == "done" else "") or self.title
+        # A follow-up wears the first said of its chain, so its own answer's first line never renames the thread.
+        self.label = (self.said if self.state == "done" else "") or self.title
         self.dup = False  # set once every job is known: another listed job has the same name
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
@@ -2676,10 +2694,11 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
                       and not str(s["scope"]).startswith("job:")]}
     jobs = [_Job(row, where, ctx) for row, where in rows]
     names = {}
-    for j in jobs:  # runs that share a name in the lists are told apart by their ids
-        names[j.label] = names.get(j.label, 0) + 1
+    for j in jobs:  # runs that share a name in the lists are told apart by their ids; the runs of one chain share
+        # its first said as one name, so chain-mates never mark each other
+        names.setdefault(j.label, set()).add(j.root if j.label == j.said else j.id)
     for j in jobs:
-        j.dup = names[j.label] > 1
+        j.dup = len(names[j.label]) > 1
     ctx["jobs"] = jobs
     loose_stops = [s for s in view.get("stops", []) if s.get("owner") == "app"
                    and not (str(s["scope"]).startswith("job:") and str(s["scope"])[4:] in known)]

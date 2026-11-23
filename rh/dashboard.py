@@ -2869,7 +2869,9 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     # a judge that leads with the change's own title keeps it.
     for jid, m in list(meta.items()):
         runs = m.get("after") if isinstance(m, dict) and isinstance(m.get("after"), list) else []
-        meta_line = re.match(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The (\w+ )?(diff|patch) is\b"
+        # a judge on its own review: what it chose, or the applied diff, patch or tests
+        meta_line = re.match(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The applied\b"
+                             r"|The (\w+ )?(diff|patch) is\b|The (\w+ )?tests? (pass|passes|passed|asserts?|covers?)\b"
                              r"|(Both|Neither|All) runs?\b", str(m.get("said") or "")) if runs else None
         kept = str(m.get("kept") or "") if runs and (meta_line or not m.get("said")) else ""
         won = next((r for r in runs if isinstance(r, str) and kept in (r, r.rsplit(".", 1)[-1])), None) if kept else None

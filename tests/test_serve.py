@@ -274,8 +274,8 @@ class ServeTest(unittest.TestCase):
         self.repo.rename(named)
         self.cfg["repo"]["path"] = str(named)
         page = self.request("/new")[2]
-        self.assertRegex(page, r'<span class="where-chip" title="Repository"><svg[^>]*>.*?</svg>harness-visual-test</span>')
-        self.assertRegex(page, r'<span class="where-chip" title="Branch"><svg[^>]*>.*?</svg>main</span>')
+        self.assertRegex(page, r'<span class="where-chip" title="Repository"><svg[^>]*>.*?</svg><span class="wc-t">harness-visual-test</span></span>')
+        self.assertRegex(page, r'<span class="where-chip" title="Branch"><svg[^>]*>.*?</svg><span class="wc-t">main</span></span>')
         self.assertNotIn('compose-trail', page)
         self.cfg["repo"]["path"] = str(self.base / "missing")
         page = self.request("/new")[2]

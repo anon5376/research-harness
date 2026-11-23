@@ -291,7 +291,7 @@ def _ring(state, hue=None, kind=""):
     shape, tone = _RINGS.get(state, ("empty", "faint"))
     tone = hue or tone
     word = _CHAT_WAIT[0] if kind == "gpt-chat" and state == "handoff" else _STATES.get(state, (state,))[0]
-    return (f'<svg class="st t-{tone}" viewBox="0 0 14 14" width="14" height="14" role="img" '
+    return (f'<svg class="st t-{tone}" data-s="{shape}" viewBox="0 0 14 14" width="14" height="14" role="img" '
             f'aria-label="{_text(word)}">{_SHAPES[shape]}</svg>')
 
 
@@ -467,7 +467,11 @@ def _markdown(text):
     def flush():
         nonlocal para, items, kind
         if para:
-            blocks.append(f"<p>{_md_inline(' '.join(para))}</p>")
+            joined = " ".join(para)
+            # an answer that opens with one bold line opens with its title
+            lead = not blocks and re.fullmatch(r"\*\*([^*]+)\*\*", joined)
+            blocks.append(f'<p class="md-title">{_md_inline(lead.group(1))}</p>' if lead
+                          else f"<p>{_md_inline(joined)}</p>")
         if items:
             blocks.append(f"<{kind}>" + "".join(f"<li>{_md_inline(i)}</li>" for i in items) + f"</{kind}>")
         para, items, kind = [], [], ""
@@ -527,6 +531,17 @@ def ask_of(spec):
         changed = str(spec.get("changed") or "")
         return "" if changed == "run again with no changes" or changed.startswith("added input ") else changed
     return str(spec.get("brief") or "").strip()
+
+
+def answer_head(text):
+    """An agent's answer as a list label: its first line without Markdown marks, up to a dash or colon that starts an
+    aside ("Fixed X — untested: …" names the run as "Fixed X"), at most 100 characters; "" when it has no words."""
+    line = next((x.strip() for x in str(text or "").splitlines() if x.strip()), "")
+    line = re.sub(r"^#+\s*|^[-*]\s+", "", line).replace("**", "").replace("`", "").replace("__", "")
+    line = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)[0].strip().rstrip(".")
+    if len(line) > 100:
+        line = line[:98].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+    return line
 
 
 def _title(meta, jid):
@@ -722,6 +737,8 @@ class _Job:
         times += [s["created"] for s in self.mine if _number(s.get("created"))]
         self.first = min(times, default=float("inf"))
         self.title = _title(self.meta, self.id)
+        # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
+        self.label = (self.meta.get("said") if self.state == "done" else "") or self.title
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
     def headline_parts(self, runs=1):
@@ -815,7 +832,7 @@ class _Job:
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
-        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{_text(self.title)}</span>'
+        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{_text(self.label)}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
@@ -1543,7 +1560,7 @@ def _composer(ctx, draft, ready, policy):
               'pattern="[a-z0-9][a-z0-9._\\-]{0,62}" '
               f'placeholder="fix-login-bug" value="{value("id")}">'))
     workspace = ctx["workspace"]
-    where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}{_text(workspace[key])}</span>'
+    where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}<span class="wc-t">{_text(workspace[key])}</span></span>'
                     for key, icon, title in (("repo", "folder", "Repository"), ("branch", "branch", "Branch"))
                     if workspace.get(key))
     form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker, options=fields, opened=opened,
@@ -2039,12 +2056,16 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         else:
             elapsed = "duration unavailable"
         output_status = (f'Output{_SEP_HTML}{_text(line_count)}' if log else "No output received yet")
-        work_summary = (f'<summary class="worked-summary"><span>Worked {elapsed}</span>'
+        # While it runs the status line above already keeps time, so the fold names only its output, and it starts
+        # open: watching the output is what the page is for until the job ends.
+        worked = "" if not finished else f'<span>Worked {elapsed}</span>{_SEP_HTML}'
+        work_summary = (f'<summary class="worked-summary">{worked}'
                         f'<span class="worked-output">{output_status}</span>{tag}</summary>')
-        output_body = (f'<pre class="log" tabindex="0">{_text(log)}</pre>' if log else
+        output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
                        '<p class="soft">The worker has not produced output yet.</p>')
         worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'
-        work.append(_region("j-output", worked_body, "details", "worked", ' aria-label="Worked and output"'))
+        work.append(_region("j-output", worked_body, "details", "worked",
+                            ' aria-label="Worked and output"' + ("" if finished else " open")))
     if finished and ctx["live"]:
         again = state != "done" or spec.get("kind") != "codex-cloud"
         message = ('<label class="sr" for="changed">What should change?</label>'
@@ -2101,7 +2122,7 @@ def _ib_row(ctx, entry, picked):
     href = (_url(ctx, f"/inbox/{entry['item']['id']}") if entry["item"] else _url(ctx, f"/job/{jid}") if job
             else _url(ctx, "/"))
     created = entry["created"]
-    age = _when(created, ctx["now"], f"age:{entry['key']}", short=True) if _number(created) else ""
+    age = _clock(created, ctx["now"]) if _number(created) else ""  # clock times, as the sidebar and Settled give
     head = job.title if job else entry["ask"]
     sub = (f'{job.headline_html(len(entry.get("runs", [])) or 1)}{_SEP_HTML}<span class="mono">{_text(jid)}</span>'
            if job and not entry["item"] else
@@ -2132,8 +2153,32 @@ def _settled_row(ctx, item, picked):
     return _row(f"settled:{item['id']}", link, "ib-li settled")
 
 
-def _ib_detail(ctx, entry, settled, view, missing):
+def _ib_job(ctx, entry):
+    """A job that waits on you with nothing to answer here, as the Inbox shows it when it leads the list: what it was,
+    what went wrong, and the way to its page, where it is retried or followed up."""
+    job, runs = entry["job"], len(entry.get("runs", [])) or 1
+    who = [f'<span class="mono">{_text(job.id)}</span>', f'<span>{_text(_platform(job.kind))}</span>']
+    if _number(entry.get("created")):
+        who.append(f'<span>since <span class="mono num">{_clock(entry["created"], ctx["now"])}</span></span>')
+    more = len(ctx["needs"]) - 1
+    rest = (f'<p class="soft q-more">{more} more {"needs" if more == 1 else "need"} you in the list.</p>'
+            if more > 0 else "")
+    open_it = (f'<a class="btn primary" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
+               else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
+    bad = job.state in _FAILED
+    said = (f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
+            f'<span>{job.headline_html(runs)}</span></p>')
+    body = (f'<div class="q-head"><div class="q-head-in"><p class="q-who" data-clear>{_SEP_HTML.join(who)}</p>'
+            f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2></div></div>'
+            f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>'
+            f'<div class="q-acts">{open_it}</div>{rest}</div>')
+    return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')
+
+
+def _ib_detail(ctx, entry, settled, view, missing, lead=None):
     """The item the Inbox shows: who asks and about what, over a patch of water, then the form that settles it."""
+    if lead is not None:
+        return _ib_job(ctx, lead)
     if missing is not None:
         body = (f'<div class="q-body"><h2 class="q-title" id="q-h">No inbox item {_text(missing)}</h2>'
                 '<p class="soft">It may have been settled long ago, or the address has a typo.</p></div>')
@@ -2235,7 +2280,10 @@ def _inbox_pane(view, ctx, feedback):
                 picked if picked and _number(picked.get("resolved")) else None)
             if settled_item is None:
                 missing = pick
-    rows = [_ib_row(ctx, e, entry is not None and e["key"] == entry["key"]) for e in waiting]
+    # With nothing to answer here, the Inbox opens on the newest job that waits on you, as an item would open.
+    lead = (next((e for e in waiting if e["job"] and not e["item"]), None)
+            if entry is None and settled_item is None and missing is None else None)
+    rows = [_ib_row(ctx, e, (entry or lead) is not None and e["key"] == (entry or lead)["key"]) for e in waiting]
     done = [_settled_row(ctx, i, settled_item is not None and i["id"] == settled_item["id"]) for i in settled]
     counts = {}
     for e in waiting:
@@ -2256,7 +2304,7 @@ def _inbox_pane(view, ctx, feedback):
              + _section("ib-settled", "Settled today", _rows(done), f'<span class="n num">{len(settled)}</span>',
                         hidden=not done))
     ctx["back"] = "/inbox"
-    detail = _ib_detail(ctx, entry, settled_item, view, missing)
+    detail = _ib_detail(ctx, entry, settled_item, view, missing, lead)
     page = (f'<div class="page ibx"><div class="ib-list" aria-label="Waiting on you">{lists}</div>{detail}</div>')
     return top + feedback + page
 
@@ -2267,7 +2315,7 @@ def _palette(jobs, ctx, keys):
     rows = ['<p class="p-sec">Jobs</p>'] if jobs else []
     for j in sorted(jobs, key=lambda j: order[j.group]):
         rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span><span class="p-t">{_text(j.title)}</span>'
+                    f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span><span class="p-t">{_text(j.label)}</span>'
                     f'<span class="p-s"><span class="mono">{_text(j.id)}</span><span>{_text(j.word.lower())}</span></span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]

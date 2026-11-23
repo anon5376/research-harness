@@ -702,7 +702,11 @@ function apply(doc, nav) {
     if (old.matches('.worked') && el.matches('.worked')) {
       $('summary', old).innerHTML = $('summary', el).innerHTML;
       const log = $('.log', old), freshLog = $('.log', el);
-      if (log && freshLog) log.textContent = freshLog.textContent;
+      if (log && freshLog) {
+        const pinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+        log.textContent = freshLog.textContent;
+        if (pinned) log.scrollTop = log.scrollHeight;
+      }
       else $('.worked-content', old).replaceWith($('.worked-content', el));
       old.dataset.sig = el.dataset.sig;
       continue;
@@ -1206,6 +1210,11 @@ function placePop(at, room, w, h, gap) {
   const up = h > below && above > below;
   return { up, right: at.left + w > room.right && at.right - w >= room.left, max: Math.max(80, Math.floor(up ? above : below) - 8) };
 }
+// A composer's popover floats 8px clear of the composer's edge, below it when it fits, else above its trigger.
+function dropTop(trigger, h) {
+  const r = trigger.getBoundingClientRect(), box = (trigger.closest('.composer') || trigger).getBoundingClientRect();
+  return innerHeight - box.bottom - 16 >= h || r.top < h + 14 ? box.bottom + 8 : r.top - h - 8;
+}
 // </place>
 // Options opens inside what shows of the page: over its button when the composer sits low, as it does docked at the
 // foot of the sea, and scrolling within itself when even that side is short.
@@ -1695,15 +1704,18 @@ function openModels(trigger) {
     }
   });
 
-  // One height for every provider, so switching tabs never resizes the panel.
-  const tallest = Math.max(...groups.map(g => g.options.length
-    + new Set(g.options.map(o => o.dataset.group).filter(Boolean)).size * 0.85));
-  panel.style.height = Math.min(346, 40 + 12 + tallest * 34) + 'px';
+  // One height for every provider, so switching tabs never resizes the panel: the tallest provider's list, measured.
+  panel.style.visibility = 'hidden';
   document.body.append(panel);
+  const own = prov;
+  let tallest = 0;
+  for (const g of groups) { prov = g.prov; render(); tallest = Math.max(tallest, list.scrollHeight); }
+  prov = own;
+  panel.style.height = Math.min(346, query.offsetHeight + tallest + 2) + 'px';
+  panel.style.visibility = '';
   const r = trigger.getBoundingClientRect(), h = panel.offsetHeight, w = panel.offsetWidth;
   panel.style.left = Math.max(8, Math.min(r.left - 4, innerWidth - w - 8)) + 'px';
-  if (innerHeight - r.bottom - 8 >= h + 6 || r.top < h + 14) panel.style.top = (r.bottom + 6) + 'px';
-  else panel.style.top = (r.top - h - 6) + 'px';
+  panel.style.top = dropTop(trigger, h) + 'px';
   trigger.setAttribute('aria-expanded', 'true');
   modelPanel = {panel, trigger};
   render();
@@ -1867,7 +1879,7 @@ function openEffort(trigger) {
   document.body.append(panel);
   const r = trigger.getBoundingClientRect(), h = panel.offsetHeight, w = panel.offsetWidth;
   panel.style.left = Math.max(8, Math.min(r.left - 4, innerWidth - w - 8)) + 'px';
-  panel.style.top = ((innerHeight - r.bottom - 8 >= h + 6 || r.top < h + 14) ? r.bottom + 6 : r.top - h - 6) + 'px';
+  panel.style.top = dropTop(trigger, h) + 'px';
   trigger.setAttribute('aria-expanded', 'true');
   effortPanel = {panel, trigger, form};
   paint();
@@ -1896,5 +1908,36 @@ document.addEventListener('rh:page', () => {
   for (const picker of $$('.effort-picker')) if (picker.closest('form')) syncEffort(picker.closest('form'));
 });
 for (const picker of $$('.effort-picker')) if (picker.closest('form')) syncEffort(picker.closest('form'));
+
+// A long ask scrolls inside its bubble; while more of it lies below, its bottom edge fades instead of cutting a line.
+function fadeLong(bubble) { bubble.classList.toggle('more', bubble.scrollTop + bubble.clientHeight < bubble.scrollHeight - 2); }
+function fadeAll() {
+  for (const b of $$('.user-message')) {
+    fadeLong(b);
+    // an ask cut to its first lines offers the rest once
+    const long = b.classList.contains('whole') || b.scrollHeight > b.clientHeight + 2;
+    const next = b.nextElementSibling, has = next && next.matches('.ask-more');
+    if (long && !has) {
+      const more = document.createElement('button');
+      more.type = 'button'; more.className = 'ask-more'; more.textContent = 'Show all';
+      more.setAttribute('aria-expanded', 'false');
+      b.after(more);
+    } else if (!long && has) next.remove();
+  }
+  // a running job's output opens at its newest lines
+  for (const log of $$('pre.log[data-follow]')) log.scrollTop = log.scrollHeight;
+}
+document.addEventListener('scroll', e => { if (e.target.classList && e.target.classList.contains('user-message')) fadeLong(e.target); }, true);
+document.addEventListener('click', e => {
+  const more = e.target.closest && e.target.closest('.ask-more');
+  if (!more) return;
+  const b = more.previousElementSibling, whole = b.classList.toggle('whole');
+  more.textContent = whole ? 'Show less' : 'Show all';
+  more.setAttribute('aria-expanded', String(whole));
+  fadeLong(b);
+});
+document.addEventListener('rh:page', fadeAll);
+addEventListener('resize', fadeAll);
+fadeAll();
 })();
 

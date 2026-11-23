@@ -516,6 +516,28 @@ def _files(root, skip=()):
     return found, peek
 
 
+_HEADS = {}  # answer.md path -> (mtime_ns, first line): the list asks for every done job's on each page
+
+
+def _said_head(cfg, job):
+    """The first line of a done local job's answer.md, which names the run in the lists better than its brief when
+    the same brief ran many times; "" when it left none."""
+    if job.get("state") != "done" or job["spec"].get("kind") != "local-shell":
+        return ""
+    root = _outputs(cfg, {"job": job})
+    said = root / "answer.md" if root else None
+    try:
+        if said is None or said.is_symlink():
+            return ""
+        stamp = said.stat().st_mtime_ns
+        if _HEADS.get(said, (None,))[0] != stamp:
+            with said.open("r", encoding="utf-8", errors="replace") as f:
+                _HEADS[said] = (stamp, dashboard.answer_head(f.read(600)))
+        return _HEADS[said][1]
+    except OSError:
+        return ""
+
+
 def _meta(cfg):
     """What the status view leaves out and the app needs: each job's brief, kind, seat, time limit, times and the run
     it follows; the inbox items settled in the last day; and, for the Inbox, the one item asked for, open or not."""
@@ -524,7 +546,7 @@ def _meta(cfg):
         meta = {j["id"]: {"brief": j["spec"].get("brief", ""), "kind": j["spec"].get("kind", ""),
                           "seat": j["spec"].get("seat", ""), "timeout_min": j["spec"].get("timeout_min"),
                           "created": j.get("created"), "started": j.get("started"), "updated": j.get("updated"),
-                          "prior": j["spec"].get("prior", "")} for j in led.jobs()}
+                          "prior": j["spec"].get("prior", ""), "said": _said_head(cfg, j)} for j in led.jobs()}
         since = time.time() - _SETTLED
         items = led.inbox(open_only=False)
         settled = [i for i in items if i.get("resolved") and i["resolved"] >= since][-100:]

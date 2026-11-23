@@ -200,6 +200,28 @@ def primaries(html):
     return re.findall(r'class="btn primary[ "]', shown)
 
 
+class ListsTest(unittest.TestCase):
+    def test_a_done_run_is_named_by_what_its_agent_said(self):
+        # One brief run many times reads as many runs: each done one is named by its answer's first line.
+        self.assertEqual(dashboard.answer_head("**Reject a job whose `accept` is a list — untested: I could not**\n\nWhy"),
+                         "Reject a job whose accept is a list")
+        self.assertEqual(dashboard.answer_head("# Fixed the typo.\nmore"), "Fixed the typo")
+        self.assertEqual(dashboard.answer_head("\n \n"), "")
+        view = live_view()
+        view["meta"] = {**view.get("meta", {}), "finished-job": {"kind": "local-shell", "brief": "Improve it.",
+                                                                "said": "Fixed the typo"}}
+        row = re.search(r'<li class="row" data-key="job:finished-job".*?</li>', dashboard.render(view, NOW, token=TOKEN),
+                        re.S).group(0)
+        self.assertIn('<span class="name">Fixed the typo</span>', row)
+
+    def test_the_inbox_opens_on_the_newest_job_that_waits_when_nothing_asks(self):
+        page = inbox({**live_view(), "inbox": []})
+        self.assertNotIn("No questions to answer.", page)
+        detail = re.search(r'data-region="ib-detail".*?</section>', page, re.S).group(0)
+        self.assertIn(">Open job</a>", detail)
+        self.assertRegex(page, r'<a class="ib" href="[^"]*" data-nav aria-current="true">')
+
+
 class DashboardTest(unittest.TestCase):
     def test_detail_is_escaped(self):
         # Removing escaping must expose the worker's script and fail this test.

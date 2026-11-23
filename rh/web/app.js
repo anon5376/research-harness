@@ -1969,10 +1969,24 @@ function slashState(brief) {
   const box = brief && brief.closest('form');
   const menu = box && $('[data-slash]', box), note = box && $('[data-swarm-note]', box);
   if (!menu) return null;
+  // a typed "/swarm " becomes the Swarm chip: the command leaves the text, and the chip says it was recognised
+  const typed = /^\s*\/swarm\s+/.exec(brief.value);
+  if (typed) {
+    const at = Math.max(0, brief.selectionStart - typed[0].length);
+    brief.value = brief.value.slice(typed[0].length);
+    brief.setSelectionRange(at, at);
+    box.dataset.swarm = '1';
+  }
   const v = brief.value;
-  menu.hidden = !(/^\/[a-z]*$/.test(v) && '/swarm'.startsWith(v));
-  note.hidden = !/^\s*\/swarm(\s|$)/.test(v);
+  menu.hidden = !!box.dataset.swarm || !(/^\/[a-z]*$/.test(v) && '/swarm'.startsWith(v));
+  note.hidden = !box.dataset.swarm;
   return menu;
+}
+function swarmOff(box) {
+  delete box.dataset.swarm;
+  const brief = box.elements.namedItem('brief');
+  slashState(brief);
+  brief.focus();
 }
 function takeSlash(brief, cmd) {
   brief.value = cmd + brief.value.replace(/^\s*\/[a-z]*\s*/, '');
@@ -1986,6 +2000,10 @@ document.addEventListener('input', e => {
 document.addEventListener('keydown', e => {
   const t = e.target;
   if (!(t instanceof HTMLTextAreaElement) || t.name !== 'brief') return;
+  // Backspace at the very start of the brief takes the Swarm chip away, as it would delete a typed token
+  if (e.key === 'Backspace' && t.form && t.form.dataset.swarm && t.selectionStart === 0 && t.selectionEnd === 0) {
+    e.preventDefault(); swarmOff(t.form); return;
+  }
   const menu = slashState(t);
   if (!menu || menu.hidden) return;
   if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey)) {
@@ -2010,6 +2028,17 @@ document.addEventListener('focusout', e => {
     if (menu && !menu.contains(document.activeElement)) menu.hidden = true;
   }, 150);
 });
+document.addEventListener('click', e => {
+  const x = e.target instanceof Element && e.target.closest('[data-swarm-off]');
+  if (x) swarmOff(x.closest('form'));
+});
+// the server reads a swarm from the brief, so the command goes back in front of it as the form is sent
+document.addEventListener('submit', e => {
+  const form = e.target;
+  if (!(form instanceof HTMLFormElement) || !form.dataset.swarm) return;
+  const brief = form.elements.namedItem('brief');
+  if (brief && !/^\s*\/swarm\b/.test(brief.value)) brief.value = '/swarm ' + brief.value;
+}, true);
 // Swarm settings save as they change; a swarm needs at least one model, so the last one cannot be unticked.
 document.addEventListener('change', e => {
   const form = e.target instanceof Element && e.target.closest('[data-swarm-form]');

@@ -1595,8 +1595,10 @@ def _swarm_note(ctx):
     if not models:
         return ""
     judge = swarm.get("judge") or models[0]
-    return (f'<p class="swarm-note" data-swarm-note hidden>{_ic("swarm", True)}<span>Runs on {_text(_names(models))} '
-            f'at once; {_text(_names([judge]))} keeps the best work.</span></p>')
+    return (f'<p class="swarm-note" data-swarm-note hidden><span class="swarm-chip">{_ic("swarm", True)}Swarm'
+            '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
+            f'×</button></span><span class="swarm-says">Runs on {_text(_names(models))} at once; '
+            f'{_text(_names([judge]))} keeps the best work.</span></p>')
 
 
 def _composer(ctx, draft, ready, policy):

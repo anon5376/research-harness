@@ -1859,3 +1859,15 @@ a.sw-run:hover { background: var(--surface); }
 .who-status svg.st { width: 13px; height: 13px; }
 @media (max-width: 600px) { .msg.ai .who:has(.who-status) { flex-wrap: wrap; row-gap: 4px; }
   .who-status { margin-left: 0; padding-left: 0; flex-basis: 100%; } }
+/* A recognised /swarm is a token: an accent chip at the start of the composer's tool row, removable with its ×
+   or Backspace at the start of the brief. */
+.swarm-chip { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 24px; padding: 0 4px 0 8px;
+  border-radius: 6px; background: rgb(79 124 255 / .16); color: #a9bcff; font-size: 13px; font-weight: 500; }
+.swarm-chip svg { width: 14px; height: 14px; color: #a9bcff; }
+.swarm-off { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px;
+  background: none; color: #a9bcff; font-size: 14px; line-height: 1; cursor: pointer; }
+.swarm-off:hover { background: rgb(79 124 255 / .22); color: #fff; }
+.swarm-note > svg { display: none; }
+.swarm-says { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+@media (max-width: 600px) { .swarm-says { display: none; } }
+.swarm-note .swarm-chip { overflow: visible; }

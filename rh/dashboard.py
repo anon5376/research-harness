@@ -1862,10 +1862,12 @@ def _stops(ctx, entry):
     return _region("j-stops", '<h2>Pauses and stops</h2>' + "".join(parts), "section")
 
 
-def _job_head(title, kind):
-    """A compact, persistent title, named as the sidebar names the job, and its worker crumb."""
+def _job_head(title, kind, tip=""):
+    """A compact, persistent title, named as the sidebar names the job (its id when another listed job shares its
+    name, with the name on hover), and its worker crumb."""
+    tip = f' title="{_text(tip)}"' if tip else ""
     body = ('<div class="jd-head-in">'
-            f'<h1 tabindex="-1" data-clear>{_text(title)}</h1>'
+            f'<h1 tabindex="-1" data-clear{tip}>{_text(title)}</h1>'
             f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p></div>')
     return _region("j-head", body, "section", "jd-head")
 
@@ -1916,7 +1918,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
         acts.append(_cancel(ctx, jid))
     named = entry.label if entry.label != entry.title else (_lead(spec)[0] or jid)  # as the sidebar names it
-    head = _job_head(named, kind)
+    head = _job_head(jid, kind, entry.label) if entry.dup else _job_head(named, kind)
     work = []
     if feedback:
         work.append(feedback)

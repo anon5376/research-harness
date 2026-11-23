@@ -220,6 +220,11 @@ class ListsTest(unittest.TestCase):
         for jid in ("live-job", "web-job"):
             row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
             self.assertIn(f'<span class="name"><span class="nm" title="Same brief">{jid}</span></span>', row)
+            # and the job's own page names it as the sidebar does, so the two never disagree
+            one = opened(view, jid, kind="local-shell")
+            one["open"]["job"]["spec"]["brief"] = "Same brief."
+            head = re.search(r'data-region="j-head".*?</section>', dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
+            self.assertIn(f'<h1 tabindex="-1" data-clear title="Same brief">{jid}</h1>', head)
 
     def test_the_inbox_opens_on_the_newest_job_that_waits_when_nothing_asks(self):
         page = inbox({**live_view(), "inbox": []})

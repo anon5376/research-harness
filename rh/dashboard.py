@@ -2538,7 +2538,7 @@ def _palette(jobs, ctx, keys):
         if group(j) != at:
             at = group(j)
             rows.append(f'<p class="p-sec">{names[at]}</p>')
-        rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
+        rows.append(f'<a class="p-row" role="option" data-id="{_text(j.id)}" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
                     f'<span class="p-ic">{_ring(j.state, kind=j.kind, past=j.past)}</span>'
                     # as the sidebar names it: when names clash the id leads and the shared name moves to the grey
                     # line, which leads with the state so states form one column
@@ -2546,7 +2546,8 @@ def _palette(jobs, ctx, keys):
                     f'<span class="p-s"><span class="p-w">{_text(j.word)}</span>'
                     # the time the sidebar shows, so runs of one brief tell apart at a glance
                     + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
-                    + (f'<span>{_text(j.label)}</span>' if j.dup else f'<span class="mono">{_text(j.id)}</span>')
+                    # no id or slug here (typing one still finds the row, by its data-id); only a clash names both
+                    + (f'<span>{_text(j.label)}</span>' if j.dup else "")
                     + '</span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]

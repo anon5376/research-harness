@@ -908,7 +908,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("It is rechecked on every pass.", held)
         missing = dashboard.render({**live_view(), "open": {"id": "ghost", "job": None}}, NOW, token=TOKEN)
         self.assertIn("No job named ghost", text(missing))
-        self.assertIn('<a class="p-row" role="option" href="/job/live-job?t=', missing)  # ⌘K still finds every job
+        self.assertIn('<a class="p-row" role="option" data-id="live-job" href="/job/live-job?t=', missing)  # ⌘K finds every job
         # A one-sentence brief remains visible as the original request.
         single = opened(live_view(), "live-job")
         single["open"]["job"]["spec"]["brief"] = "Count the words."
@@ -2142,8 +2142,16 @@ console.log(JSON.stringify([
         # A job's id and state run together in one ellipsised line, or a meta column that can show part of the state
         # word, must fail.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
-        self.assertRegex(page, r'<span class="p-s"><span class="p-w">Launch by hand</span>'
-                               r'(?:<span class="p-when mono num">[^<]+</span>)?<span class="mono">web-job</span></span>')
+        # the grey line is the state and the time only: no job id or slug unless two names clash, though a typed
+        # id still finds the row
+        self.assertRegex(page, r'<a class="p-row" role="option" data-id="web-job" [^>]*>.*?'
+                               r'<span class="p-s"><span class="p-w">Launch by hand</span>'
+                               r'(?:<span class="p-when mono num">[^<]+</span>)?</span>')
+        pal_rows = re.findall(r'<a class="p-row"[^>]*data-id="[^"]+".*?</a>', page, re.S)
+        self.assertTrue(pal_rows)
+        for row in pal_rows:
+            if '<span class="p-t">' + re.search(r'data-id="([^"]+)"', row).group(1) + "</span>" not in row:
+                self.assertNotIn('<span class="mono">', row.split('class="p-s"', 1)[1])
         # its jobs are grouped as the sidebar groups them, and Needs you holds exactly what the badge counts
         pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
         needs = pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]

@@ -946,7 +946,7 @@ function find(text) {
   const q = text.trim().toLowerCase();
   let first = null;
   for (const r of $$('.p-row', d)) {
-    const hit = !q || r.textContent.toLowerCase().includes(q);
+    const hit = !q || r.textContent.toLowerCase().includes(q) || (r.dataset.id || '').includes(q);
     r.hidden = !hit;
     const t = $('.p-t', r); if (t) lit(t, hit ? q : '');
     if (hit && !first) first = r;

@@ -673,6 +673,10 @@ class DashboardTest(unittest.TestCase):
                                'title="/private/tmp/n.md">notes</span></li></ul>'
                                '<p><code class="nw">top</code> was blocked &lt;script&gt;x&lt;/script&gt;</p>'
                                '<pre><code>log &lt;b&gt;</code></pre>')
+        # long code wraps at its own seams, so an identifier never splits mid-word
+        self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string in tests/x.py`"),
+                         "<code>test_<wbr>rejects_<wbr>an_<wbr>accept_<wbr>that_<wbr>is_<wbr>not_<wbr>a_<wbr>string "
+                         "in tests/<wbr>x.<wbr>py</code>")
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without

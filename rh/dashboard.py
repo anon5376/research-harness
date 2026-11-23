@@ -437,6 +437,11 @@ _MD_HEAD = re.compile(r"(#{1,6})\s+(.*)")
 _MD_ITEM = re.compile(r"([ \t]*)(?:([-*•])|(\d+)[.)])\s+(.*)")
 
 
+def _breaks(code_html):
+    """Long escaped code may wrap after _ / . and , so an identifier breaks at its own seams, never mid-word."""
+    return re.sub(r"([_/.,])", r"\1<wbr>", code_html)
+
+
 def _md_inline(text):
     """One line of Markdown as HTML: code, bold, italics and links; everything else escaped. A link opens only if it
     is https; a link to a local path is shown as its words, with the path on hover."""
@@ -445,7 +450,7 @@ def _md_inline(text):
         out.append(escape(text[at:m.start()]))
         code, bold, em, label, href = m.groups()
         if code is not None:
-            out.append(f"<code class=\"nw\">{escape(code)}</code>" if len(code) <= 40 else f"<code>{escape(code)}</code>")
+            out.append(f"<code class=\"nw\">{escape(code)}</code>" if len(code) <= 40 else f"<code>{_breaks(escape(code))}</code>")
         elif bold is not None:
             out.append(f"<strong>{_md_inline(bold)}</strong>")
         elif em is not None:

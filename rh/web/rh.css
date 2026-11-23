@@ -1646,3 +1646,15 @@ svg.st[data-s="cancelled"] circle { stroke-dasharray: 2.2 1.6; }
 /* The Inbox's actions are the composer's pills. */
 .q-acts .btn { border-radius: 999px; height: 30px; padding: 0 14px; }
 .assistant-message.md > .md-title { max-width: 36em; }
+/* Long code wraps at its own seams, and each wrapped piece keeps its chip's padding and corners. */
+.assistant-message.md :not(pre) > code { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
+/* Every page's top bar is the job page's: 56px, its title centred on the sidebar button and clear of it. */
+.top { min-height: 56px; }
+@media (max-width: 900px) { .has-sidebar-toggle :is(.pane, .detail) > .top { padding-left: 64px; } }
+/* Floating surfaces are cut from the app's navy, not a neutral grey. */
+:root { --pal: #131826; --pal-line: rgb(170 185 235 / .16); --pal-rule: rgb(170 185 235 / .10); --pal-foot: #10141f; }
+/* One error block: the Inbox's banner and the job page's failed-check card share fill, edge and corners. */
+.mp-pop, .ef-pop, html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock .opts-body, .session-dock .opts-body {
+  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38 / .96);
+  border-color: rgb(170 185 235 / .14); }
+.s-j-fail, .q-fail { border: 1px solid #57252b; border-radius: 10px; background: #2a1519; }

@@ -334,6 +334,8 @@ class ListsTest(unittest.TestCase):
         card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
         self.assertRegex(card, r'<a class="sw-run kept"[^>]*>.*?<span class="sw-id mono">w1</span>.*?Kept</span>')
         self.assertRegex(card, r'<a class="sw-run lost"[^>]*>.*?<span class="sw-id mono">w2</span>')
+        # marked once, in words: a coloured left rule beside the tag doubled it (critic r9 F12)
+        self.assertNotIn(".sw-run.kept::before", dashboard.STYLE)
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 
@@ -2342,6 +2344,17 @@ console.log(JSON.stringify([
                       dashboard.STYLE)
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
+
+    def test_a_files_preview_toggle_sits_on_its_row(self):
+        # 'Preview' hung 18px in under its file while 'Output' sat on the column edge, so two sibling folds read as a
+        # nesting (critic r9 F11). It is a trailing 'Preview ›' on the file's own row, and a long name stops short of it.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        toggle = rule(".session-file > .file-preview > summary")
+        for spec in ("position: absolute", "top: 0", "right: 0", "flex-direction: row-reverse"):
+            self.assertIn(spec, toggle)
+        self.assertIn("position: relative", rule(".session-file"))
+        self.assertIn("margin-left: 0", rule(".session-file > .file-preview"))
+        self.assertIn("padding-right:", rule(".session-file:has(> .file-preview) > .session-file-main"))
 
     def test_cancel_says_what_it_does_to_a_job_that_already_ran(self):
         # A stalled job's Cancel said "It will not start", about a job that has been running for hours. rh job cancel

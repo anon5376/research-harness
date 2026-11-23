@@ -1950,6 +1950,12 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
   transition: background-color 120ms ease-out, color 120ms ease-out; }
 .sw-again svg { width: 14px; height: 14px; }
 .sw-again:hover, .sw-again:focus-visible { color: var(--text); background: #1c2030; }
+/* Swarm again ends on its key, as the composer's hint chips, so it is not read as Judge again's circular arrow; a
+   phone has no key to show and draws the Swarm chip's glyph instead */
+.sw-again > .ic { display: none; }
+.sw-again kbd { display: inline-block; height: 18px; padding: 0 5px; border-radius: 4px; background: #1a1f2c;
+  color: var(--muted); font: 11px/18px var(--mono); }
+@media (max-width: 600px) { .sw-again > .ic { display: block; } .sw-again kbd { display: none; } }
 .sw-runs { margin: 0; padding: 6px; list-style: none; }
 .sw-run { display: grid; grid-template-columns: 16px 112px 148px minmax(0, 1fr); align-items: center;
   column-gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: var(--text); font-size: 13px;

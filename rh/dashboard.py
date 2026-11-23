@@ -2244,8 +2244,8 @@ def _swarm_again(ctx, runs):
         fields.append(("timeout_min", str(int(limit))))
     return (f'<form method="post" action="/job" data-act data-label="Swarm again">'
             f'{_hidden(ctx, fields)}'
-            f'<button class="sw-again" data-k="w" aria-keyshortcuts="w">{_ic("again", True)}'
-            '<span>Swarm again</span></button></form>')
+            f'<button class="sw-again" data-k="w" aria-keyshortcuts="w">{_ic("swarm", True)}'
+            '<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button></form>')
 
 
 def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):

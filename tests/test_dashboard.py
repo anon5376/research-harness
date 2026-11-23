@@ -572,6 +572,18 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(fields["next"], "/job/fix.best")
         self.assertIn('<button class="sw-again" data-k="w" aria-keyshortcuts="w">', card(page))
         self.assertIn("Swarm again", text(card(page)))
+        # r21 F2: Swarm again and Judge again shared the circular arrow, so only the labels told them apart and the w
+        # key showed nowhere. Swarm again leads with no arrow and ends on its key chip, as the composer's hint chips;
+        # a phone, with no key to show, draws the Swarm chip's glyph instead.
+        btn = re.search(r'<button class="sw-again".*?</button>', card(page), re.S).group(0)
+        self.assertNotIn(dashboard._ic("again", True), btn)
+        self.assertTrue(btn.endswith('<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button>'), btn)
+        self.assertIn(dashboard._ic("swarm", True), btn)
+        chip = dashboard.STYLE.split("\n.sw-again kbd {", 1)[1].split("}", 1)[0]
+        for spec in ("height: 18px", "background: #1a1f2c", "font: 11px/18px var(--mono)"):
+            self.assertIn(spec, chip)
+        self.assertIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
+        self.assertIn(".sw-again > .ic { display: block; } .sw-again kbd { display: none; }", dashboard.STYLE)
         # the page's w key presses it, once: no other control on the page may carry the key
         self.assertEqual(page.count('data-k="w"'), 1)
         self.assertEqual(page.count('aria-keyshortcuts="w"'), 1)

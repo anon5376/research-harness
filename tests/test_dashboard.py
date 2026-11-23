@@ -871,6 +871,13 @@ class ListsTest(unittest.TestCase):
         self.assertLess(form.index('name="judge"'), form.index('class="swarm-models"'))
         self.assertLess(form.index('class="swarm-models"'), form.index('name="check"'))
         self.assertIn("margin-bottom: 12px", rule0(".swarm-opts:has(+ .swarm-models)"))
+        # r21 F7: the Judge's one row boxed in its own card read as a second list beside the ticks; it is a plain 40px
+        # row on the sheet's text edge, so the section has one container
+        judge = rule0(".swarm-opts:has(+ .swarm-models)")
+        for spec in ("padding: 0", "border: 0", "background: none"):
+            self.assertIn(spec, judge)
+        for spec in ("min-height: 40px", "padding: 0"):
+            self.assertIn(spec, rule0(".swarm-opts:has(+ .swarm-models) > .swarm-judge"))
         # the sheet's body ends 24px under its last row and fades at its foot while more lies below
         self.assertIn("padding: 0 24px 24px", rule0(".settings-body"))
         self.assertIn("transparent", rule0(".settings-body.more"))

@@ -1847,7 +1847,9 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .ib-why.ib-exit > .ib-out { font-family: var(--mono); font-size: 12px; color: #b8bcc6; }
 @media (max-width: 600px) { .ib-why.ib-exit > .ib-out { font-size: 13px; } }
 /* the swarm's judge is chosen above its ticks */
-.swarm-opts:has(+ .swarm-models) { margin-bottom: 12px; }
+.swarm-opts:has(+ .swarm-models) { margin-bottom: 12px; padding: 0; border: 0; border-radius: 0; background: none; }
+/* the Judge is one plain row on the sheet's text edge, not a card of its own beside the ticks' card */
+.swarm-opts:has(+ .swarm-models) > .swarm-judge { min-height: 40px; padding: 0; }
 /* Your turns read as messages, a step under the answer (15 on 22 against 16 on 26), wrapped greedily so a bubble
    is never much wider than its text. A long brief folds to three lines; Show all opens it. */
 .user-message { font-size: 15px; line-height: 22px; text-wrap: wrap; }

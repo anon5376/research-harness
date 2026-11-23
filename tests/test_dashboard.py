@@ -374,6 +374,12 @@ class ListsTest(unittest.TestCase):
         says = re.search(r'<span class="swarm-says">(.*?)</span></p>', page).group(1)
         self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max + SWE-2 Flash · judge SWE-2 Max".split())
 
+    def test_an_unticked_swarm_box_is_visible(self):
+        # An unticked model box drawn at 28% white (about 2.5:1 on the settings panel, under the 3:1 a control
+        # needs) must fail.
+        rule = dashboard.STYLE.split("\n.swarm-x {", 1)[1].split("}", 1)[0]
+        self.assertIn("border: 1.5px solid #6e7383", rule)
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

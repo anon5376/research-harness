@@ -3176,8 +3176,44 @@ console.log(JSON.stringify([
 
     def test_a_popover_sits_above_the_page(self):
         # The Cancel confirm, with no shadow and a fill near the brief bubble's, read as two panels colliding (critic
-        # r12 F6): it casts the menus' shadow.
-        self.assertIn("\nform.pop { box-shadow: 0 16px 40px rgb(0 0 0 / .55); }", dashboard.STYLE)
+        # r12 F6): it casts a shadow with a tight contact edge over opaque navy, so the page it covers stays covered.
+        self.assertIn("\nform.pop { background: #141824; border-color: rgb(170 185 235 / .14);\n"
+                      "  box-shadow: 0 16px 40px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35); }", dashboard.STYLE)
+
+    def test_a_popover_form_stays_opaque_and_shadowed(self):
+        # The Cancel confirm asked to be confirmed while it sat flat on the page: navy glass let the brief bubble
+        # read through its fill mid-word, and one soft shadow left it a panel beside the page, not over it. Every
+        # popover form is opaque navy under the app's hairline, with no blur to see through and a shadow with a
+        # tight contact edge; no rule that can reach the popover may hand it glass or a dead shadow back.
+        style = re.sub(r"/\*.*?\*/", "", dashboard.STYLE, flags=re.S)
+        seen = []  # (property, value) from every rule whose subject can be the popover form itself
+        for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", style):
+            for sel in m.group(1).split(","):
+                subject = [t for t in re.split(r"[\s>+~]", sel.strip()) if t]
+                if subject and re.search(r"\.pop(?![\w-])", subject[-1]):  # `.act > .pop`, `form.pop.up` reach it
+                    for decl in m.group(2).split(";"):
+                        if ":" in decl:
+                            prop, value = decl.split(":", 1)
+                            seen.append((prop.strip(), re.sub(r"\s+", " ", value).strip()))
+                    break
+        last = {}
+        for prop, value in seen:
+            last[prop] = value  # later rules win, as the cascade does
+        self.assertEqual(last.get("background"), "#141824")  # opaque: it covers the words under it
+        self.assertIn(last.get("background-color"), (None, "#141824"))
+        self.assertEqual(last.get("box-shadow"),
+                         "0 16px 40px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35)")
+        edge = last.get("border", "") + " " + last.get("border-color", "")
+        self.assertIn("1px solid", edge)
+        self.assertIn("rgb(170 185 235 / .14)", edge)  # the one hairline it keeps
+        self.assertNotIn("backdrop-filter", last)
+        self.assertNotIn("-webkit-backdrop-filter", last)
+        # and no matching rule anywhere may give it a see-through fill or a dead shadow
+        see_through = re.compile(r"transparent|rgba\(|hsla\(|(?:rgb|hsl)\([^)]*/|\bnone\b")
+        for prop, value in seen:
+            if prop in ("background", "background-color"):
+                self.assertIsNone(see_through.search(value), prop + ": " + value)
+            self.assertFalse(prop == "box-shadow" and value == "none")
 
     def test_the_composer_offers_its_workers(self):
         # A composer without GPT Pro, Codex on this Mac, Codex cloud and the plain shell, in that order, or one whose
@@ -3432,11 +3468,13 @@ console.log(JSON.stringify([
     def test_every_floating_surface_is_cut_from_one_navy(self):
         # Menus and the model picker floated on navy glass while the Cancel popover and the toast were neutral grey:
         # two families of floating surface, the grey reading as unthemed (critic r9 F8). One rule styles them all
-        # (a failure toast keeps its red), and an input inside a popover sits on the same navy, darker.
+        # (a failure toast keeps its red), and an input inside a popover sits on the same navy, darker; the popover
+        # itself is opaque navy — glass would let the page read through a destructive confirm.
         rule = dashboard.STYLE.split("/* Floating surfaces are cut from the app's navy", 1)[1]
         selectors, decls = re.search(r"\n([^{]*\.mp-pop[^{]*)\{([^}]*)\}", rule).groups()
-        for sel in (".mp-pop", ".ef-pop", ".dock .opts-body", "form.pop", ".toast:not(.no)"):
+        for sel in (".mp-pop", ".ef-pop", ".dock .opts-body", ".toast:not(.no)"):
             self.assertIn(sel, selectors)
+        self.assertNotIn("form.pop", selectors)
         self.assertIn("rgb(19 24 38 / .96)", decls)
         self.assertIn("backdrop-filter: blur(40px) saturate(160%)", decls)  # the menus' own glass
         self.assertIn('form.pop :is(input[type="text"], textarea) { background: #0e1220;', dashboard.STYLE)

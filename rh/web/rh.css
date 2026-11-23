@@ -1795,13 +1795,15 @@ svg.st[data-s="failed"]:not(:is(.fail-k, .q-fail-k) > svg) .k { stroke: currentC
 :root { --pal: #131826; --pal-line: rgb(170 185 235 / .16); --pal-rule: rgb(170 185 235 / .10); --pal-foot: #10141f; }
 /* One error block: the Inbox's banner and the job page's failed-check card share fill, edge and corners. */
 .mp-pop, .ef-pop, html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock .opts-body, .session-dock .opts-body,
-form.pop, .toast:not(.no) {
+.toast:not(.no) {
   background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38 / .96);
   border-color: rgb(170 185 235 / .14); -webkit-backdrop-filter: blur(40px) saturate(160%);
   backdrop-filter: blur(40px) saturate(160%); }
 form.pop :is(input[type="text"], textarea) { background: #0e1220; border-color: rgb(170 185 235 / .14); }
-/* A popover sits above the page it covers, as the menus do, not beside it as another panel. */
-form.pop { box-shadow: 0 16px 40px rgb(0 0 0 / .55); }
+/* A popover sits above the page it covers, as the menus do, not beside it as another panel: opaque navy, no glass
+   to blur, under the app's hairline, its shadow edged by a tight contact line. */
+form.pop { background: #141824; border-color: rgb(170 185 235 / .14);
+  box-shadow: 0 16px 40px rgb(0 0 0 / .55), 0 2px 6px rgb(0 0 0 / .35); }
 /* a quiet field under a faint edge: its icon and exit chip are the only saturated red */
 .s-j-fail, .q-fail { border: 1px solid rgb(255 99 99 / .12); border-radius: 10px; background: #1d1116; }
 /* With the sidebar folded away, its amber count shows as a dot on the button that opens it. */

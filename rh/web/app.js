@@ -2005,6 +2005,27 @@ function toTurn() {
 }
 document.addEventListener('rh:page', toTurn);
 toTurn();
+// The header names a job as the sidebar does, often by the answer's first line or the brief: while those same words
+// are in view just below, the title steps aside, and it fades back in once they scroll under the header.
+let echoIo = null;
+function echoTitle() {
+  if (echoIo) { echoIo.disconnect(); echoIo = null; }
+  const h = $('.detail .jd-head h1'), scroller = $('.jd-scroll');
+  if (!h) return;
+  const head = h.closest('.jd-head');
+  const norm = s => s.replace(/\s+/g, ' ').trim().replace(/[.…]+$/, '').toLowerCase();
+  const said = norm(h.textContent);
+  const twin = said && scroller && 'IntersectionObserver' in window
+    ? $$('.assistant-message > :first-child, .user-message', scroller).find(el => norm(el.textContent).startsWith(said))
+    : null;
+  head.classList.toggle('echo', !!twin);
+  if (!twin) return;
+  echoIo = new IntersectionObserver(es => head.classList.toggle('echo', es[es.length - 1].isIntersecting),
+    { root: scroller });
+  echoIo.observe(twin);
+}
+document.addEventListener('rh:page', echoTitle);
+echoTitle();
 // Commands in the composer: typing / lists them (Tab or Enter takes the highlighted one), and a brief that starts with
 // /swarm says under it which models will run it.
 function slashState(brief) {

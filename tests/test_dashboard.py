@@ -2456,6 +2456,18 @@ console.log(JSON.stringify([
         self.assertIn("font: 600 14px/20px var(--ui)", job)
         self.assertIn("color: #e8e9ec", job)
 
+    def test_a_job_header_title_steps_aside_while_its_words_show_below(self):
+        # The header named a finished job by its answer's first line and then the answer said it again 220px lower,
+        # so the top of every job page said one thing twice (critic r15 F2). The title keeps the sidebar's name but
+        # fades out while the answer's first line or the brief with the same words is in view, and back in (160ms,
+        # the app's ease-out) once they scroll under the header.
+        self.assertIn("function echoTitle()", dashboard.SCRIPT)
+        self.assertIn("document.addEventListener('rh:page', echoTitle);", dashboard.SCRIPT)
+        self.assertIn("new IntersectionObserver(", dashboard.SCRIPT.split("function echoTitle()", 1)[1])
+        self.assertIn(".detail .jd-head.echo h1 { opacity: 0; }", dashboard.STYLE)
+        self.assertIn(".detail .jd-head-in > h1 { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }",
+                      dashboard.STYLE)
+
     def test_an_inbox_rows_run_id_reads_as_an_identifier(self):
         # The run id under the reason was the same sans one pixel smaller in a near-identical grey, so the two read
         # as one level drawn twice (critic r13 F8). The live app sets .mono in the UI face with tabular figures by

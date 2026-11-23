@@ -2345,6 +2345,18 @@ console.log(JSON.stringify([
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
 
+    def test_every_floating_surface_is_cut_from_one_navy(self):
+        # Menus and the model picker floated on navy glass while the Cancel popover and the toast were neutral grey:
+        # two families of floating surface, the grey reading as unthemed (critic r9 F8). One rule styles them all
+        # (a failure toast keeps its red), and an input inside a popover sits on the same navy, darker.
+        rule = dashboard.STYLE.split("/* Floating surfaces are cut from the app's navy", 1)[1]
+        selectors, decls = re.search(r"\n([^{]*\.mp-pop[^{]*)\{([^}]*)\}", rule).groups()
+        for sel in (".mp-pop", ".ef-pop", ".dock .opts-body", "form.pop", ".toast:not(.no)"):
+            self.assertIn(sel, selectors)
+        self.assertIn("rgb(19 24 38 / .96)", decls)
+        self.assertIn("backdrop-filter: blur(40px) saturate(160%)", decls)  # the menus' own glass
+        self.assertIn('form.pop :is(input[type="text"], textarea) { background: #0e1220;', dashboard.STYLE)
+
     def test_a_phones_new_page_has_no_shade_over_empty_water(self):
         # The centre shade behind the desktop composer showed on a phone as a dark oval over empty water, its
         # composer being at the foot (critic r9 F15); the desktop keeps it.

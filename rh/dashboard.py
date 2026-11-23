@@ -212,9 +212,17 @@ def _text(value):
     return escape(str(value), quote=True)
 
 
+# A line that says what went wrong, and the routine chatter around it.
+_LOUD = re.compile(r"\b(WARN|WARNING|ERROR|FATAL|CRITICAL|PANIC)\b|^\s*Traceback\b|^\s*[\w.]*(Error|Exception):"
+                   r"|^\s*(error|fatal)(\[\w+\])?:")
+_QUIET = re.compile(r"\b(INFO|DEBUG|TRACE)\b|^stopped: ")
+
+
 def _ln(line):
-    """One log line as its own block, so a wrapped line hangs under the line's start; a blank keeps its row."""
-    return f'<span class="ln">{_text(line)}</span>'
+    """One log line as its own block, so a wrapped line hangs under the line's start; a blank keeps its row. A warning
+    or error stands out and routine INFO lines step back, so the cause is found without reading the trace."""
+    tone = " loud" if _LOUD.search(line) else " quiet" if _QUIET.search(line) else ""
+    return f'<span class="ln{tone}">{_text(line)}</span>'
 
 
 def _sig(*fields):

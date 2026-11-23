@@ -1753,6 +1753,10 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 pre.log.ended .ln { display:block; padding-left:2ch; text-indent:-2ch; white-space:pre-wrap; }
 pre.log.ended .ln + .ln { margin-top:4px; }
 pre.log.ended .ln:empty::before { content: "\200B"; }  /* a blank line keeps its row */
+/* The line that says what went wrong is bright with a red rule; routine INFO chatter steps back. */
+pre.log.ended .ln.loud { color: #e6e4e1; border-left: 2px solid rgb(248 113 113 / .7); margin-left: -10px;
+  padding-left: calc(2ch + 8px); }
+pre.log.ended .ln.quiet { color: #7d8394; }
 /* Commands in the composer: the / menu floats just above the brief; a /swarm brief says under it who runs it. */
 form.compose:has([data-slash]) { position: relative; }
 .slash { position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 30; padding: 4px;

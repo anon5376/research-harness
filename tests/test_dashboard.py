@@ -2035,6 +2035,22 @@ console.log(JSON.stringify([
         self.assertIn("Pause Codex cloud…", labels)
         self.assertNotIn("Pause", labels)
 
+    def test_a_stopped_logs_cause_stands_out_from_its_noise(self):
+        # A WARN or ERROR line set like the INFO lines around it, INFO noise or the trailer as loud as the cause, or an
+        # ordinary line (a word like 'errors' in it) dressed as either, must fail.
+        tone = lambda line: re.search(r'class="ln ?(\w*)"', dashboard._ln(line)).group(1)  # noqa: E731
+        for line in ("2026-11-23T22:33:01Z WARN acp: Invalid value 'swe-2-max' for config option 'model'",
+                     "ERROR could not open session", "Traceback (most recent call last):",
+                     "ValueError: bad model", "error: the changes did not apply", "fatal: not a git repository"):
+            self.assertEqual(tone(line), "loud", line)
+        for line in ("2026-11-23T22:33:00Z INFO acp: session opened", "DEBUG retry 1", "stopped: None"):
+            self.assertEqual(tone(line), "quiet", line)
+        for line in ("step 12: 3 errors so far", "wrote table.csv", ""):
+            self.assertEqual(tone(line), "", line)
+        rule = dashboard.STYLE.split("pre.log.ended .ln.loud {", 1)[1].split("}", 1)[0]
+        self.assertIn("border-left: 2px solid", rule)
+        self.assertIn("pre.log.ended .ln.quiet {", dashboard.STYLE)
+
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
         # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
         # room for only one button while Pause and Cancel both show, must fail.

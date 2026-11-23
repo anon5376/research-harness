@@ -814,8 +814,9 @@ class ListsTest(unittest.TestCase):
         self.assertIn("font: 12px var(--ui)", dashboard.STYLE)
         self.assertIn("more.className = 'ask-more'; more.textContent = 'Show all';", dashboard.SCRIPT)
         # it folds like the job page's brief but stays the item's title: no chat bubble, the title's face and edge
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         face = dashboard.STYLE.split(".q-head .q-title.user-message {", 1)[1].split("}", 1)[0]
-        for spec in ("background: none", "padding: 0", "margin: 10px 0 0"):
+        for spec in ("background: none", "padding: 0", "margin: 0"):
             self.assertIn(spec, face)
         # and it reads below the failure and Run again, not over them (critic r9 F4): body weight, a step dimmer
         # r13 F2: at 16px white it was still the pane's loudest text, so the failure read second: 15/22 #c3c8d2,
@@ -830,6 +831,13 @@ class ListsTest(unittest.TestCase):
         fold = dashboard.STYLE.split(".q-head .q-title.user-message:has(+ .ask-more):not(.whole) {", 1)[1].split("}", 1)[0]
         for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 2lh", "overflow: hidden", "mask-image:"):
             self.assertIn(spec, fold)
+        # r15 F1: the pane opens on what the job is, not its run id: the brief comes first, and the id closes a
+        # quiet 12px meta line under it ('This Mac · since … · broke-job'), as the Inbox rows end on it
+        self.assertLess(detail.index('id="q-h"'), detail.index('class="q-who q-sub"'))
+        sub = re.search(r'<p class="q-who q-sub"[^>]*>(.*?)</p>', detail, re.S).group(1)
+        self.assertTrue(sub.endswith('<span class="mono">broke-job</span>'), sub)
+        self.assertIn("color: #9aa0ad", rule(".q-who.q-sub"))
+        self.assertIn("font-size: 12px", rule(".q-who.q-sub"))
         short = re.search(r'data-region="ib-detail".*?</section>',
                           inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
         self.assertIn('<h2 class="q-title" id="q-h" data-clear>Fix the flaky test</h2>', short)

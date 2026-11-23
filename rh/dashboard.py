@@ -2554,9 +2554,11 @@ def _ib_job(ctx, entry, view):
     """A job that waits on you with nothing to answer here, as the Inbox shows it when it leads the list: what it was,
     what went wrong, and the way to its page, where it is retried or followed up."""
     job, runs = entry["job"], len(entry.get("runs", [])) or 1
-    who = [f'<span class="mono">{_text(job.id)}</span>', f'<span>{_text(_platform(job.kind))}</span>']
+    # the pane opens on what the job is; where it ran, since when and its run id follow in one quiet line
+    who = [f'<span>{_text(_platform(job.kind))}</span>']
     if _number(entry.get("created")):
         who.append(f'<span>since <span class="mono num">{_clock(entry["created"], ctx["now"])}</span></span>')
+    who.append(f'<span class="mono">{_text(job.id)}</span>')
     again = job.act()  # Run again leads when the row offers it; the job's page is the quieter way
     open_it = (f'<a class="btn{"" if again else " primary"}" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
                else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
@@ -2581,8 +2583,8 @@ def _ib_job(ctx, entry, view):
              '<button type="button" class="ask-more" aria-expanded="false">Show all</button>'
              if job.brief and (rest or head != job.title) else
              f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2>')
-    body = (f'<div class="q-head"><div class="q-head-in"><p class="q-who" data-clear>{_SEP_HTML.join(who)}</p>'
-            f'{title}</div></div>'
+    body = (f'<div class="q-head"><div class="q-head-in">{title}'
+            f'<p class="q-who q-sub" data-clear>{_SEP_HTML.join(who)}</p></div></div>'
             f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>{stopped}'
             f'<div class="q-acts">{again}{open_it}</div></div>')
     return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')

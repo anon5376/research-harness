@@ -558,22 +558,31 @@ class ListsTest(unittest.TestCase):
         status = re.search(r'data-region="job-result".*?</p>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("~3 h left", status)
 
-    def test_the_status_line_breaks_only_at_its_separators(self):
-        # On a 390px phone the estimate split its number from its unit: each part the " · " joins wears its own
-        # nowrap span, so the line breaks only at a separator.
+    def test_the_status_line_breaks_only_at_its_separators_and_no_line_starts_or_ends_with_one(self):
+        # On a 390px phone the estimate split its number from its unit, and then a wrapped line began with a bare
+        # "·". Each part wears its own nowrap span with the dot that leads it inside, the parts are joined only by a
+        # break chance, and the line hangs its dots 16px into a clipped band, so a wrapped line's leading dot is cut
+        # off and the words line up under line 1. The mark sits beside line 1, not between two lines.
         self.assertIn(".job-result-status .nowrap { white-space: nowrap", dashboard.STYLE)
-        self.assertIn('.job-result-status .sep::after { content: "\\2060"; }', dashboard.STYLE)  # no dot ends a line
+        rule = dashboard.STYLE.split("\n.job-result-status.sl {", 1)[1].split("}", 1)[0]
+        for decl in ("margin-left: -16px", "text-indent: 16px", "clip-path: inset(0 0 0 16px)"):
+            self.assertIn(decl, rule)
+        sep = dashboard.STYLE.split("\n.job-result-status.sl .sep {", 1)[1].split("}", 1)[0]
+        self.assertIn("width: 16px", sep)
+        self.assertIn("margin: 0", sep)
+        self.assertIn(".job-result > .st { align-self: flex-start; margin-top: 3px; }", dashboard.STYLE)
         view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
         view["open"]["job"]["spec"]["timeout_min"] = 120
         view["open"]["job"]["started"] = NOW - 3600
         view["open"]["log"] = "step 600: window 600 of 2400"
         page = dashboard.render(view, NOW, token=TOKEN)
-        status = re.search(r'<span class="job-result-status">(.*?)</span><progress', page, re.S).group(1)
-        parts = status.split('<span class="sep">·</span>')
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span><progress', page, re.S).group(1)
+        parts = status.split("<wbr>")
         self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
-                         ["Past its 2 h limit", "still being checked", "600/2400", "~3 h left"])
-        for part in parts:
-            self.assertRegex(part, r'^<span class="nowrap">.*</span>$')
+                         ["Past its 2 h limit", "·still being checked", "·600/2400", "·~3 h left"])
+        self.assertRegex(parts[0], r'^<span class="nowrap">[^<]*</span>$')
+        for part in parts[1:]:
+            self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')
 
 
 class DashboardTest(unittest.TestCase):
@@ -2409,8 +2418,8 @@ console.log(JSON.stringify([
                 view = opened(live_view(), jid)
                 page = pane(dashboard.render(view, NOW, token=TOKEN))
                 self.assertRegex(page, rf'<p class="job-result"[^>]*><svg class="st [^"]+"[^>]*>.*?</svg>'
-                                       rf'<span class="job-result-status"><span class="nowrap">{re.escape(status)}</span>'
-                                       rf'(?:</span>|<span class="sep">·</span>)')
+                                       rf'<span class="job-result-status sl"><span class="nowrap">{re.escape(status)}</span>'
+                                       rf'(?:</span>|<wbr>)')
                 self.assertNotIn('data-region="j-water"', page)
                 self.assertNotIn('<div class="jd-prog">', page)
         done_page = pane(dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN))
@@ -2421,8 +2430,8 @@ console.log(JSON.stringify([
         stalled["open"]["job"]["spec"]["timeout_min"] = 120
         page = pane(dashboard.render(stalled, NOW, token=TOKEN))
         self.assertRegex(page, r'<p class="job-result"[^>]*><svg class="st t-accent"[^>]*data-s="late"[^>]*>.*?</svg>'
-                               r'<span class="job-result-status"><span class="nowrap">Past its 2 h limit</span>'
-                               r'<span class="sep">·</span><span class="nowrap">still being checked</span>')
+                               r'<span class="job-result-status sl"><span class="nowrap">Past its 2 h limit</span>'
+                               r'<wbr><span class="nowrap"><span class="sep">·</span>still being checked</span>')
         self.assertNotIn('data-region="j-now"', page)
         work = text(page).split("Job details", 1)[0]  # the details panel keeps its own State row
         self.assertEqual(work.count("time limit") + work.count("2 h limit"), 1)

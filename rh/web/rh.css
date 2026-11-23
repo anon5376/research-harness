@@ -1583,6 +1583,14 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 /* and the line breaks before a separator, never after it, so no dot hangs at a line's end */
 .job-result-status .sep::before { content: "\200B"; }
 .job-result-status .sep::after { content: "\2060"; }
+/* The job's own status line wraps between parts, each carrying the 16px dot that leads it. The line starts 16px early
+   and clips that band: line 1 is indented back to the edge, and a wrapped line's leading dot falls in the band, so no
+   line starts with a dot and its words line up under line 1's. */
+.job-result-status.sl { margin-left: -16px; text-indent: 16px; clip-path: inset(0 0 0 16px); }
+.job-result-status.sl .sep { display: inline-block; width: 16px; margin: 0; text-align: center; text-indent: 0; }
+.job-result-status.sl .sep::before, .job-result-status.sl .sep::after { content: none; }
+/* and the mark sits beside line 1 (20px lines, 14px mark) */
+.job-result > .st { align-self: flex-start; margin-top: 3px; }
 @media (max-width: 600px) { .jd[data-state="running"] .job-result-status { font-size: 14px; } }
 /* On a phone the head's name is one line again; the brief below says it whole. */
 @media (max-width: 600px) {

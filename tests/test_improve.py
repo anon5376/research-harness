@@ -65,6 +65,12 @@ class ImproveTest(unittest.TestCase):
         self.assertNotIn("Earlier rounds", improve.brief("", []))
         self.assertIn(improve.CHECK, text)
 
+    def test_the_brief_is_not_held_as_an_operator_step(self):
+        # The supervisor holds a job whose brief reads like contacting someone; the loop's own words must not.
+        from rh import contract
+        self.assertEqual(contract.operator_steps(improve.brief("", [])), [])
+        self.assertEqual(contract.operator_steps(improve.brief("error text", [{"title": "Tidy", "verdict": "failed"}])), [])
+
 
 if __name__ == "__main__":
     unittest.main()

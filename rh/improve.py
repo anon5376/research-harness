@@ -27,7 +27,7 @@ BRIEF = """\
 Improve research-harness, the repository you are in, with ONE small, concrete change a user of it would notice.
 Read README.md and AGENTS.md first, then the code you touch and its tests.
 
-Pick a real defect or gap you can show: a bug, a missing check, an error message that misleads, a gap in the web
+Pick a real defect or gap you can show: a bug, a missing check, a misleading error, a gap in the web
 app's behaviour, or a test that cannot fail. Prefer the least risky change that fixes it. Rules:
 - Python standard library only; match the surrounding style; no new files unless the change needs them.
 - Add or change a test that fails without your change and passes with it. Run `{check}` before you finish.
@@ -116,7 +116,9 @@ def run(cfg, rounds=3, model=FUSION, focus="", timeout_min=60, call=None, sleep=
         led = Ledger(home / "ledger.db")
         try:
             deadline = time.time() + timeout_min * 60 + 300
-            while (state := (led.job(jid) or {}).get("state")) not in TERMINAL:
+            while (state := (row := led.job(jid) or {}).get("state")) not in TERMINAL:
+                if state == "held":  # it waits for the owner (the inbox says why); the loop does not
+                    break
                 if time.time() > deadline:
                     raise ValueError(f"round {n}: {jid} still {state} after {timeout_min} min")
                 call(["supervise", "--once"])  # refused while `rh serve` or `rh supervise` holds the lock: it ticks
@@ -131,7 +133,7 @@ def run(cfg, rounds=3, model=FUSION, focus="", timeout_min=60, call=None, sleep=
                                      f"{title}\n\nProposed by the improve loop (job {jid}, {model}); tests and the "
                                      f"privacy scan passed on a clean clone of {base[:12]}.")
         else:
-            verdict, detail = f"job-{state}", "see the job page"
+            verdict, detail = f"job-{state}", row.get("detail") or "see the job page"
         record = {"job": jid, "model": model, "base": base, "title": title, "verdict": verdict, "detail": detail,
                   "ended": time.time()}
         with log.open("a", encoding="utf-8") as f:

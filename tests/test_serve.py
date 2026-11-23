@@ -658,8 +658,8 @@ class ServeTest(unittest.TestCase):
         (self.home / "jobs" / "long-done").mkdir(parents=True)
         (self.home / "jobs" / "long-done" / "out.log").write_bytes(lines)
         page = self.request("/job/long-done")[2]
-        self.assertIn('<span class="lines mono">12 of 401 lines</span>', page)
-        self.assertIn('<span class="lines mono">200 of 401 lines</span>', page)
+        self.assertIn('<span class="lines mono">401 lines</span>', page)  # the card names the whole once (r22 F7)
+        self.assertIn('<span class="lines mono">last 200</span>', page)
         self.assertIn(f"Added to run on {dashboard.HERE}", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)

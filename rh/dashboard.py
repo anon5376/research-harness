@@ -2584,24 +2584,27 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         tail = lines[-_TAIL:]
         # the failed check and its exit code lead the page; the card adds only what the run printed last
         name, region = ("Where it stopped", "j-error") if failed else ("Last output", "j-last")
-        # 'N of M lines' when M is the whole log; a kept tail of unknown length is no whole, so the card counts its own
+        # the card names the whole log's length once (its title already says it shows the last lines); a kept tail of
+        # unknown length is no whole, so the card counts its own
         whole = total if total else None if opened.get("log_cut") else len(lines)
+        n = whole if whole and whole > len(tail) else len(tail)
         body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2><span class="lines mono">'
-                f'{len(tail)}{f" of {whole:,}" if whole and whole > len(tail) else ""} '
-                f'{"line" if len(tail) == 1 and whole == 1 else "lines"}</span></div>'
+                f'{n:,} {"line" if n == 1 else "lines"}</span></div>'
                 f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # output that fits whole in the card above has nothing more to unfold
     if (not finished or log) and not (card and len(lines) <= _TAIL) and not (swarming and not log):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
-        line_count = (f'{len(lines)} of {total:,} lines' if total and finished else
+        # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing
+        line_count = ((f"last {len(lines):,}" if last else "") if card else
+                      f'{len(lines)} of {total:,} lines' if total and finished else
                       f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}')
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
         output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
         # the count sits right, as every log card's does
-        count = f'<span class="lines mono">{_text(line_count)}</span>' if log else ""
+        count = f'<span class="lines mono">{_text(line_count)}</span>' if log and line_count else ""
         # folded, a glyph where a file row's icon sits starts 'Output' on the file name's edge
         work_summary = (f'<summary class="worked-summary">{_ic("term", True)}'
                         f'<span class="worked-output">{output_status}</span>{tag}{count}</summary>')

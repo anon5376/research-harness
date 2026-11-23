@@ -3052,8 +3052,11 @@ console.log(JSON.stringify([
         self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last", "j-output"])
         card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
         self.assertIn("Last output", card)
-        # r18 F8: the title says 'last'; the count says how much of the whole it shows
-        self.assertIn("12 of 30 lines", card)
+        # r18 F8: the title says 'last'. r22 F7: '12 of 30' and the fold's '30 lines' named one total twice; the card
+        # names the whole log's length, and the fold below names only what it holds ('last 200'), or nothing when it
+        # holds it all
+        self.assertIn('<span class="lines mono">30 lines</span>', card)
+        self.assertNotIn("12 of", card)
         # r19 F5: every log card opens on the Output row's terminal glyph, so the three read as one component
         self.assertIn(f'<h2>{dashboard._ic("term", True)}Last output</h2>', card)
         head = dashboard.STYLE.split("\n.out .head h2 > .ic {", 1)[1].split("}", 1)[0]
@@ -3065,18 +3068,20 @@ console.log(JSON.stringify([
         self.assertNotIn("last 12", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
-        self.assertIn('<span class="worked-output">All output</span>', body)
-        self.assertIn('<span class="lines mono">30 lines</span>', body)
+        fold = re.search(r'<summary class="worked-summary">.*?</summary>', body, re.S).group(0)
+        self.assertIn('<span class="worked-output">All output</span>', fold)
+        self.assertNotIn('class="lines', fold)
         done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30</span>', cut)
         # r19 F4: '12 of 30' named the kept tail as the whole. With no total known the card counts what it shows;
-        # with the log's real length both counts name it, one phrasing: 'N of M lines'
+        # with the log's real length the card names it once, and the fold says how much of it it holds
         self.assertIn('<span class="lines mono">12 lines</span>', cut)
         done["open"]["log_total"] = 2412
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertIn('<span class="lines mono">12 of 2,412 lines</span>', cut)
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">30 of 2,412 lines</span>', cut)
+        self.assertIn('<span class="lines mono">2,412 lines</span>', cut)
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30</span>', cut)
+        self.assertEqual(cut.count("2,412"), 1)
         del done["open"]["log_total"]
         done["open"]["log_cut"] = False
         done["open"]["log"] = "one\ntwo"
@@ -3114,7 +3119,7 @@ console.log(JSON.stringify([
         self.assertEqual(order, ["j-error", "j-output"])
         self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
-        self.assertIn("12 of 30 lines", error)  # the exit code leads the page, not this card
+        self.assertIn('<span class="lines mono">30 lines</span>', error)  # the exit code leads the page, not this card
         self.assertIn(f'<h2>{dashboard._ic("term", True)}Where it stopped</h2>', error)
         self.assertNotIn("exit 2", error)
         self.assertIn("line 30", error)

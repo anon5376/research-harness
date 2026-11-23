@@ -1913,3 +1913,6 @@ a.sw-run:hover { background: var(--surface); }
 /* The one swarm model that costs says so, with the picker's API tag. */
 .swarm-m .swarm-cost { flex: none; padding: 1px 6px; border-radius: 5px; background: rgb(255 255 255 / .06);
   color: var(--muted); font: 11px var(--ui); }
+/* Header actions are the app's pills, as Run again and Open job are; a phone draws them as glass squares. */
+@media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px; padding: 0 12px; } }
+.act > .pop .btn { border-radius: 999px; }

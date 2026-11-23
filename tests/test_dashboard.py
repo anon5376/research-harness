@@ -397,6 +397,12 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("margin-left: auto", rule)
         self.assertIn('.who-status::before { content: "·";', dashboard.STYLE)
 
+    def test_the_headers_buttons_are_the_apps_pills(self):
+        # Pause job and Cancel job drawn as rounded rectangles while every other action button is a pill must fail
+        # (on a phone they are the header's glass squares instead).
+        self.assertIn("@media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px;", dashboard.STYLE)
+        self.assertIn(".act > .pop .btn { border-radius: 999px; }", dashboard.STYLE)  # and the confirm's own button
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

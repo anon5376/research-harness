@@ -2041,7 +2041,9 @@ console.log(JSON.stringify([
         tone = lambda line: re.search(r'class="ln ?(\w*)"', dashboard._ln(line)).group(1)  # noqa: E731
         for line in ("2026-11-23T22:33:01Z WARN acp: Invalid value 'swe-2-max' for config option 'model'",
                      "ERROR could not open session", "Traceback (most recent call last):",
-                     "ValueError: bad model", "error: the changes did not apply", "fatal: not a git repository"):
+                     "ValueError: bad model", "error: the changes did not apply", "fatal: not a git repository",
+                     "ls: drafts/: No such file or directory", "sh: pytest: command not found",
+                     "open: out.csv: Permission denied"):
             self.assertEqual(tone(line), "loud", line)
         for line in ("2026-11-23T22:33:00Z INFO acp: session opened", "DEBUG retry 1", "stopped: None"):
             self.assertEqual(tone(line), "quiet", line)

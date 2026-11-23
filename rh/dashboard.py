@@ -214,7 +214,7 @@ def _text(value):
 
 # A line that says what went wrong, and the routine chatter around it.
 _LOUD = re.compile(r"\b(WARN|WARNING|ERROR|FATAL|CRITICAL|PANIC)\b|^\s*Traceback\b|^\s*[\w.]*(Error|Exception):"
-                   r"|^\s*(error|fatal)(\[\w+\])?:")
+                   r"|^\s*(error|fatal)(\[\w+\])?:|: (No such file or directory|command not found|Permission denied)$")
 _QUIET = re.compile(r"\b(INFO|DEBUG|TRACE)\b|^stopped: ")
 
 

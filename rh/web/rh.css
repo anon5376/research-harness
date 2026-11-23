@@ -1688,11 +1688,8 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 @media (max-width: 600px) { .composer textarea.c-text, :is(.dock, .session-dock) .compose textarea.c-text { font-size: 16px; } }
 /* Short headings and bubbles break evenly rather than leaving one word on the last line. */
 :is(.ib-t, .q-title, .md-title) { text-wrap: pretty; }
-/* The phone Inbox keeps its one count of what needs you after the title; the settled count stays on desktop. */
-@media (max-width: 600px) {
-  .top-meta:has(> [data-need]) { display: inline; }
-  .top-meta:has(> [data-need]) > :not([data-need]) { display: none; }
-}
+/* The phone Inbox keeps its counts after the title, as on desktop; the lists below repeat none. */
+@media (max-width: 600px) { .top-meta:has(> [data-need]) { display: inline; } }
 /* An Inbox row reads its brief in up to two lines, then why it waits, ending with the run's id, in up to three:
    the reason is what you triage on, so it wraps rather than being cut. */
 .ib-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }

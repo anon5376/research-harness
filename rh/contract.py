@@ -78,7 +78,11 @@ def normalize(raw):
         raise ContractError(f"kind must be one of {', '.join(KINDS)}")
     if not isinstance(spec.get("brief"), str) or not spec["brief"].strip():
         raise ContractError("brief must be a non-empty string")
-    spec.setdefault("needs", [])
+    for key, what in (("needs", "capabilities"), ("write_paths", "paths"), ("after", "job ids")):
+        value = spec.setdefault(key, [])
+        if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) for v in value):
+            raise ContractError(f"{key} must be a list of {what}, not {type(value).__name__} {value!r}"
+                                if not isinstance(value, (list, tuple)) else f"{key} must be a list of {what}")
     unknown = [n for n in spec["needs"] if n not in CAPABILITIES]
     if unknown:
         raise ContractError(f"unknown needs {unknown}; known: {', '.join(CAPABILITIES)}")
@@ -88,8 +92,6 @@ def normalize(raw):
     if spec["kind"] in ("codex-cloud", "gpt-chat") and spec["write_root"] != f"runs/{jid}/":
         label = "cloud" if spec["kind"] == "codex-cloud" else "chat"
         raise ContractError(f"{label} jobs write to runs/<id>/; put other paths in write_paths")
-    spec.setdefault("write_paths", [])
-    spec.setdefault("after", [])
     spec.setdefault("inputs", [])
     for i in spec["inputs"]:
         if not isinstance(i, dict) or not isinstance(i.get("path"), str):
@@ -114,7 +116,12 @@ def normalize(raw):
         spec["model"] = {"requested": "gpt-6.1-sol-pro", **spec["model"]}
     else:
         spec.setdefault("accept", "")
+        if not isinstance(spec["accept"], str):
+            raise ContractError("accept must be a string holding one command, not a list like command")
     spec.setdefault("timeout_min", 120)
+    timeout = spec["timeout_min"]
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not timeout > 0:
+        raise ContractError("timeout_min must be a number of minutes above 0")
     # An agent's last message (answer.md) is shown as a message on the job page ("chat") or listed as a file ("file").
     if spec.get("answer", "chat") not in ("chat", "file"):
         raise ContractError("answer must be chat or file")

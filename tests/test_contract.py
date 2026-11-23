@@ -35,6 +35,28 @@ class LoadTest(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(ContractError):
                 load(text)
 
+    def test_rejects_an_accept_that_is_not_a_string(self):
+        with self.assertRaisesRegex(ContractError, "accept must be a string"):
+            spec('accept = ["test", "-s", "runs/j1/out.md"]')
+        self.assertEqual(spec('accept = "test -s runs/j1/out.md"')["accept"], "test -s runs/j1/out.md")
+
+    def test_timeout_min_must_be_a_positive_number(self):
+        for bad in ('"30"', "0", "-5", "true", "[30]"):
+            with self.subTest(bad=bad), self.assertRaises(ContractError) as caught:
+                spec(f"timeout_min = {bad}")
+            self.assertIn("timeout_min", str(caught.exception))
+        self.assertEqual(spec()["timeout_min"], 120)
+        self.assertEqual(spec("timeout_min = 30")["timeout_min"], 30)
+        self.assertEqual(spec("timeout_min = 0.5")["timeout_min"], 0.5)
+
+    def test_rejects_a_string_or_non_string_items_where_a_list_is_due(self):
+        for extra in ('after = "up"', 'needs = "net"', 'write_paths = "rh/cli.py"', "after = [1]", "write_paths = [[]]"):
+            key = extra.split()[0]
+            with self.subTest(extra=extra), self.assertRaisesRegex(ContractError, f"^{key} must be a list of "):
+                spec(extra)
+        ok = spec('after = ["up"]\nneeds = ["net"]\nwrite_paths = ["rh/cli.py"]')
+        self.assertEqual((ok["after"], ok["needs"], ok["write_paths"]), (["up"], ["net"], ["rh/cli.py"]))
+
 
 class PreflightTest(unittest.TestCase):
     def test_plain_job_is_ready(self):

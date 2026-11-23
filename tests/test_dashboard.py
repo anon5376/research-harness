@@ -1958,6 +1958,15 @@ console.log(JSON.stringify([
         self.assertIn("overflow: auto", rule(".opts-body"))
         self.assertIn("d.matches('.opts')) place(d);", dashboard.SCRIPT)
 
+    def test_test_when_done_wears_a_flask_not_a_tick(self):
+        # The row's value often reads "Don't test", and everywhere else a tick means done or passed. The row
+        # drawn with the check icon's path, or without the flask, must fail.
+        page = dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN)
+        row = page.split('<details class="op-row accept-option"', 1)[1].split("</details>", 1)[0]
+        self.assertIn("Test when done", row)
+        self.assertNotIn('d="M20 6 9 17l-5-5"', row)
+        self.assertIn(dashboard._ICONS["flask"], row)
+
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):
         # A syntax error in app.js, which no Python test runs, must fail.

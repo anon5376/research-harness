@@ -3053,6 +3053,14 @@ console.log(JSON.stringify([
         rows = rule(".p-list")
         self.assertIn("min-height: 0", rows)
         self.assertIn("overflow-y: auto", rows)
+        # r23 F2: the desktop list's own cap (460px) still held, so the sheet stopped at 577 of 844px with its last row
+        # sliced: on a phone only the sheet's cap holds, and the list's last 48px fade (r16 F7). The fade rule is the stylesheet's
+        # last word on the phone list (an unscoped one after it had out-ruled it).
+        self.assertIn("max-height: none", rows)
+        fade = "linear-gradient(#000 calc(100% - 48px), transparent)"
+        tail = dashboard.STYLE[dashboard.STYLE.rindex(".p-list {"):]
+        self.assertIn(fade, tail.split("}", 1)[0])
+        self.assertTrue(dashboard.STYLE[:dashboard.STYLE.rindex(".p-list {")].rstrip().endswith("@media (max-width: 600px) {"))
         desk = dashboard.STYLE.split("\n.pal {", 1)[1].split("}", 1)[0]
         self.assertIn("top: 104px", desk)
         self.assertNotIn("--vvh", desk)

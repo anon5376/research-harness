@@ -656,7 +656,7 @@ dialog::backdrop { background: var(--backdrop); }
   .pal { top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(var(--vvh, 100dvh) - 24px); }
   .pal[open] { display: flex; flex-direction: column; }
   .p-in, .p-foot { flex: none; }
-  .p-list { min-height: 0; overflow-y: auto; }
+  .p-list { min-height: 0; overflow-y: auto; max-height: none; }
 }
 
 /* the keyboard sheet */
@@ -1452,11 +1452,6 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
   .msg-copy .pc-t { display: none; }
   .msg-copy::after { content: ""; position: absolute; inset: -8px; }
 }
-/* a phone palette's list dissolves its last row over 48px, so no glyph is sliced at the footer */
-@media (max-width: 600px) {
-  .p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent);
-    mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
-}
 @media (hover: hover) {
   .msg-copy { opacity: 0; }
   .msg-copy.shown { opacity: 1; }  /* a Copy its key just ran stays in sight while it says Copied */
@@ -1798,6 +1793,10 @@ svg.st[data-s="failed"]:not(:is(.fail-k, .q-fail-k) > svg) .k { stroke: currentC
 /* The palette's list fades under its footer instead of slicing a row. */
 .p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
   padding-bottom: 20px; }
+/* a phone palette's list dissolves its last row over 48px, so no glyph is sliced at the footer */
+@media (max-width: 600px) {
+.p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 48px), transparent); mask-image: linear-gradient(#000 calc(100% - 48px), transparent); }
+}
 /* The Inbox's actions are the composer's pills. */
 .q-acts .btn { border-radius: 999px; height: 30px; padding: 0 14px; }
 .assistant-message.md > .md-title { max-width: 36em; }

@@ -1620,7 +1620,7 @@ def _composer(ctx, draft, ready, policy):
         + row("answer-option", "chat", "Answer", dict(_ANSWER_WORDS)[answer],
               "Where the agent's reply goes. In the chat shows it on the job page as a message; as answer.md keeps "
               "it as a file you open.", f'<div class="segs">{places}</div>')
-        + '<p class="op-title">Running</p>'
+        + '<p class="op-title">Run</p>'
         + row("", "clock", "Time limit", _minutes(int(timeout)) if timeout.isdigit() else "2 h",
               "The job is stopped if it is still running after this long.", f'<div class="segs">{spans}</div>')
         + row("accept-option", "check", "Test when done", _text(draft.get("accept", "")) or "Don't test",

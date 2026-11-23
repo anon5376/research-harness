@@ -1739,3 +1739,7 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .ib-id { grid-column: 2 / 4; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--faint); white-space: nowrap;
   overflow: hidden; text-overflow: ellipsis; }
 .ib-ic { grid-row: 1 / 4; }
+/* A wrapped line in a stopped log hangs its continuation under the line's own start, two spaces in. */
+pre.log.ended .ln { display:block; padding-left:2ch; text-indent:-2ch; white-space:pre-wrap; }
+pre.log.ended .ln + .ln { margin-top:4px; }
+pre.log.ended .ln:empty::before { content: "\200B"; }  /* a blank line keeps its row */

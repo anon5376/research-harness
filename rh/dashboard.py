@@ -205,6 +205,11 @@ def _text(value):
     return escape(str(value), quote=True)
 
 
+def _ln(line):
+    """One log line as its own block, so a wrapped line hangs under the line's start; a blank keeps its row."""
+    return f'<span class="ln">{_text(line)}</span>'
+
+
 def _sig(*fields):
     return format(zlib.crc32(repr(fields).encode()), "08x")
 
@@ -2109,7 +2114,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         name, region = ("Where it stopped", "j-error") if failed else ("Last output", "j-last")
         body = (f'<div class="head"><h2>{name}</h2><span class="lines mono">'
                 f'{"last " if len(lines) > len(tail) else ""}{len(tail)} {"line" if len(tail) == 1 else "lines"}</span></div>'
-                f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{_text(chr(10).join(tail))}</pre>')
+                f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # output that fits whole in the card above has nothing more to unfold
     if (not finished or log) and not (card and len(lines) <= _TAIL):
@@ -2232,7 +2237,8 @@ def _ib_job(ctx, entry, view):
     tail = str((view.get("tails") or {}).get(job.id) or "")
     n = len(tail.splitlines())
     stopped = (f'<section class="out"><div class="head"><h2>Where it stopped</h2><span class="lines mono">last {n} '
-               f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">{_text(tail)}</pre></section>'
+               f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">'
+               f'{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
                if tail else "")
     said = (f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
             f'<span>{job.headline_html(runs)}</span></p>')

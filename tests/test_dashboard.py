@@ -1672,6 +1672,19 @@ console.log(JSON.stringify([
         self.assertEqual(body.count("ls: docs/: No such file or directory"), 1)
         self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
 
+    def test_a_stopped_log_wraps_each_line_as_its_own_hanging_block(self):
+        # Each tail line is its own block so a wrapped line indents under the line's start, not the card's edge;
+        # a newline-joined tail, a line rendered outside its span, or a < reaching the page raw, must fail.
+        broke = opened(live_view(), "broke-job", kind="local-shell")
+        broke["open"]["log"] = "first < line\n\nlast"
+        card = re.search(r'<pre class="log ended err" tabindex="0">(.*?)</pre>',
+                         pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(1)
+        self.assertEqual(card, '<span class="ln">first &lt; line</span><span class="ln"></span>'
+                               '<span class="ln">last</span>')
+        self.assertNotIn("\n", card)
+        self.assertIn('pre.log.ended .ln { display:block; padding-left:2ch; text-indent:-2ch; white-space:pre-wrap; }',
+                      dashboard.STYLE)
+
     def test_session_numbers_use_ui_type_and_the_machine_has_one_name(self):
         view = opened(live_view(), "finished-job", kind="local-shell")
         view["open"]["files"] = [{"path": "notes.md", "size": 2048}]

@@ -2834,11 +2834,12 @@ def _settings(ctx, preset, tint="cobalt"):
                     f'<span class="tint-dot" data-tint="{name}"></span></label>' for name in TINTS)
     return ('<dialog class="settings" id="settings" aria-labelledby="settings-title"><header>'
             '<h2 id="settings-title" tabindex="-1" autofocus>Settings</h2><form method="dialog"><button class="icon-btn" aria-label="Close settings">'
-            '×</button></form></header><form action="/appearance" method="post" data-appearance>'
+            '×</button></form></header><div class="settings-body"><form action="/appearance" method="post" '
+            'data-appearance>'
             f'{_hidden(ctx, [])}<fieldset><legend>Background</legend><div class="background-choices">{choices}</div>'
             f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form>'
             f'{_swarm_settings(ctx)}<footer><button type="button" data-keys class="btn quiet small" hidden>'
-            'Keyboard shortcuts <kbd>?</kbd></button></footer></dialog>')
+            'Keyboard shortcuts <kbd>?</kbd></button></footer></div></dialog>')
 
 
 def render(view: dict, now: float, token: str | None = None, result=None) -> str:

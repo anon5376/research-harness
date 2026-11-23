@@ -457,6 +457,26 @@ class ListsTest(unittest.TestCase):
         self.assertIn("Fable 5.2 Medium + SWE-2 High", text(row))
         self.assertIn('<span class="swarm-cost">API</span>', row)
 
+    def test_the_settings_grid_and_head_keep_their_measure(self):
+        # Names spaced as far from the row below as from their own thumbnail read as that row's titles, and a
+        # sheet that scrolled whole cut its contents mid-glyph at its top edge (critic r9 F10, r10 F5): 24px between
+        # thumbnail rows (10px across), and a 48px head that never scrolls over a body that does, which fades its
+        # top 16px only once scrolled. A sticky head over the translucent glass let the thumbnails show through.
+        grid = dashboard.STYLE.split("\n.background-choices {", 1)[1].split("}", 1)[0]
+        self.assertIn("gap: 24px 10px", grid)
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for spec in ("display: flex", "flex-direction: column", "overflow: hidden"):
+            self.assertIn(spec, rule("dialog.settings[open]"))
+        self.assertIn("height: 48px", rule(".settings header"))
+        self.assertNotIn("position: sticky", rule(".settings header"))
+        for spec in ("overflow-y: auto", "min-height: 0"):
+            self.assertIn(spec, rule(".settings-body"))
+        self.assertIn("linear-gradient(to bottom, transparent, #000 16px)", rule(".settings-body.scrolled"))
+        self.assertIn("t.classList.contains('settings-body')", dashboard.SCRIPT)
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        sheet = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)
+        self.assertRegex(sheet, r'</header><div class="settings-body"><form action="/appearance".*</footer></div></dialog>$')
+
     def test_an_agent_pages_status_reads_on_its_model_line(self):
         # An agent page whose Done/checks/time floats at the column's right edge, outside the answer's measure,
         # while shell pages lead with it on the left, must fail: it follows the model on the same line.

@@ -1962,6 +1962,7 @@ document.addEventListener('scroll', e => {
   if (t.classList.contains('user-message')) fadeLong(t);
   else if (t.matches('pre.log[data-follow]')) fadeTop(t);
   else if (t.classList.contains('jd-scroll')) t.classList.toggle('scrolled', t.scrollTop > 2);
+  else if (t.classList.contains('settings-body')) t.classList.toggle('scrolled', t.scrollTop > 2);
 }, true);
 document.addEventListener('click', e => {
   const more = e.target.closest && e.target.closest('.ask-more');

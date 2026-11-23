@@ -508,6 +508,7 @@ def _plain(detail):
              (r"launch deferred: the codex CLI cannot see the environment", _STATES["env"][0]),
              (r"launch deferred: (.*)", r"Waiting to start: \1"),
              (r"no finish after (\d+) min", r"Past its \1-minute limit"),
+             (r"runner ended without an exit record", "No exit record"),
              (r"attached from the web composer", ""),
              (r".*rh cloud prompt .*", "Launch it in Codex by hand"))
     text = text.replace(" (operator step)", "")

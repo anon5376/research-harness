@@ -1146,6 +1146,18 @@ class ListsTest(unittest.TestCase):
         first = {**view, "meta": {"broke-job": {"kind": "local-shell", "brief": "Count the words.", "updated": NOW}}}
         self.assertNotIn('class="q-fu"', inbox(first))
 
+    def test_every_inbox_reason_is_one_line(self):
+        # r21 F5: one reason ('Ended early 2 times: runner ended without an exit record') wrapped to two lines where
+        # every other was cut to one, so that row grew and drew the eye. Every reason keeps one line, and the
+        # supervisor's sentence for a runner that left no exit code reads short; the detail pane says it whole.
+        rule = dashboard.STYLE.split(".ib-s:has(> .ib-why) {", 1)[1].split("}", 1)[0]
+        self.assertIn("-webkit-line-clamp: 1", rule)
+        self.assertNotIn("-webkit-line-clamp: 3", rule)
+        self.assertEqual(dashboard._plain("runner ended without an exit record"), "No exit record")
+        # r21 F6: the first row's fill started 2px under the top bar's divider; it starts 8px under it, its side inset
+        self.assertIn(".ib-list:has(> .s-ib-wait > .head > h2 > .vh:only-child):not(:has(.tabs)) { padding-top: 8px; }",
+                      dashboard.STYLE)
+
     def test_an_inbox_failure_row_says_how_it_failed(self):
         # r19 F2: three failed rows each read "Failed: the command exited with code 1", a line that told them
         # apart by nothing. A failed row with a recorded check reads its exit code and the last line it printed

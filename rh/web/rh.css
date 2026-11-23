@@ -553,7 +553,7 @@ pre.log.err { color: var(--text); }
 .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .ib-list .head:has(> h2 > .vh:only-child):not(:has(.tabs)) { min-height: 0; }
 /* then the first row's text starts 13px under the divider, on the detail's first line */
-.ib-list:has(> .s-ib-wait > .head > h2 > .vh:only-child):not(:has(.tabs)) { padding-top: 2px; }
+.ib-list:has(> .s-ib-wait > .head > h2 > .vh:only-child):not(:has(.tabs)) { padding-top: 8px; }
 .ib-list .n { font: 12px var(--ui); color: var(--faint); }
 .ib-gh-r { margin-left: auto; color: var(--faint); }
 .ib-list .rows > li { margin: 0 8px 2px; }
@@ -1837,10 +1837,10 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 :is(.ib-t, .q-title, .md-title) { text-wrap: pretty; }
 /* The phone Inbox keeps its counts after the title, as on desktop; the lists below repeat none. */
 @media (max-width: 600px) { .top-meta:has(> [data-need]) { display: inline; } }
-/* An Inbox row reads its brief in up to two lines, then why it waits, ending with the run's id, in up to three:
-   the reason is what you triage on, so it wraps rather than being cut. */
+/* An Inbox row reads its brief in up to two lines, then why it waits on one line (cut at its end; the detail pane
+   says it whole), then the run's id: every row keeps one rhythm. */
 .ib-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
-.ib-s:has(> .ib-why) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal;
+.ib-s:has(> .ib-why) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; white-space: normal;
   overflow-wrap: anywhere; }
 .ib-s .mono { color: var(--muted); white-space: nowrap; }
 /* A failure's reason is its exit code and last printed line: one line, cut at its end. */

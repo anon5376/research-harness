@@ -560,7 +560,11 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("position: sticky", rule(".settings header"))
         for spec in ("overflow-y: auto", "min-height: 0"):
             self.assertIn(spec, rule(".settings-body"))
-        self.assertIn("linear-gradient(to bottom, transparent, #000 16px)", rule(".settings-body.scrolled"))
+        # 16px of fade left the scrolled thumbnails as crisp 14px slivers under the head (critic r11 F8): 32px of fade,
+        # and a hairline under the head once scrolled
+        self.assertIn("linear-gradient(to bottom, transparent, #000 32px)", rule(".settings-body.scrolled"))
+        self.assertIn("box-shadow: 0 1px 0 rgb(255 255 255 / .08)",
+                      rule("dialog.settings:has(.settings-body.scrolled) header"))
         self.assertIn("t.classList.contains('settings-body')", dashboard.SCRIPT)
         page = dashboard.render(live_view(), NOW, token=TOKEN)
         sheet = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)

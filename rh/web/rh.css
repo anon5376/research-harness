@@ -1967,11 +1967,14 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .sw-again svg { width: 14px; height: 14px; }
 .sw-again:hover, .sw-again:focus-visible { color: var(--text); background: #1c2030; }
 /* Swarm again ends on its key, as the composer's hint chips, so it is not read as Judge again's circular arrow; a
-   phone has no key to show and draws the Swarm chip's glyph instead */
+   phone has no key to show, draws the Swarm chip's glyph instead, and wears the dock's Judge again pill so the
+   head's right side does not read as a second title */
 .sw-again > .ic { display: none; }
 .sw-again kbd { display: inline-block; height: 18px; padding: 0 5px; border-radius: 4px; background: #1a1f2c;
   color: var(--muted); font: 11px/18px var(--mono); }
-@media (max-width: 600px) { .sw-again > .ic { display: block; } .sw-again kbd { display: none; } }
+@media (max-width: 600px) { .sw-again { height: 32px; padding: 0 12px; border: 1px solid #2a3142;
+    border-radius: 16px; }
+  .sw-again > .ic { display: block; } .sw-again kbd { display: none; } }
 .sw-runs { margin: 0; padding: 6px; list-style: none; }
 .sw-run { display: grid; grid-template-columns: 16px 112px 148px minmax(0, 1fr); align-items: center;
   column-gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: var(--text); font-size: 13px;
@@ -2021,7 +2024,9 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
    rule doubles it; a left rule means the failing line elsewhere), and the runs it passed over step back. */
 .sw-run { grid-template-columns: 22px 16px 112px 148px minmax(0, 1fr) auto; position: relative; }
 .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 22px 16px 112px 236px minmax(0, 1fr) auto; }
-.sw-id { color: #9aa0ad; font-size: 12px; font-variant-numeric: tabular-nums; }
+.sw-id { color: #b4bac6; font-size: 12px; font-variant-numeric: tabular-nums; }
+/* the judge's answer names the kept run by its id, so the kept row's id reads at full ink */
+.sw-run.kept .sw-id { color: #e6e4e1; }
 /* a passed-over run steps back, all but its id, which the judge's answer names it by */
 .sw-run.lost > :is(.sw-m, .sw-s, .sw-a) { color: #9aa0ad; }
 .sw-run.lost > svg { opacity: .6; }

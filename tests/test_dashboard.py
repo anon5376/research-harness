@@ -368,6 +368,10 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn(".sw-run.lost > :not(.sw-id)", dashboard.STYLE)
         self.assertIn(".sw-run.lost > :is(.sw-m, .sw-s, .sw-a) { color: #9aa0ad; }", dashboard.STYLE)
         self.assertIn(".sw-run.lost > svg { opacity: .6; }", dashboard.STYLE)
+        # the judge's answer names the kept run by its id ('I chose run w1'), so the kept row's id reads at full
+        # ink while every row's id stays a legible 12px tabular label, a step above the passed-over rows' text
+        kept_id = dashboard.STYLE.split("\n.sw-run.kept .sw-id {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: #e6e4e1", kept_id)
         self.assertIn("font-variant-numeric: tabular-nums", dashboard.STYLE.split(".sw-id {", 1)[1].split("}", 1)[0])
         # each run row says it opens, as 'Preview ›' does: a trailing chevron and a soft hover (critic r11 F3)
         for row in re.findall(r'<a class="sw-run[^"]*".*?</a>', card, re.S):
@@ -383,7 +387,8 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn('class="sep"', rows["w1"])
         self.assertIn('<span class="sw-s">1 min 0 s <span class="sw-c">Check passed</span></span>', rows["w1"])
         self.assertIn('<span class="sw-w">Running</span><span class="sep">·</span>', rows["w2"])
-        self.assertIn("color: #9aa0ad", rule(".sw-id"))
+        self.assertIn("color: #b4bac6", rule(".sw-id"))
+        self.assertIn("font-size: 12px", rule(".sw-id"))
         self.assertIn("font-variant-numeric: tabular-nums", rule(".sw-s"))
         # on a phone each run is one 44px line: no answer line, no state word, no 'Check passed' (critic r11 F2)
         phone = dashboard.STYLE.split("/* phone swarm rows */", 1)[1].split("\n}", 1)[0]
@@ -584,6 +589,15 @@ class ListsTest(unittest.TestCase):
             self.assertIn(spec, chip)
         self.assertIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
         self.assertIn(".sw-again > .ic { display: block; } .sw-again kbd { display: none; }", dashboard.STYLE)
+        # on a phone the head's right side is a quiet pill like the dock's Judge again — 32px, a hairline edge,
+        # fully round — so it reads as an action, not a second 'Swarm' title in the title's own grey; the desktop
+        # keeps the bare label and its W chip
+        phone_again = dashboard.STYLE.split("@media (max-width: 600px) { .sw-again {", 1)[1].split("}", 1)[0]
+        for spec in ("height: 32px", "border: 1px solid #2a3142", "border-radius: 16px", "padding: 0 12px"):
+            self.assertIn(spec, phone_again)
+        desk_again = dashboard.STYLE.split("\n.sw-again {", 1)[1].split("}", 1)[0]
+        for spec in ("height: 28px", "padding: 0 10px", "border: 0", "border-radius: 8px"):
+            self.assertIn(spec, desk_again)
         # the page's w key presses it, once: no other control on the page may carry the key
         self.assertEqual(page.count('data-k="w"'), 1)
         self.assertEqual(page.count('aria-keyshortcuts="w"'), 1)

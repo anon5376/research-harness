@@ -1835,6 +1835,8 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .ib-s:has(> .ib-why) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal;
   overflow-wrap: anywhere; }
 .ib-s .mono { color: var(--muted); white-space: nowrap; }
+/* A failure's reason is its exit code and last printed line: one line, cut at its end. */
+.ib-s:has(> .ib-why.ib-exit) { -webkit-line-clamp: 1; }
 /* Your turns read as messages, a step under the answer (15 on 22 against 16 on 26), wrapped greedily so a bubble
    is never much wider than its text. A long brief folds to three lines; Show all opens it. */
 .user-message { font-size: 15px; line-height: 22px; text-wrap: wrap; }
@@ -1901,7 +1903,7 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .slash-d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swarm-note { display: flex; align-items: center; gap: 12px; min-width: 0; margin: 0 0 0 4px; color: var(--muted);
   font-size: 12.5px; line-height: 18px; }
-.swarm-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swarm-note > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swarm-note[hidden], .slash[hidden] { display: none; }
 @media (max-width: 600px) { .slash-o { grid-template-columns: 16px auto; } .slash-d { grid-column: 2; white-space: normal; } }
 /* Settings: swarm models as ticks in two columns, then the judge. */
@@ -2077,6 +2079,27 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .swarm-says { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 @media (max-width: 600px) { .swarm-says { display: none; } }
 .swarm-note .swarm-chip { overflow: visible; }
+/* The swarm line stands where the model picker stood and is drawn as its trigger: a 28px ghost button that fills on
+   hover and opens the swarm's ticks and judge under it, saved as they change. */
+.swarm-pick { position: relative; min-width: 0; }
+.swarm-pick > summary { display: flex; align-items: center; gap: 6px; height: 28px; min-width: 0; margin-left: -8px;
+  padding: 0 8px; border-radius: 6px; list-style: none; cursor: pointer; color: var(--muted);
+  transition: background-color 150ms ease-out, color 150ms ease-out; }
+.swarm-pick > summary::-webkit-details-marker { display: none; }
+.swarm-pick > summary:hover, .swarm-pick[open] > summary { background: rgb(255 255 255 / .06); color: var(--text); }
+.swarm-pick > summary:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 1px; }
+.swarm-pick > summary > svg { flex: none; width: 12px; height: 12px; rotate: 90deg; color: rgb(255 255 255 / .4); }
+.swarm-pick[open] > summary > svg { rotate: -90deg; }
+.swarm-pop { position: absolute; z-index: 90; top: calc(100% + 8px); left: -8px; display: block;
+  width: min(360px, calc(100vw - 32px)); max-height: 50vh; overflow-y: auto; overscroll-behavior: contain;
+  padding: 6px; border: 1px solid rgb(170 185 235 / .14); border-radius: 12px;
+  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38 / .96);
+  -webkit-backdrop-filter: blur(40px) saturate(160%); backdrop-filter: blur(40px) saturate(160%);
+  box-shadow: 0 16px 40px rgb(0 0 0 / .55); color: var(--text); font-size: 13px; }
+.swarm-pop > .swarm-models { display: block; }
+.swarm-pop > .swarm-opts { display: block; margin-top: 6px; }
+@media (prefers-reduced-motion: reduce) { .swarm-pick > summary { transition: none; } }
+@media (max-width: 600px) { .swarm-pick { display: none; } }
 /* An Inbox with nothing in it is one calm note in the middle of the pane, not an empty list beside a second note. */
 .ibx[data-view="empty"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
 .ibx[data-view="empty"] > .ib-detail { display: grid; place-content: start center; padding: 22vh 24px 0; text-align: center; }
@@ -2112,7 +2135,9 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
 /* In the Inbox a long brief is the item's title, not a message: no bubble, the title's left edge, two lines a step
    under the failure it sits above (the Inbox is where failures are triaged), with Show all at its right end. */
 .q-head .q-title.user-message { margin: 0; width: auto; max-width: 600px; padding: 0; border: 0; border-radius: 0;
-  background: none; white-space: pre-line; font: 500 15px/22px var(--ui); letter-spacing: 0; color: #c3c8d2; }
+  background: none; white-space: pre-line; font: 600 17px/22px var(--ui); letter-spacing: 0; color: #e6e8ee; }
+/* A follow-up run says its follow-up in the meta line, one line at most. */
+.q-who.q-sub > .q-fu { min-width: 0; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .q-head .q-title.user-message:has(+ .ask-more) { padding: 0; border-bottom: 0; }
 /* Folded, its third line fades out at the end rather than taking the clamp's "…" (which after a full stop reads "....") */
 .q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;

@@ -1043,7 +1043,7 @@ document.addEventListener('click', e => {
     setSidebar(!open, open);
     return;
   }
-  for (const d of $$('details.act[open], details.opts[open]')) if (!d.contains(e.target)) d.open = false;
+  for (const d of $$('details.act[open], details.opts[open], details.swarm-pick[open]')) if (!d.contains(e.target)) d.open = false;
   const u = e.target.closest && e.target.closest('[data-copy-url]');
   if (u) { copyUrl(u); return; }
   const c = e.target.closest && e.target.closest('[data-copy]');
@@ -2133,18 +2133,30 @@ document.addEventListener('submit', e => {
   if (brief && !/^\s*\/swarm\b/.test(brief.value)) brief.value = '/swarm ' + brief.value;
 }, true);
 // Swarm settings save as they change; a swarm needs at least one model, so the last one cannot be unticked.
+// A field may belong to its form by the form attribute (the composer's swarm popover), so the form is the field's own.
 document.addEventListener('change', e => {
-  const form = e.target instanceof Element && e.target.closest('[data-swarm-form]');
+  const t = e.target;
+  const form = t instanceof Element && t.form && t.form.matches('[data-swarm-form]') ? t.form : null;
   if (!form) return;
-  if (e.target.name === 'models' && !form.querySelector('input[name="models"]:checked')) {
-    e.target.checked = true;
+  if (t.name === 'models' && ![...form.elements].some(i => i.name === 'models' && i.checked)) {
+    t.checked = true;
     toast('A swarm needs at least one model.', false, '');
     return;
   }
   fetch(form.action, {method: 'POST', body: new URLSearchParams(new FormData(form))}).then(r => {
     if (!r.ok) throw new Error('not saved');
+    swarmSays(form);
   }).catch(() => toast('The swarm settings could not be saved.', false, ''));
 });
+// the composer's swarm line names what was just saved: the ticked models, then the judge
+function swarmSays(form) {
+  const says = form.id && document.querySelector(`[data-swarm-says="${form.id}"]`);
+  const judge = form.elements.namedItem('judge');
+  if (!says || !judge) return;
+  const sep = Object.assign(document.createElement('span'), { className: 'sep', textContent: '·' });
+  const names = [...form.elements].filter(i => i.name === 'models' && i.checked).map(i => i.dataset.name);
+  says.replaceChildren(names.join(', '), sep, `${judge.selectedOptions[0].text} judges`);
+}
 // An identifier moves whole to the next line; only one wider than its column breaks, and then at its own seams
 // (after _ and .), never mid-word as "strin / g".
 function seamTokens() {

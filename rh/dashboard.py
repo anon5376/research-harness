@@ -1740,17 +1740,62 @@ def _slash(ctx):
             f'</button></div>')
 
 
+def _swarm_rows(swarm, form=""):
+    """The swarm's model ticks grouped by provider, with the glyphs the model picker uses and a check of the app's
+    own, and the judge's options; with a form id, each field belongs to that form wherever it is drawn."""
+    choices = [m for m in swarm.get("choices") or [] if isinstance(m, str)]
+    ticked, judge = set(swarm.get("models") or []), swarm.get("judge") or ""
+    owner = f' form="{form}"' if form else ""
+    groups = {}
+    for m in choices:
+        groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
+    boxes = "".join(
+        f'<p class="swarm-g">{_AGENT_WHO.get(prov, (prov.capitalize(),))[0]}</p>' + "".join(
+            f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
+            + ('<span class="swarm-cost">API</span>' if m.startswith("fusion-") else "") +
+            f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}{owner} '
+            f'data-name="{_text(_names([m]))}"><span class="swarm-x" aria-hidden="true"></span></label>' for m in models)
+        for prov, models in groups.items())
+    judges = "".join(f'<option value="{_text(m)}"{" selected" if m == judge else ""}>{_text(_names([m]))}</option>'
+                     for m in choices)
+    judge_row = (f'<label class="swarm-judge"><span>Judge</span><span class="swarm-sel"><select name="judge"{owner}>'
+                 f'{judges}</select>{_ic("chev", True)}</span></label>')
+    return boxes, judge_row
+
+
+_SWARM_PICK = "swarm-pick-f"
+
+
 def _swarm_note(ctx):
-    """What a /swarm brief will do, said where the model picker stands, which steps aside for it."""
+    """What a /swarm brief will do, said where the model picker stands, which steps aside for it. On a live page
+    the line is that picker's stand-in: it opens the swarm's ticks and judge, saved as they change."""
     swarm = ctx.get("swarm") or {}
     models = [m for m in swarm.get("models") or [] if isinstance(m, str)]
     if not models:
         return ""
     judge = swarm.get("judge") or models[0]
-    return (f'<p class="swarm-note" data-swarm-note hidden><span class="swarm-chip">{_ic("swarm", True)}Swarm'
+    chip = (f'<span class="swarm-chip">{_ic("swarm", True)}Swarm'
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
-            f'×</button></span><span class="swarm-says">{_text(", ".join(_names([m]) for m in models))}'
-            f'{_SEP_HTML}{_text(_names([judge]))} judges</span></p>')  # 'A + B' would read as one Fusion model
+            '×</button></span>')
+    says = f'{_text(", ".join(_names([m]) for m in models))}{_SEP_HTML}{_text(_names([judge]))} judges'  # 'A + B' is Fusion
+    if ctx["live"] and swarm.get("choices"):
+        boxes, judge_row = _swarm_rows(swarm, _SWARM_PICK)
+        return (f'<div class="swarm-note" data-swarm-note hidden>{chip}<details class="swarm-pick">'
+                f'<summary aria-label="Swarm models" title="Swarm models"><span class="swarm-says" '
+                f'data-swarm-says="{_SWARM_PICK}">{says}</span>{_ic("chev", True)}</summary>'
+                f'<div class="swarm-pop"><div class="swarm-models">{boxes}</div>'
+                f'<div class="swarm-opts in-pop">{judge_row}</div></div></details></div>')
+    return f'<p class="swarm-note" data-swarm-note hidden>{chip}<span class="swarm-says">{says}</span></p>'
+
+
+def _swarm_pick_form(ctx):
+    """The form the composer's swarm popover saves through: outside the composer's own form, so its fields never
+    go out with a job, and carrying the check command, which the settings route replaces with the rest."""
+    swarm = ctx.get("swarm") or {}
+    if not (ctx["live"] and swarm.get("choices") and swarm.get("models")):
+        return ""
+    return (f'<form id="{_SWARM_PICK}" action="/settings/swarm" method="post" data-swarm-form hidden>'
+            f'{_hidden(ctx, [("check", swarm.get("check") or "")])}</form>')
 
 
 def _composer(ctx, draft, ready, policy):
@@ -1823,7 +1868,7 @@ def _composer(ctx, draft, ready, policy):
     form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx), options=fields, opened=opened,
                           controls="".join(controls), where=f'<div class="where-bar">{runner}{where}</div>', files=True,
                           picked=draft.get("input_path", "") if isinstance(draft.get("input_path"), str) else "")
-    body = f'<div class="body">{form}</div>'
+    body = f'<div class="body">{form}{_swarm_pick_form(ctx)}</div>'
     return (f'<div class="s-compose" data-region="compose" data-key="section:compose" '
             f'data-sig="{_sig("compose", body)}">{body}</div>')
 
@@ -2544,7 +2589,17 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     return "job:" + jid, actions + page, title
 
 
-def _ib_row(ctx, entry, picked):
+def _exit_why(jid, view):
+    """A failed row's reason as the failure itself: its exit code and the last line it printed (else its command), so
+    failures tell apart without opening them; "" when no failed check is recorded."""
+    check = ((view or {}).get("fails") or {}).get(jid)
+    if not (isinstance(check, list) and len(check) == 3):
+        return ""
+    lines = [l.strip() for l in str(((view or {}).get("tails") or {}).get(jid) or "").splitlines() if l.strip()]
+    return f'<span class="ib-why ib-exit">Exit {_text(check[1])}{_SEP_HTML}{_text(lines[-1] if lines else check[0])}</span>'
+
+
+def _ib_row(ctx, entry, picked, view=None):
     """One thing that waits on you: an item opens here beside the list; a job with nothing to answer opens its page,
     and the app's own pause opens Today, where its Resume is."""
     job, jid = entry["job"], entry["jid"]
@@ -2554,7 +2609,9 @@ def _ib_row(ctx, entry, picked):
     age = _clock(created, ctx["now"]) if _number(created) else ""  # clock times, as the sidebar and Settled give
     head = job.title if job else entry["ask"]
     # why it waits, then the run's id on a line of its own, which tells runs of one brief apart
-    sub = (f'<span class="ib-why">{job.headline_html(len(entry.get("runs", [])) or 1)}</span>' if job and not entry["item"] else
+    failed = job and not entry["item"] and job.state in _FAILED and _exit_why(jid, view)
+    sub = (failed if failed else
+           f'<span class="ib-why">{job.headline_html(len(entry.get("runs", [])) or 1)}</span>' if job and not entry["item"] else
            f'<span class="ib-why">{_text(entry["ask"])}</span>' if job else
            "A job not listed here" if jid
            else "The app's own pause" if entry["stop"] else "The harness")
@@ -2614,10 +2671,18 @@ def _ib_job(ctx, entry, view):
     # The title is the brief whole when the job's name in the lists cannot say it all: it folds at three
     # lines with a Show all in its foot, the fold the job's own page gives the ask. A brief the name
     # already says keeps the bare title.
-    head, rest = _lead(job.meta)
-    title = (f'<h2 class="q-title user-message" id="q-h" data-clear>{_text(_reflow(job.brief))}</h2>'
+    # A follow-up's brief ends with its follow-up ("Follow-up: ..."): the title is the brief as first asked, and the
+    # follow-up is said in the meta line under it, so the pane's loudest line is what the job is.
+    brief, ask = job.brief, ""
+    if job.meta.get("prior"):
+        brief = brief.split("\n\nFollow-up: ", 1)[0]
+        ask = " ".join(ask_of(job.meta).split())
+    if ask:
+        who.insert(-1, f'<span class="q-fu">Follow-up: {_text(ask)}</span>')
+    head, rest = _lead({"brief": brief})
+    title = (f'<h2 class="q-title user-message" id="q-h" data-clear>{_text(_reflow(brief))}</h2>'
              '<button type="button" class="ask-more" aria-expanded="false">Show all</button>'
-             if job.brief and (rest or head != job.title) else
+             if brief and (rest or head != job.title) else
              f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2>')
     body = (f'<div class="q-head"><div class="q-head-in">{title}'
             f'<p class="q-who q-sub" data-clear>{_SEP_HTML.join(who)}</p></div></div>'
@@ -2733,7 +2798,7 @@ def _inbox_pane(view, ctx, feedback):
     # With nothing to answer here, the Inbox opens on the newest job that waits on you, as an item would open.
     lead = (next((e for e in waiting if e["job"] and not e["item"]), None)
             if entry is None and settled_item is None and missing is None else None)
-    rows = [_ib_row(ctx, e, (entry or lead) is not None and e["key"] == (entry or lead)["key"]) for e in waiting]
+    rows = [_ib_row(ctx, e, (entry or lead) is not None and e["key"] == (entry or lead)["key"], view) for e in waiting]
     done = [_settled_row(ctx, i, settled_item is not None and i["id"] == settled_item["id"]) for i in settled]
     counts = {}
     for e in waiting:
@@ -2859,31 +2924,15 @@ def _swarm_settings(ctx):
     """Which models /swarm runs a brief on, and which one judges their work. Only Claude and Devin models are offered:
     a swarm never spends the ChatGPT plan."""
     swarm = ctx.get("swarm") or {}
-    choices = [m for m in swarm.get("choices") or [] if isinstance(m, str)]
-    if not choices:
+    if not any(isinstance(m, str) for m in swarm.get("choices") or []):
         return ""
-    ticked = set(swarm.get("models") or [])
-    judge = swarm.get("judge") or ""
-    # rows grouped by provider, with the glyphs the model picker uses, and a check of the app's own
-    groups = {}
-    for m in choices:
-        groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
-    boxes = "".join(
-        f'<p class="swarm-g">{_AGENT_WHO.get(prov, (prov.capitalize(),))[0]}</p>' + "".join(
-            f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
-            + ('<span class="swarm-cost">API</span>' if m.startswith("fusion-") else "") +
-            f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}>'
-            '<span class="swarm-x" aria-hidden="true"></span></label>' for m in models)
-        for prov, models in groups.items())
-    judges = "".join(f'<option value="{_text(m)}"{" selected" if m == judge else ""}>{_text(_names([m]))}</option>'
-                     for m in choices)
+    boxes, judge_row = _swarm_rows(swarm)
     return ('<form action="/settings/swarm" method="post" data-swarm-form>'
             f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
             '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
             f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
             '<div class="swarm-opts">'
-            f'<label class="swarm-judge"><span>Judge</span><span class="swarm-sel"><select name="judge">{judges}</select>'
-            f'{_ic("chev", True)}</span></label>'
+            f'{judge_row}'
             '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
             f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
             f'value="{_text(swarm.get("check") or "")}"></label></div>'

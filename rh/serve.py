@@ -692,7 +692,8 @@ def _meta(cfg):
         meta = {j["id"]: {"brief": j["spec"].get("brief", ""), "kind": j["spec"].get("kind", ""),
                           "seat": j["spec"].get("seat", ""), "timeout_min": j["spec"].get("timeout_min"),
                           "created": j.get("created"), "started": j.get("started"), "updated": j.get("updated"),
-                          "prior": j["spec"].get("prior", ""), "said": _said_head(cfg, j),
+                          "prior": j["spec"].get("prior", ""), "changed": j["spec"].get("changed", ""),
+                          "said": _said_head(cfg, j),
                           "model": (dashboard.agent_of(j["spec"].get("command")) or ("", ""))[1],
                           "goal": j["spec"].get("goal", ""),
                           # a swarm's judge names its runs, so the app shows them as its work

@@ -1027,6 +1027,8 @@ class ServeTest(unittest.TestCase):
             self.assertEqual(led.job("count-words")["spec"]["inputs"], [])
         self.assertEqual((new["revision"], new["prior"], new["changed"]), (2, "count-words", "also count blank lines"))
         self.assertEqual(new["brief"], "Count the words.\n\nFollow-up: also count blank lines")
+        # the app's meta carries the follow-up, so the Inbox says it under the brief rather than in the title (r19 F1)
+        self.assertEqual(self.serve._meta({"home": str(self.home)})[0]["count-words-r2"]["changed"], "also count blank lines")
         self.assertEqual(new["inputs"], [{"path": "README.md"}])
         self.assertEqual((new["write_root"], new["command"]), ("runs/count-words-r2/", old["command"]))
         self.assertIn('data-say="Added count-words-r2, the next run of count-words."',

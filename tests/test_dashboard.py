@@ -615,12 +615,57 @@ class ListsTest(unittest.TestCase):
                                                "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
         self.assertIn("1 settled today", text(pane(inbox(settled))))
 
+    def test_the_swarm_line_opens_the_swarms_models(self):
+        # r19 F3: in swarm mode the model picker stepped aside for grey text, so the one row of controls had a line
+        # that did nothing, and changing the swarm meant leaving the brief for Settings. The line is a control: it
+        # opens the Settings ticks and judge in a popover under it, saved as they change. Its fields belong to a
+        # form of their own outside the composer (a nested form would send them with the job), and the check
+        # command rides along unchanged, since the settings route replaces all three.
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "check": "pytest -q",
+                 "choices": ["swe-2-max", "swe-2-flash-high", "claude-opus-5-5"]}
+        page = dashboard.render({**live_view(), "swarm": swarm}, NOW, token=TOKEN)
+        # a <details> would close a <p> around it, so this note is a div
+        self.assertIn('<div class="swarm-note" data-swarm-note hidden>', page)
+        pick = re.search(r'<details class="swarm-pick">.*?</details>', page, re.S).group(0)
+        self.assertIn('<summary aria-label="Swarm models"', pick)
+        self.assertIn('data-swarm-says="swarm-pick-f"', pick)
+        boxes = re.findall(r'<input type="checkbox" name="models"[^>]*>', pick)
+        self.assertEqual(len(boxes), 3)
+        for box in boxes:
+            self.assertIn(' form="swarm-pick-f"', box)
+        self.assertEqual(len(re.findall(r' checked', "".join(boxes))), 2)
+        self.assertIn('<select name="judge" form="swarm-pick-f">', pick)
+        compose = re.search(r'<form[^>]*class="compose[^"]*".*?</form>', page, re.S).group(0)
+        self.assertIn('<details class="swarm-pick">', compose)
+        self.assertNotIn('id="swarm-pick-f"', compose)  # its own form, after the composer's
+        own = re.search(r'<form id="swarm-pick-f"[^>]*>.*?</form>', page, re.S).group(0)
+        for part in ('action="/settings/swarm"', 'method="post"', "data-swarm-form", 'name="t" value="' + TOKEN + '"',
+                     '<input type="hidden" name="check" value="pytest -q">'):
+            self.assertIn(part, own)
+        # the script saves fields that belong to a form by its form attribute, renames the line after a save, and
+        # closes the popover on a click elsewhere
+        save = dashboard.SCRIPT.split("// Swarm settings save as they change", 1)[1].split("\n});", 1)[0]
+        self.assertIn("t.form && t.form.matches('[data-swarm-form]')", save)
+        self.assertIn("swarmSays(form)", save)
+        self.assertIn("function swarmSays(form)", dashboard.SCRIPT)
+        self.assertIn("details.swarm-pick[open]", dashboard.SCRIPT)
+        # drawn as the model picker's trigger: a 28px ghost button with a chevron that fills on hover
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for spec in ("height: 28px", "border-radius: 6px", "cursor: pointer"):
+            self.assertIn(spec, rule(".swarm-pick > summary"))
+        self.assertIn("background: rgb(255 255 255 / .06)", rule(".swarm-pick > summary:hover, .swarm-pick[open] > summary"))
+        for spec in ("position: absolute", "width: min(360px, calc(100vw - 32px))"):
+            self.assertIn(spec, rule(".swarm-pop"))
+        # a static snapshot has nothing to save to: the line stays text
+        static = dashboard.render({**live_view(), "swarm": swarm}, NOW)
+        self.assertNotIn('<details class="swarm-pick">', static)
+
     def test_the_swarm_line_beside_the_chip_is_short(self):
         # A sentence naming the judge twice beside the chip, crowding the options button, must fail: the line lists
         # the runs and the judge once, compactly.
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
                                                           "judge": "swe-2-max"}}, NOW, token=TOKEN)
-        says = re.search(r'<span class="swarm-says">(.*?)</span></p>', page).group(1)
+        says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span></p>', page).group(1)
         # 'A + B' names one Fusion model everywhere else, so the runs are listed with commas and the judge is a verb
         # (critic r11 F1)
         self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, SWE-2 Flash · SWE-2 Max judges".split())
@@ -891,8 +936,11 @@ class ListsTest(unittest.TestCase):
         # and it reads below the failure and Run again, not over them (critic r9 F4): body weight, a step dimmer
         # r13 F2: at 16px white it was still the pane's loudest text, so the failure read second: 15/22 #c3c8d2,
         # 600px wide, two lines, with Show all at its right end as in the bubbles
-        self.assertIn("font: 500 15px/22px var(--ui)", face)
-        self.assertIn("color: #c3c8d2", face)
+        # r19 F1: at 15px #c3c8d2 the pane had no title at all, so the eye fell on whatever came next. The brief
+        # is the pane's title again: 17px semibold, a step under the page headings, the failure banner's red still
+        # carrying the second look
+        self.assertIn("font: 600 17px/22px var(--ui)", face)
+        self.assertIn("color: #e6e8ee", face)
         self.assertIn("max-width: 600px", face)
         more = dashboard.STYLE.split(".q-head .q-title.user-message + .ask-more {", 1)[1].split("}", 1)[0]
         for spec in ("display: block", "width: fit-content", "margin: 6px max(0px, calc(100% - 600px)) 0 auto"):
@@ -919,6 +967,49 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<h2 class="q-title" id="q-h" data-clear>Fix the flaky test</h2>', short)
         self.assertNotIn("user-message", short)
         self.assertNotIn("Show all", short)
+
+    def test_an_inbox_follow_up_keeps_its_brief_as_the_title(self):
+        # r19 F1: a follow-up run's brief carries its follow-up as a last paragraph ("Follow-up: ..."), so the pane's
+        # title ended on the follow-up and that line read loudest. The title is the brief as first asked; the
+        # follow-up is said in the quiet meta line under it. A title holding "Follow-up", or a follow-up said
+        # nowhere, must fail.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}  # a failed job leads
+        view["meta"] = {"broke-job": {"kind": "local-shell", "brief": "Count the words in every chapter draft and "
+                                      "list the chapters over 4000 words.\n\nFollow-up: skip the appendix",
+                                      "prior": "broke-old", "changed": "skip the appendix", "updated": NOW - 10}}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
+        title = re.search(r'<h2[^>]*id="q-h".*?</h2>', detail, re.S).group(0)
+        self.assertNotIn("Follow-up", title)
+        self.assertNotIn("skip the appendix", title)
+        sub = re.search(r'<p class="q-who q-sub"[^>]*>(.*?)</p>', detail, re.S).group(1)
+        self.assertIn('<span class="q-fu">Follow-up: skip the appendix</span>', sub)
+        self.assertTrue(sub.endswith('<span class="mono">broke-job</span>'), sub)  # the id still closes the line
+        fu = dashboard.STYLE.split(".q-who.q-sub > .q-fu {", 1)[1].split("}", 1)[0]
+        for spec in ("text-overflow: ellipsis", "white-space: nowrap", "min-width: 0"):
+            self.assertIn(spec, fu)
+        # a first run says no follow-up
+        first = {**view, "meta": {"broke-job": {"kind": "local-shell", "brief": "Count the words.", "updated": NOW}}}
+        self.assertNotIn('class="q-fu"', inbox(first))
+
+    def test_an_inbox_failure_row_says_how_it_failed(self):
+        # r19 F2: three failed rows each read "Failed: the command exited with code 1", a line that told them
+        # apart by nothing. A failed row with a recorded check reads its exit code and the last line it printed
+        # (its command when it printed nothing), on one line; the red ring already says it failed.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": []}
+        bad = [r["id"] for r in view["recent"] if r["state"] in dashboard._FAILED]
+        self.assertTrue(bad)
+        view["fails"] = {jid: ["make test", 1, ""] for jid in bad}
+        view["tails"] = {bad[0]: "counting\nls: drafts/: No such file or directory\n\n"}
+        page = inbox(view)
+        self.assertIn('<span class="ib-why ib-exit">Exit 1<span class="sep">·</span>'
+                      'ls: drafts/: No such file or directory</span>', page)
+        if len(bad) > 1:
+            self.assertIn('<span class="ib-why ib-exit">Exit 1<span class="sep">·</span>make test</span>', page)
+        rows = re.search(r'<section class="s-ib-wait".*?</section>', page, re.S).group(0)
+        self.assertNotIn("Failed: the command exited", rows)
+        self.assertIn("-webkit-line-clamp: 1", dashboard.STYLE.split(".ib-s:has(> .ib-why.ib-exit) {", 1)[1].split("}", 1)[0])
+        # without a recorded check the headline stays
+        self.assertNotIn('class="ib-why ib-exit"', inbox({**view, "fails": {}}))
 
     def test_a_running_job_says_how_far_along_its_log_says_it_is(self):
         self.assertEqual(dashboard._progress("start\nstep 357: window 357 of 2400\n"), (357, 2400))
@@ -1948,7 +2039,9 @@ class DashboardTest(unittest.TestCase):
                          "fix.w1": {**base, "updated": NOW - 230, "model": "swe-2-max", "goal": "fix", "said": "Renamed"},
                          "fix.best": {**base, "updated": NOW - 5, "model": "swe-2-max", "goal": "fix", "after": ["fix.w1"]}}
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
-                 + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN) + inbox(live_view())
+                 + dashboard.render({**live_view(), "new": True, "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
+                                    "choices": ["swe-2-max"]}}, NOW, token=TOKEN)  # and the composer's swarm popover
+                 + inbox(live_view())
                  + dashboard.render(opened(swarm, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN))
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())
         self.assertEqual(sorted(selected - made - rendered), [])

@@ -2078,6 +2078,14 @@ form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-col
 .peek-copy svg { width: 14px; height: 14px; }
 .peek-copy:hover, .peek-copy:focus-visible { color: var(--text); background: #1c2030; }
 .session-file:not(:has(> .file-preview[open])) .peek-copy { display: none; }
+@media (max-width: 600px) {
+  /* phone patch head */
+  /* name, counts, Copy and Preview fit one line: the path is in the card's own file head, the size in the folded row */
+  .peek-sum .mono { display: none; }
+  .peek-copy .pc-t { display: none; }
+  .peek-copy { width: 28px; padding: 0; justify-content: center; }
+  .session-file:has(> .file-preview[open]) .session-file-size { display: none; }
+}
 /* a file's own counts sit after its name in the diff, in the head's colours */
 .peek .dl.file .n { margin-left: 10px; font: 12px var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
 :is(.peek-sum, .peek .dl.file) .n.add { color: #7ee2a0; }

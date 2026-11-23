@@ -739,6 +739,12 @@ class ListsTest(unittest.TestCase):
             self.assertIn(spec, rule(".peek-copy"))
         self.assertIn("background: #1c2030", rule(".peek-copy:hover, .peek-copy:focus-visible"))
         self.assertIn("display: none", rule(".session-file:not(:has(> .file-preview[open])) .peek-copy"))
+        # on a phone the open head is too narrow for name, path, counts, size, Copy and Preview: the counts drew
+        # over the size (layout check, r117). There the path and size step aside and Copy is its glyph alone.
+        phone = dashboard.STYLE.split("/* phone patch head */", 1)[1].split("\n}", 1)[0]
+        for spec in (".peek-sum .mono { display: none; }", ".peek-copy .pc-t { display: none; }",
+                     ".session-file:has(> .file-preview[open]) .session-file-size { display: none; }"):
+            self.assertIn(spec, phone)
         self.assertNotIn("peek-copy", pane(dashboard.render(done, NOW)))
         self.assertIn("copyUrl", dashboard.SCRIPT)
         self.assertIn("fetch(b.dataset.copyUrl", dashboard.SCRIPT)

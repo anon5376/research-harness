@@ -1885,3 +1885,8 @@ a.sw-run:hover { background: var(--surface); }
 .swarm-says { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 @media (max-width: 600px) { .swarm-says { display: none; } }
 .swarm-note .swarm-chip { overflow: visible; }
+/* An Inbox with nothing in it is one calm note in the middle of the pane, not an empty list beside a second note. */
+.ibx[data-view="empty"] { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.ibx[data-view="empty"] > .ib-detail { display: grid; place-content: start center; padding: 22vh 24px 0; text-align: center; }
+.ibx[data-view="empty"] > .ib-detail .soft { max-width: 44ch; margin-inline: auto; }
+.pane:has(.ibx[data-view="empty"]) .top-meta { display: none; }

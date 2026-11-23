@@ -2059,6 +2059,21 @@ console.log(JSON.stringify([
         self.assertIn("align-content: end", rule)
         self.assertNotIn("center", rule)
 
+    def test_an_empty_inbox_says_so_once(self):
+        # An empty Inbox that says 'Nothing needs you.' in its list and again beside it, or keeps an empty list
+        # column, must fail; an Inbox with something waiting keeps its list.
+        empty = {"supervisor": None, "stops": [], "routes": [], "live": [], "not_started": [], "inbox": [],
+                 "last_24h": {}, "recent": [], "can_add": True, "box": True}
+        page = pane(dashboard.render(empty, NOW, token=TOKEN))
+        self.assertEqual(page.count("Nothing needs you."), 1)
+        self.assertNotIn('class="ib-list"', page)
+        self.assertIn('data-view="empty"', page)
+        # the top bar does not echo it as 'nothing needs you · 0 settled today'
+        self.assertIn('.pane:has(.ibx[data-view="empty"]) .top-meta { display: none; }', dashboard.STYLE)
+        busy = pane(dashboard.render({**live_view(), "box": True}, NOW, token=TOKEN))
+        self.assertIn('class="ib-list"', busy)
+        self.assertNotIn('data-view="empty"', busy)
+
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
         # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
         # room for only one button while Pause and Cancel both show, must fail.

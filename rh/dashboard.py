@@ -2540,6 +2540,8 @@ def _inbox_pane(view, ctx, feedback):
     shown = "item" if pick is not None else "list"
     page = (f'<div class="page ibx" data-view="{shown}"><div class="ib-list" aria-label="Waiting on you">{lists}</div>'
             f'{detail}</div>')
+    if not rows and not done:  # nothing waits and nothing was settled: one empty state, not a bare list beside it
+        page = f'<div class="page ibx" data-view="empty">{detail}</div>'
     return top + feedback + page
 
 

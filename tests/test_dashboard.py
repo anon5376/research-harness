@@ -418,7 +418,8 @@ class ListsTest(unittest.TestCase):
         # a judge that leads with the change's own title keeps it
         for said in ("The applied diff is verified by inspection", "Both runs passed",  # also the judge on itself
                      "The full diff is clean", "The applied test (lines 433-446) asserts exactly the three",
-                     "The tests pass on both runs"):
+                     "The tests pass on both runs", "Everything verifies statically. The page embeds STYLE",
+                     "All checks pass"):
             done["meta"]["fix.best"]["said"] = said
             row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
             self.assertIn("The label is renamed in the header", text(row))

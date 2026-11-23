@@ -683,11 +683,12 @@ _STATUS_LEAD = re.compile(r"^(?:(?:done|finished|ok|okay|complete|completed|all 
                           re.I)
 _LINE_NO = re.compile(r"(\.[A-Za-z0-9]{1,6})(?::\d+(?:[-–]\d+)?)+\b")  # rh/serve.py:12:5 -> rh/serve.py
 # A swarm's judge or run talking about its own review rather than the work: which run it chose, the applied diff or
-# patch, how the tests or the test run went. Such a line never names the swarm.
+# patch, how the tests or the test run went, or that everything verifies. Such a line never names the swarm.
 _SELF_REMARK = re.compile(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The applied\b"
                           r"|The (\w+ )?(diff|patch) is\b"
                           r"|The (\w+ )?tests?( runs?)? (was|were|is|are|pass|passes|passed|fail|fails|failed"
-                          r"|asserts?|covers?)\b|(Both|Neither|All) runs?\b")
+                          r"|asserts?|covers?)\b|(Both|Neither|All) runs?\b"
+                          r"|(Everything|All( (checks|tests))?) (verifies|verified|checks out|pass|passes|passed)\b")
 
 
 def answer_head(text):

@@ -1735,3 +1735,7 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .assistant-message.md .md-title { line-height: 26px; text-wrap: balance; }
 /* A long identifier keeps whole: it moves to the next line, and breaks only when it is wider than the column. */
 .assistant-message.md code.tok { overflow-wrap: anywhere; word-break: normal; }
+/* An Inbox row's run id sits on a line of its own under the reason, at the reason's left edge, with no separator. */
+.ib-id { grid-column: 2 / 4; margin-top: 2px; font-size: 12px; line-height: 16px; color: var(--faint); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; }
+.ib-ic { grid-row: 1 / 4; }

@@ -183,7 +183,7 @@ def cmd_job(args, cfg):
                    "ended": time.time(), "detail": args.reason})
         for i in led.inbox():
             if i["job"] == args.id:
-                led.inbox_resolve(i["id"], "job cancelled")
+                led.inbox_resolve(i["id"], "Job cancelled")
         print(f"cancelled {args.id}: {args.reason}")
         if j["state"] == "stalled":
             print("nothing was stopped: end its task or process yourself if it still runs")

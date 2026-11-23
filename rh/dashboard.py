@@ -2185,17 +2185,17 @@ def _ib_row(ctx, entry, picked):
     created = entry["created"]
     age = _clock(created, ctx["now"]) if _number(created) else ""  # clock times, as the sidebar and Settled give
     head = job.title if job else entry["ask"]
-    # the reason gives way before the run's id, which tells runs of one brief apart
-    sub = (f'<span class="ib-why">{job.headline_html(len(entry.get("runs", [])) or 1)}</span>{_SEP_HTML}'
-           f'<span class="mono">{_text(jid)}</span>' if job and not entry["item"] else
-           f'<span class="ib-why">{_text(entry["ask"])}</span>{_SEP_HTML}<span class="mono">{_text(jid)}</span>' if job else
-           f'<span class="mono">{_text(jid)}</span>{_SEP_HTML}a job not listed here' if jid
+    # why it waits, then the run's id on a line of its own, which tells runs of one brief apart
+    sub = (f'<span class="ib-why">{job.headline_html(len(entry.get("runs", [])) or 1)}</span>' if job and not entry["item"] else
+           f'<span class="ib-why">{_text(entry["ask"])}</span>' if job else
+           "A job not listed here" if jid
            else "The app's own pause" if entry["stop"] else "The harness")
+    idline = f'<span class="ib-id mono">{_text(jid)}</span>' if jid else ""
     current = ' aria-current="true"' if picked else ""
     # a job's entry wears the ring it wears on Today, so a state has one mark in both places
     mark = _ring(job.state, "red" if job.state in _FAILED else "amber", job.kind) if job else _ic(entry["icon"])
     inner = (f'<span class="ib-ic">{mark}</span><span class="ib-t">{_text(head)}</span>'
-             f'<span class="ib-age mono num">{age}</span><span class="ib-s">{sub}</span>')
+             f'<span class="ib-age mono num">{age}</span><span class="ib-s">{sub}</span>{idline}')
     link = (f'<a class="ib" href="{href}" data-nav{current}>{inner}</a>' if ctx["live"]
             else f'<div class="ib">{inner}</div>')
     return _row(entry["key"], link, "ib-li", f' data-kind="{entry["tab"]}"')
@@ -2205,13 +2205,14 @@ def _settled_row(ctx, item, picked):
     ask, _ = _ask_line(item)
     jid = item.get("job")
     note = str(item.get("resolution") or "").strip()
-    # the outcome, then the run's id, as the rows that wait read
-    sub = _SEP_HTML.join(x for x in ((f'<span class="ib-why">{_text(note)}</span>' if note else ""),
-                                     (f'<span class="mono">{_text(jid)}</span>' if jid else "")) if x)
+    note = note[:1].upper() + note[1:]  # a stored note may start lower case ("job cancelled"); the list reads in sentences
+    # the outcome, then the run's id on its own line, as the rows that wait read
+    sub = f'<span class="ib-why">{_text(note)}</span>' if note else ""
+    idline = f'<span class="ib-id mono">{_text(jid)}</span>' if jid else ""
     current = ' aria-current="true"' if picked else ""
     inner = (f'<span class="ib-ic">{_ic("check")}</span><span class="ib-t">{_text(ask)}</span>'
              f'<span class="ib-age mono num">{_clock(item["resolved"], ctx["now"])}</span>'
-             f'<span class="ib-s">{sub or "Settled"}</span>')
+             f'<span class="ib-s">{sub or "Settled"}</span>{idline}')
     link = (f'<a class="ib done" href="{_url(ctx, "/inbox/" + str(item["id"]))}" data-nav{current}>{inner}</a>'
             if ctx["live"] else f'<div class="ib done">{inner}</div>')
     return _row(f"settled:{item['id']}", link, "ib-li settled")

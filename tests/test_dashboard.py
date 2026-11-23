@@ -1489,10 +1489,10 @@ console.log(JSON.stringify([
         self.assertEqual(sorted(order[2:]), ["job:broke-job", "job:queued-job", "settled:5"])
         self.assertEqual(current, ["job:web-job"])
         self.assertIn("Paste the patch from Codex", text(detail))
-        # a settled row reads as the rows that wait: what came of it, then the run's id
+        # a settled row reads as the rows that wait: what came of it in a sentence, then the run's id on its own line
         page = dashboard.render({**view, "box": True}, NOW, token=TOKEN)
-        self.assertIn('<span class="ib-s"><span class="ib-why">yes, ship</span><span class="sep">·</span>'
-                      '<span class="mono">live-job</span></span>', page)
+        self.assertIn('<span class="ib-s"><span class="ib-why">Yes, ship</span></span>'
+                      '<span class="ib-id mono">live-job</span>', page)
         _, current, detail = shown(7)
         self.assertEqual(current, ["job:live-job"])
         self.assertIn(CHECK, text(detail))
@@ -1871,8 +1871,8 @@ console.log(JSON.stringify([
         self.assertEqual(sorted(box), ["sweep-3", "sweep-odd"])
         self.assertRegex(box["sweep-3"], r'<span class="ib-t">Run the test suite twenty times and list every test '
                                          r'that failed at least once\.?</span>')
-        self.assertRegex(box["sweep-3"], r'<span class="ib-s"><span class="ib-why">Failed 3 times: [^<]+</span><span class="sep">·</span><span class="mono">sweep-3'
-                                         r'</span></span>')
+        self.assertRegex(box["sweep-3"], r'<span class="ib-s"><span class="ib-why">Failed 3 times: [^<]+</span></span>'
+                                         r'<span class="ib-id mono">sweep-3</span>')
         # Each run's page names every run that failed the same way, newest first, and links the others.
         for jid in ("sweep-3", "sweep"):
             body = pane(dashboard.render(opened(view, jid, kind="local-shell"), NOW, token=TOKEN))

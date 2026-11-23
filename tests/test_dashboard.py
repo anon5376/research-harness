@@ -562,9 +562,11 @@ class ListsTest(unittest.TestCase):
             self.assertIn(spec, rule(".settings-body"))
         # 16px of fade left the scrolled thumbnails as crisp 14px slivers under the head (critic r11 F8): 32px of fade,
         # and a hairline under the head once scrolled
-        self.assertIn("linear-gradient(to bottom, transparent, #000 32px)", rule(".settings-body.scrolled"))
-        self.assertIn("box-shadow: 0 1px 0 rgb(255 255 255 / .08)",
-                      rule("dialog.settings:has(.settings-body.scrolled) header"))
+        # r12 F3: still slivers at 32px, and a content-wide .08 hairline nobody saw: 48px, and a sheet-wide .10 line
+        self.assertIn("linear-gradient(to bottom, transparent, #000 48px)", rule(".settings-body.scrolled"))
+        line = rule("dialog.settings:has(.settings-body.scrolled) header::after")
+        for spec in ('content: ""', "left: -24px", "right: -24px", "height: 1px", "background: rgb(255 255 255 / .10)"):
+            self.assertIn(spec, line)
         self.assertIn("t.classList.contains('settings-body')", dashboard.SCRIPT)
         page = dashboard.render(live_view(), NOW, token=TOKEN)
         sheet = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)

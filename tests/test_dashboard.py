@@ -1,5 +1,6 @@
 """The app presents the existing status view and one job's record without trusting worker text."""
 import copy
+import hashlib
 import html
 import json
 import os
@@ -1337,9 +1338,11 @@ class DashboardTest(unittest.TestCase):
         message = re.search(r'<section[^>]*class="msg ai"[^>]*>.*?</section>', page, re.S).group(0)
         self.assertIn('data-prov="claude"', message)
         # one line of chrome: who answered, then how the run went at its far end; no status row above it
-        self.assertEqual(text(message), "ClaudeDone·1 min 20 sFixed the <typo> in README.md.")
+        self.assertTrue(text(message).startswith("ClaudeDone·1 min 20 s"))
         self.assertIn('<span class="who-status">', message)
         self.assertNotIn('data-region="job-result"', page)
+        said = re.search(r'<div class="assistant-message md">(.*?)</div>', message, re.S).group(1)
+        self.assertEqual(text(said), "Fixed the <typo> in README.md.")
 
     def test_an_answer_is_rendered_from_markdown_without_letting_html_through(self):
         # Raw ** and - on the page, a link to a local path that opens, or HTML from an answer reaching the page, must fail.
@@ -1376,6 +1379,60 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(".code-wrap:hover .code-copy", dashboard.STYLE)
         self.assertIn(".code-wrap:focus-within .code-copy", dashboard.STYLE)
         self.assertIn("@media (pointer: coarse) { .code-copy", dashboard.STYLE)
+
+    def test_an_agents_answer_offers_to_copy_it_as_written(self):
+        # No Copy under the answer, a Copy outside its message, a button naming no held source, a held source
+        # that is not the Markdown as written, or a control in the script-less snapshot, must fail.
+        view = opened(live_view(), "finished-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", answer="chat",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"])
+        answer = "Fixed the **typo** & <tag>.\n\n- one\n- two"
+        view["open"]["answer"] = answer
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertEqual(page.count('class="msg-copy"'), 1)
+        message = re.search(r'<section[^>]*class="msg ai"[^>]*>.*?</section>', page, re.S).group(0)
+        acts = re.search(r'<div class="msg-acts"><button type="button" class="msg-copy" data-copy="([^"]+)"'
+                         r'([^>]*)>(.*?)</button></div>', message, re.S)
+        self.assertIsNotNone(acts)
+        self.assertIn('aria-label="Copy the answer"', acts.group(2))
+        self.assertIn("<svg", acts.group(3))
+        self.assertIn('<span class="pc-t">Copy</span>', acts.group(3))
+        self.assertEqual(acts.group(1), "ans-" + hashlib.sha1(answer.encode()).hexdigest()[:10])
+        held = re.search(rf'<textarea hidden id="{re.escape(acts.group(1))}" readonly>(.*?)</textarea>',
+                         message, re.S)
+        self.assertIsNotNone(held)
+        self.assertEqual(html.unescape(held.group(1)), answer)  # what a copy places on the clipboard
+        # the snapshot has no script to run it, so it offers no control (its <style> still carries the rules)
+        still = dashboard.render(view, NOW, result="x")
+        self.assertNotIn('class="msg-copy"', still)
+        self.assertNotIn('id="ans-', still)
+
+    def test_copy_marks_the_label_so_the_button_keeps_its_glyph(self):
+        # copy() that rewrites the whole button drops its icon: the .pc-t label takes 'Copied' when the button
+        # has one, the button's own text otherwise — copyUrl's pattern, and the same 1600 ms restore.
+        body = dashboard.SCRIPT[dashboard.SCRIPT.index("async function copy(b) {"):
+                                dashboard.SCRIPT.index("async function copyUrl")]
+        self.assertIn("const label = b.querySelector('.pc-t') || b;", body)
+        self.assertIn("const was = b.dataset.was || label.textContent;", body)
+        self.assertIn("label.textContent = done ? 'Copied' : 'Select it and copy';", body)
+        self.assertIn("setTimeout(() => { label.textContent = was; }, 1600);", body)
+
+    def test_the_answer_copy_is_the_peek_copy_revealed_with_its_message(self):
+        # A Copy styled apart from the patch preview's, one a touch screen or an unhovered pointer cannot use,
+        # or the folded-preview hiding rule reaching it, must fail.
+        self.assertIn(".msg-acts { display: flex; margin: 4px 0 -12px -10px; }", dashboard.STYLE)
+        rule = dashboard.STYLE.split(".msg-copy {", 1)[1].split("}", 1)[0]
+        for spec in ("display: inline-flex", "height: 28px", "padding: 0 10px", "border-radius: 8px",
+                     "color: var(--muted)", "font-size: 12px", "cursor: pointer", "opacity 150ms"):
+            self.assertIn(spec, rule)
+        self.assertIn(".msg-copy svg { width: 14px; height: 14px; }", dashboard.STYLE)
+        self.assertIn(".msg-copy:hover, .msg-copy:focus-visible { color: var(--text); background: #1c2030; }",
+                      dashboard.STYLE)
+        self.assertIn("opacity: 0",
+                      dashboard.STYLE.split("@media (hover: hover) {\n  .msg-copy {", 1)[1].split("}", 1)[0])
+        self.assertIn(".msg.ai:is(:hover, :focus-within) .msg-copy { opacity: 1", dashboard.STYLE)
+        hiding = dashboard.STYLE.split(".session-file:not(:has(> .file-preview[open])) .peek-copy", 1)[1]
+        self.assertNotIn("msg-copy", hiding.split("}", 1)[0])
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without

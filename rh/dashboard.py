@@ -6,6 +6,7 @@ right. The Inbox is a list and the item it shows; ⌘K opens a palette. One same
 served at /app.js), keeps it live, moves between pages without reloading and turns submits into in-place updates;
 without it every link and form still works. Without a token it is the static snapshot `rh status --html` writes: the
 jobs, what needs a person (with the command that settles it) and the day, with no script and no controls."""
+import hashlib
 import json
 import re
 import shlex
@@ -2109,10 +2110,12 @@ def _job_head(title, kind, tip=""):
     return _region("j-head", body, "section", "jd-head")
 
 
-def _said(provider, model, text, link="", inner=False, role="", status=""):
+def _said(provider, model, text, link="", inner=False, role="", status="", live=True):
     """An agent's answer as a chat message: who answered and on which model, then the answer rendered from Markdown.
     `role` names what the agent was (a swarm's "Judge") in place of its provider; `status` (the run's ring and status
-    line) sits at the far end of the same line, so a turn opens with one line of chrome, not two."""
+    line) sits at the far end of the same line, so a turn opens with one line of chrome, not two. A live page adds a
+    Copy under the answer, fed by a hidden textarea holding the Markdown as written; the snapshot has no script, so
+    it gets no control."""
     who, mark = _AGENT_WHO.get(provider or "", ("Answer", "chat"))
     who = role or who
     name = _MODEL_NAMES.get(model, model) if model else ""
@@ -2121,6 +2124,11 @@ def _said(provider, model, text, link="", inner=False, role="", status=""):
             + (f'<span class="who-run">{link}</span>' if link else "")
             + (f'<span class="who-status">{status}</span>' if status else "") + "</p>")
     body = f'{head}<div class="assistant-message md">{_markdown(text)}</div>'
+    if live and text:
+        aid = "ans-" + hashlib.sha1(text.encode()).hexdigest()[:10]
+        body += (f'<textarea hidden id="{aid}" readonly>{_text(text)}</textarea>'
+                 f'<div class="msg-acts"><button type="button" class="msg-copy" data-copy="{aid}" '
+                 f'aria-label="Copy the answer">{_ic("copy", True)}<span class="pc-t">Copy</span></button></div>')
     return body if inner else f'<div class="msg ai">{body}</div>'
 
 
@@ -2255,7 +2263,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             word = _text("Done" if run.get("state") == "done" else _STATES.get(run.get("state"), (run.get("state"),))[0])
             state_html = f'{_ring(str(run.get("state")))}<span class="job-result-status">{word}{_SEP_HTML}{link}</span>'
             if run.get("answer"):  # one line: who answered on the left, how the run went on the right
-                turns.append(_said(run.get("provider"), run.get("model"), run["answer"], status=state_html))
+                turns.append(_said(run.get("provider"), run.get("model"), run["answer"], status=state_html,
+                                   live=ctx["live"]))
             else:
                 turns.append(f'<p class="job-result turn-state">{_ring(str(run.get("state")))}<span class="job-result-status">'
                              f'{word}{_SEP_HTML}{link}{_SEP_HTML}no answer</span></p>')
@@ -2373,7 +2382,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         if merge:
             work.pop(status_at)
         work.append(_region("j-answer", _said(provider, model, said, inner=True, role="Judge" if runs else "",
-                                              status=status_html if merge else ""),
+                                              status=status_html if merge else "", live=ctx["live"]),
                             "section", "msg ai",
                             ' aria-label="The answer"'))
     if not finished:

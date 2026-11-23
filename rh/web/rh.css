@@ -1398,6 +1398,18 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 .assistant-message.md a { color: inherit; text-decoration: underline; text-underline-offset: 3px;
   text-decoration-color: rgb(255 255 255 / .35); }
 .assistant-message.md .md-path { border-bottom: 1px dotted rgb(255 255 255 / .35); cursor: help; }
+/* An answer's Copy rests under it, one control with a patch's Copy: quiet until the message is hovered or holds
+   focus; on touch it stays. */
+.msg-acts { display: flex; margin: 4px 0 -12px -10px; }  /* glyph on the text edge; the row gives back its height */
+.msg-copy { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px;
+  border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 12px; cursor: pointer;
+  transition: opacity 150ms ease-out, background-color 120ms ease-out, color 120ms ease-out; }
+.msg-copy svg { width: 14px; height: 14px; }
+.msg-copy:hover, .msg-copy:focus-visible { color: var(--text); background: #1c2030; }
+@media (hover: hover) {
+  .msg-copy { opacity: 0; }
+  .msg.ai:is(:hover, :focus-within) .msg-copy { opacity: 1; }
+}
 .msg.ai .who .who-model { color: var(--faint); }
 .msg.ai .who .who-model::before { content: "·"; margin-right: 6px; }
 .msg.ai .who .who-run { margin-left: auto; font-size: 12px; }

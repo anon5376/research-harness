@@ -918,10 +918,11 @@ async function copy(b) {
   try { await navigator.clipboard.writeText(value); done = true; } catch (err) {
     if ('select' in src) { src.focus(); src.select(); try { done = document.execCommand('copy'); } catch (e2) { done = false; } }
   }
-  const was = b.dataset.was || b.textContent;
+  const label = b.querySelector('.pc-t') || b;  // the label alone changes, so the button keeps its glyph
+  const was = b.dataset.was || label.textContent;
   b.dataset.was = was;
-  b.textContent = done ? 'Copied' : 'Select it and copy';
-  setTimeout(() => { b.textContent = was; }, 1600);
+  label.textContent = done ? 'Copied' : 'Select it and copy';
+  setTimeout(() => { label.textContent = was; }, 1600);
 }
 
 // A patch preview's Copy fetches the file's whole text at the row link's URL: the preview itself may be cut short.

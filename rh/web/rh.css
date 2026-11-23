@@ -1494,6 +1494,8 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 }
 /* The head names the job and its id; on a phone the name gets the room. */
 @media (max-width: 600px) { .job-worker { display: none; } }
+/* The worker is named once: by the reply dock while it shows one, else (a running job) in the header. */
+.jd-main:has(> .jd-dock .model-note) .job-worker { display: none; }
 /* Pause is a button, not a label. */
 .job-actions .act > summary { display: inline-flex; align-items: center; height: 28px; padding: 0 10px;
   border: 1px solid rgb(255 255 255 / .14); border-radius: 8px; }

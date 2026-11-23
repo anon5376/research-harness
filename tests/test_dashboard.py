@@ -2275,6 +2275,13 @@ console.log(JSON.stringify([
                     self.assertIsNone(top)
                     self.assertIn('class="jd-inspector"', pane(page))
 
+    def test_a_job_page_names_its_worker_once(self):
+        # '· This Mac' after the job's name and 'This Mac' beside Run again, 820px apart, said one fact twice (critic
+        # r11 F9). While the reply dock names the worker, the header leaves it out; a running job, with no reply box,
+        # keeps it in the header.
+        rule = dashboard.STYLE.split("\n.jd-main:has(> .jd-dock .model-note) .job-worker {", 1)[1].split("}", 1)[0]
+        self.assertIn("display: none", rule)
+
     def test_the_composer_offers_its_workers(self):
         # A composer without GPT Pro, Codex on this Mac, Codex cloud and the plain shell, in that order, or one whose
         # GPT Pro choice posts another kind, must fail.

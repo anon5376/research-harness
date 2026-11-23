@@ -1775,3 +1775,16 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .swarm-judge select { min-width: 0; max-width: 60%; height: 32px; padding: 0 10px; border: 1px solid var(--border);
   border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
 @media (max-width: 600px) { .swarm-models { grid-template-columns: minmax(0, 1fr); } }
+/* A swarm's runs on its judge's page: one row each, model then state then the first line of its answer. */
+.s-j-swarm .head h2 { display: flex; align-items: center; gap: 8px; }
+.s-j-swarm .head h2 svg { width: 16px; height: 16px; color: var(--muted); }
+.sw-runs { margin: 0; padding: 6px; list-style: none; }
+.sw-run { display: grid; grid-template-columns: 16px 112px 148px minmax(0, 1fr); align-items: center;
+  column-gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: var(--text); font-size: 13px;
+  text-decoration: none; }
+a.sw-run:hover { background: var(--surface); }
+.sw-m { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sw-s { color: var(--muted); white-space: nowrap; }
+.sw-a { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 600px) { .sw-run { grid-template-columns: 16px minmax(0, 1fr) auto; padding: 8px 10px; row-gap: 2px; }
+  .sw-a { grid-column: 2 / 4; } }

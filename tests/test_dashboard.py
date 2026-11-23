@@ -240,6 +240,40 @@ class ListsTest(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("Write the notes", row.group(0))
 
+    def test_a_swarm_is_one_row_and_its_judge_page_lists_each_run(self):
+        # The runs of a /swarm are the judge's work, not jobs of their own: a sidebar row per run, a judge page
+        # that only says "waiting for fix.w2", or a swarm that reads "Up next" while its runs work, must fail.
+        view = live_view()
+        view["live"] = [{"id": "fix.w2", "state": "running", "paused": False, "detail": "pid 7", "external_id": None}]
+        view["not_started"] = [{"id": "fix.best", "state": "waiting", "paused": False,
+                                "detail": "waiting for fix.w2 (running)", "external_id": None}]
+        view["recent"] = [*view["recent"], {"id": "fix.w1", "state": "done", "paused": False, "detail": "",
+                                             "external_id": None}]
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290}
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "updated": NOW - 230, "model": "swe-2-max", "goal": "fix",
+                                   "said": "Renamed the label"},
+                        "fix.w2": {**base, "updated": NOW - 5, "model": "swe-2-flash-high", "goal": "fix"},
+                        "fix.best": {**base, "updated": NOW - 5, "model": "swe-2-max", "goal": "fix",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        page = dashboard.render(opened(view, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN)
+        side = re.search(r'<aside class="side".*?</aside>', page, re.S).group(0)
+        self.assertNotIn('data-key="job:fix.w1"', side)
+        self.assertNotIn('data-key="job:fix.w2"', side)
+        live = re.search(r'Live.*?</ul>', side, re.S).group(0)
+        self.assertIn('data-key="job:fix.best"', live)  # the swarm is live while a run works
+        card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
+        self.assertIn("2 runs", text(card))
+        for word in ("SWE-2 Max", "SWE-2 Flash", "Done", "Running", "Renamed the label", "1 min"):
+            self.assertIn(word, text(card))
+        self.assertIn('href="/job/fix.w1?t=', card)
+        self.assertIn("keeps the best work once every run has ended", text(page))
+        self.assertNotIn("waiting for fix.w2", page)
+        status = re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)
+        self.assertIn("Running", status)
+        self.assertIn("1 of 2 runs ended", status)
+        self.assertNotIn("No output received yet", page)  # the judge has none until it starts
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

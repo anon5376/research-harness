@@ -617,7 +617,12 @@ def _meta(cfg):
         meta = {j["id"]: {"brief": j["spec"].get("brief", ""), "kind": j["spec"].get("kind", ""),
                           "seat": j["spec"].get("seat", ""), "timeout_min": j["spec"].get("timeout_min"),
                           "created": j.get("created"), "started": j.get("started"), "updated": j.get("updated"),
-                          "prior": j["spec"].get("prior", ""), "said": _said_head(cfg, j)} for j in led.jobs()}
+                          "prior": j["spec"].get("prior", ""), "said": _said_head(cfg, j),
+                          "model": (dashboard.agent_of(j["spec"].get("command")) or ("", ""))[1],
+                          "goal": j["spec"].get("goal", ""),
+                          # a swarm's judge names its runs, so the app shows them as its work
+                          "after": list(j["spec"].get("after") or []) if j["spec"].get("after_any") else []}
+                for j in led.jobs()}
         since = time.time() - _SETTLED
         items = led.inbox(open_only=False)
         settled = [i for i in items if i.get("resolved") and i["resolved"] >= since][-100:]

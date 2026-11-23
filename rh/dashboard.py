@@ -1937,6 +1937,29 @@ def _said(provider, model, text, link="", inner=False):
     return body if inner else f'<div class="msg ai">{body}</div>'
 
 
+def _swarm_card(ctx, runs):
+    """A swarm's runs on its judge's page: each run's model, state, time and first answer line, linked to its page."""
+    now, items = ctx["now"], []
+    for rid in runs:
+        m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
+        st = ctx["states"].get(rid) or "waiting"
+        word = "Done" if st == "done" else _STATES.get(st, (st,))[0]
+        start, end = m.get("started"), m.get("updated")
+        took = (_duration(end - start) if st not in (*_LIVE, *_PRE) and _number(start) and _number(end)
+                else _duration(now - start) if st in _LIVE and _number(start) else "")
+        model = _names([m["model"]]) if m.get("model") else rid
+        said = str(m.get("said") or "")
+        inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="sw-m">{_text(model)}</span>'
+                 f'<span class="sw-s">{_SEP_HTML.join(_text(x) for x in (word, took) if x)}</span>'
+                 + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))
+        items.append(f'<li><a class="sw-run" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}</a></li>' if ctx["live"]
+                     else f'<li><div class="sw-run">{inner}</div></li>')
+    n = len(runs)
+    body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{n} {"run" if n == 1 else "runs"}'
+            f'</span></div><ul class="sw-runs">{"".join(items)}</ul>')
+    return _region("j-swarm", body, "section", "out s-j-swarm", ' aria-label="Swarm runs"')
+
+
 def _job_pane(opened, jobs, ctx, feedback, view):
     """A job's page: the work on the left (what it was asked, what it needs from you, its output, and Run again), and
     its properties, receipt, pauses and stops, and timeline on the right."""
@@ -2029,9 +2052,17 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     check_values = [passed for passed, _, _ in check_rows if passed is not None]
     shown = "env" if entry.native else state
     word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]
+    runs = ctx.get("swarms", {}).get(jid) or []
+    # a swarm whose judge has not started reads as its runs do: running while one works, and how many have ended
+    swarming = bool(runs) and state in _PRE
+    if swarming and any(ctx["states"].get(r) in _LIVE for r in runs):
+        shown, word = "running", _STATES["running"][0]
     result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
     status_line = [_text("Done" if state == "done" else word)]
-    if check_rows:
+    if swarming:
+        ended = sum(ctx["states"].get(r) not in (*_LIVE, *_PRE) for r in runs)
+        status_line.append(_text(f"{ended} of {len(runs)} runs ended"))
+    elif check_rows:
         if len(check_values) == len(check_rows):
             checks_text = f'{sum(value is True for value in check_values)}/{len(check_rows)} checks'
         elif check_values:
@@ -2056,6 +2087,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
     work.append(_region("job-result", "".join(result), "p", "job-result"))
+    if runs:
+        work.append(_swarm_card(ctx, runs))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     chat_dock = ""
@@ -2110,6 +2143,11 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             next_line = (next_line + " Automatic checks are paused: the app won't launch or collect it until you "
                          "resume them or press Check once.").strip()
         detail = _plain(job.get("detail")) if state not in ("held", "handoff") and not entry.native else ""
+        if runs and state in _PRE:  # a swarm's judge: its runs are listed above, so say what it does with them
+            judge = _names([(ctx["meta"].get(jid) or {}).get("model") or ""]) or "The judge"
+            working = any(ctx["states"].get(r) in _LIVE for r in runs)
+            doing, detail = ("Runs working" if working else "Starting the judge"), ""
+            next_line = f"{judge} keeps the best work once every run has ended."
         now_body = (f'<p class="now">{_dot(entry.tone, state == "running")}<span class="what">{_text(doing)}</span>'
                     + (f'<span class="soft">{_text(detail)}</span>' if detail and detail != doing else "")
                     + (f'<span class="soft">{_text(next_line)}</span>' if next_line else "") + "</p>")
@@ -2151,7 +2189,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # output that fits whole in the card above has nothing more to unfold
-    if (not finished or log) and not (card and len(lines) <= _TAIL):
+    if (not finished or log) and not (card and len(lines) <= _TAIL) and not (swarming and not log):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
         line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
@@ -2566,6 +2604,17 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     rows = [(row, where) for where in ("live", "not_started", "recent") for row in view.get(where, [])]
     known = {row["id"] for row, _ in rows}
     meta = view.get("meta") if isinstance(view.get("meta"), dict) else {}
+    # A swarm's runs are its judge's work: the swarm is one row, live while any of its runs works. A run keeps a row
+    # only while its own page is open, so the sidebar lights what the header names.
+    states = {row["id"]: row["state"] for row, _ in rows}
+    swarms = {jid: [r for r in m["after"] if isinstance(r, str)] for jid, m in meta.items()
+              if isinstance(m, dict) and isinstance(m.get("after"), list) and m["after"]}
+    in_swarm = {r for runs in swarms.values() for r in runs}
+    open_id = opened["job"].get("id") if opened and isinstance(opened.get("job"), dict) else None
+    working = {jid for jid, runs in swarms.items() if any(states.get(r) in _LIVE for r in runs)}
+    rows = [(({**row, "state": "running"}, "live") if row["id"] in working and where == "not_started" else (row, where))
+            for row, where in rows if row["id"] not in in_swarm or row["id"] == open_id]
+    known = {row["id"] for row, _ in rows}
     # the open job always has a row, however far back it ended, so the sidebar lights what the header names
     shown = opened.get("job") if opened else None
     if isinstance(shown, dict) and shown.get("id") and shown["id"] not in known:
@@ -2592,6 +2641,7 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     back = f"/job/{named}" if named else "/new" if compose else None
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
            "workspace": view.get("workspace") or {},
+           "states": states, "swarms": swarms,
            "swarm": view.get("swarm") if isinstance(view.get("swarm"), dict) else {},
            "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),
            "followed": {str(m.get("prior")) for m in meta.values() if isinstance(m, dict) and m.get("prior")},

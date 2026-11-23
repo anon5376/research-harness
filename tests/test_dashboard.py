@@ -1657,15 +1657,24 @@ class DashboardTest(unittest.TestCase):
         # (T3 Code keeps each thread's draft). Each composer saves its words per page and box as they are typed,
         # finds them again when the page comes back with the box empty, and drops them when sent; a draft that
         # reappeared after sending, or one shared between jobs, must fail.
-        body = dashboard.SCRIPT.split("function draftKey(", 1)[1].split("\nrestoreDrafts();", 1)[0]
+        body = dashboard.SCRIPT.split("function draftKey(", 1)[1].split("\nsetTimeout(restoreDrafts, 0);", 1)[0]
         self.assertIn("'rh-draft:' + location.pathname + '#' + t.id", body)
-        self.assertIn("localStorage.setItem(draftKey(t), t.value)", body)
+        self.assertIn("localStorage.setItem(draftKey(t), v)", body)
         self.assertIn("localStorage.removeItem(draftKey(t))", body)
         self.assertIn("document.addEventListener('rh:page', restoreDrafts);", body)
         self.assertIn("if (!t.id || t.value) continue;", body)  # never over words already in the box
         # sending clears it before the page swaps, so the fresh empty box is not refilled with what was sent
         self.assertIn("document.addEventListener('submit'", body)
         self.assertRegex(body, r"addEventListener\('submit', e => \{[^}]*removeItem", )
+        # r18 F1: a restored '/swarm …' draft stayed plain text beside the single-model pickers, because the
+        # first restore ran before the slash listener existed, and a draft saved with the chip on lost the command.
+        # The draft keeps '/swarm ' in front while the chip is on, taking the chip off saves again, and the first
+        # restore waits until every listener is in place.
+        self.assertIn("(t.form && t.form.dataset.swarm ? '/swarm ' : '') + t.value", body)
+        self.assertNotIn("\nrestoreDrafts();", dashboard.SCRIPT)
+        self.assertIn("setTimeout(restoreDrafts, 0);", dashboard.SCRIPT)
+        off = dashboard.SCRIPT.split("function swarmOff(box) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("brief.dispatchEvent(new Event('input', { bubbles: true }))", off)
         # every composer box has a stable id to key it by
         page = dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN)
         new = dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN)

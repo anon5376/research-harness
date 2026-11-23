@@ -2046,13 +2046,15 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (!(t instanceof HTMLTextAreaElement) || !t.id || !t.matches('.pane textarea.c-text')) return;
   try {
-    if (t.value.trim()) localStorage.setItem(draftKey(t), t.value); else localStorage.removeItem(draftKey(t));
+    // with the Swarm chip on the command is out of the text, so the draft puts it back in front
+    const v = (t.form && t.form.dataset.swarm ? '/swarm ' : '') + t.value;
+    if (t.value.trim()) localStorage.setItem(draftKey(t), v); else localStorage.removeItem(draftKey(t));
   } catch { /* the draft lasts this page only */ }
 });
 // sent, it is no longer a draft: cleared before the page swaps, so the fresh empty box is not refilled with it
 document.addEventListener('submit', e => { for (const t of $$('textarea.c-text', e.target)) { try { localStorage.removeItem(draftKey(t)); } catch { /* none kept */ } } }, true);
 document.addEventListener('rh:page', restoreDrafts);
-restoreDrafts();
+setTimeout(restoreDrafts, 0);  // once every listener below is in place, so a '/swarm' draft becomes the chip again
 // Commands in the composer: typing / lists them (Tab or Enter takes the highlighted one), and a brief that starts with
 // /swarm says under it which models will run it.
 function slashState(brief) {
@@ -2076,6 +2078,7 @@ function swarmOff(box) {
   delete box.dataset.swarm;
   const brief = box.elements.namedItem('brief');
   slashState(brief);
+  brief.dispatchEvent(new Event('input', { bubbles: true }));  // the saved draft drops the command too
   brief.focus();
 }
 function takeSlash(brief, cmd) {

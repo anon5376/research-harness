@@ -347,6 +347,9 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .group .head h3 { font-size: 13px; }
 .group .n { font: 12px var(--ui); color: var(--faint); }
 .s-g-needs .head { color: var(--amber); }
+/* On the Inbox the open list is these same rows: the group steps aside so each failure is listed once, under the
+   Inbox row whose badge still counts them */
+.app:has(> .pane[data-pane^="inbox"]) .side .s-g-needs { display: none; }
 /* A row: the ring, the title (whole, wrapping) over the line that says why, then its one control, where it runs and
    when. */
 .row { position: relative; display: grid; grid-template-columns: 14px minmax(0, 1fr) auto 16px 44px;

@@ -2227,6 +2227,10 @@ console.log(JSON.stringify([
                 self.assertIn('<b class="count num" data-need=', side)
                 self.assertIn("body:has(.side .count[data-need]) .app .sidebar-toggle::before", dashboard.STYLE)
                 self.assertIn(f"{int(expected)} need you", text(box))
+                # on the Inbox the list it opens on is the same rows: the sidebar's Needs you group steps aside so
+                # the triage screen does not list each failure twice (critic r15 F3); the badge still counts them
+                self.assertIn('<main class="pane" data-pane="inbox"', box)
+        self.assertIn('.app:has(> .pane[data-pane^="inbox"]) .side .s-g-needs { display: none; }', dashboard.STYLE)
         empty = {**view, "live": [], "not_started": [], "recent": [], "inbox": [], "stops": []}
         home, box = dashboard.render(empty, NOW, token=TOKEN), inbox(empty)
         self.assertNotIn("data-need=", home + box.split('<main', 1)[1].split('</main>')[0].replace(

@@ -1950,15 +1950,17 @@ def _job_head(title, kind, tip=""):
     return _region("j-head", body, "section", "jd-head")
 
 
-def _said(provider, model, text, link="", inner=False, role=""):
+def _said(provider, model, text, link="", inner=False, role="", status=""):
     """An agent's answer as a chat message: who answered and on which model, then the answer rendered from Markdown.
-    `role` names what the agent was (a swarm's "Judge") in place of its provider."""
+    `role` names what the agent was (a swarm's "Judge") in place of its provider; `status` (the run's ring and status
+    line) sits at the far end of the same line, so a turn opens with one line of chrome, not two."""
     who, mark = _AGENT_WHO.get(provider or "", ("Answer", "chat"))
     who = role or who
     name = _MODEL_NAMES.get(model, model) if model else ""
     head = (f'<p class="who" data-prov="{_text(provider or "")}">{_ic(mark, True)}{who}'
             + (f'<span class="who-model">{_text(name)}</span>' if name else "")
-            + (f'<span class="who-run">{link}</span>' if link else "") + "</p>")
+            + (f'<span class="who-run">{link}</span>' if link else "")
+            + (f'<span class="who-status">{status}</span>' if status else "") + "</p>")
     body = f'{head}<div class="assistant-message md">{_markdown(text)}</div>'
     return body if inner else f'<div class="msg ai">{body}</div>'
 
@@ -2083,11 +2085,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                     if ctx["live"] else f'<span class="mono">{_text(run.get("id"))}</span>')
             # each earlier turn wears the status row the current one does, above what its agent said
             word = _text("Done" if run.get("state") == "done" else _STATES.get(run.get("state"), (run.get("state"),))[0])
-            said = "" if run.get("answer") else f'{_SEP_HTML}no answer'
-            turns.append(f'<p class="job-result turn-state">{_ring(str(run.get("state")))}<span class="job-result-status">'
-                         f'{word}{_SEP_HTML}{link}{said}</span></p>')
-            if run.get("answer"):
-                turns.append(_said(run.get("provider"), run.get("model"), run["answer"]))
+            state_html = f'{_ring(str(run.get("state")))}<span class="job-result-status">{word}{_SEP_HTML}{link}</span>'
+            if run.get("answer"):  # one line: who answered on the left, how the run went on the right
+                turns.append(_said(run.get("provider"), run.get("model"), run["answer"], status=state_html))
+            else:
+                turns.append(f'<p class="job-result turn-state">{_ring(str(run.get("state")))}<span class="job-result-status">'
+                             f'{word}{_SEP_HTML}{link}{_SEP_HTML}no answer</span></p>')
         work.append(_region("j-thread", "".join(turns), "section", "s-j-thread", ' aria-label="Earlier runs"'))
     original_prompt = ask_of(spec)
     if original_prompt:
@@ -2146,7 +2149,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if step:
         result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
-    work.append(_region("job-result", "".join(result), "p", "job-result"))
+    status_at, status_html = len(work), "".join(result)
+    work.append(_region("job-result", status_html, "p", "job-result"))
     if runs:
         work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept")))
     # What it needs from you, each with the form that settles it.
@@ -2192,7 +2196,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         provider, model = agent[:2] if agent else ("codex" if kind == "codex-cloud" else "", "")
         if not model and kind == "codex-cloud" and isinstance(spec.get("model"), dict):
             model = str(spec["model"].get("requested") or "")
-        work.append(_region("j-answer", _said(provider, model, said, inner=True, role="Judge" if runs else ""),
+        # a finished run's status joins its agent's line, and its own row goes
+        merge = finished and not step and 'data-region="job-result"' in work[status_at]
+        if merge:
+            work.pop(status_at)
+        work.append(_region("j-answer", _said(provider, model, said, inner=True, role="Judge" if runs else "",
+                                              status=status_html if merge else ""),
                             "section", "msg ai",
                             ' aria-label="The answer"'))
     if not finished:

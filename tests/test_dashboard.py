@@ -816,7 +816,10 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(view, NOW, token=TOKEN)
         message = re.search(r'<section[^>]*class="msg ai"[^>]*>.*?</section>', page, re.S).group(0)
         self.assertIn('data-prov="claude"', message)
-        self.assertEqual(text(message), "ClaudeFixed the <typo> in README.md.")
+        # one line of chrome: who answered, then how the run went at its far end; no status row above it
+        self.assertEqual(text(message), "ClaudeDone·1 min 20 sFixed the <typo> in README.md.")
+        self.assertIn('<span class="who-status">', message)
+        self.assertNotIn('data-region="job-result"', page)
 
     def test_an_answer_is_rendered_from_markdown_without_letting_html_through(self):
         # Raw ** and - on the page, a link to a local path that opens, or HTML from an answer reaching the page, must fail.

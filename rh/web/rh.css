@@ -1851,3 +1851,11 @@ a.sw-run:hover { background: var(--surface); }
   transform: rotate(90deg); color: var(--muted); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .swarm-x { transition: none; } }
 .swarm-judge + .set-hint { margin-top: 8px; }
+/* An agent turn opens with one line: who answered on the left, how the run went at the far right. */
+.msg.ai .who:has(.who-status) { display: flex; align-items: center; }
+.who-status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding-left: 12px; min-width: 0;
+  color: var(--faint); font-size: 12.5px; font-weight: 400; white-space: nowrap; }
+.who-status .job-result-status { color: var(--faint); }
+.who-status svg.st { width: 13px; height: 13px; }
+@media (max-width: 600px) { .msg.ai .who:has(.who-status) { flex-wrap: wrap; row-gap: 4px; }
+  .who-status { margin-left: 0; padding-left: 0; flex-basis: 100%; } }

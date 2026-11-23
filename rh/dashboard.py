@@ -668,7 +668,9 @@ def _progress(log):
     return None
 
 
-_STATUS_LEAD = re.compile(r"^(?:(?:done|finished|ok|okay|complete|completed|all done)[.!]?(?:\s+|$))+", re.I)
+_STATUS_LEAD = re.compile(r"^(?:(?:done|finished|ok|okay|complete|completed|all done)(?:[.!]|\s*[—–:])?(?:\s+|$))+",
+                          re.I)
+_LINE_NO = re.compile(r"(\.[A-Za-z0-9]{1,6})(?::\d+(?:[-–]\d+)?)+\b")  # rh/serve.py:12:5 -> rh/serve.py
 
 
 def answer_head(text):
@@ -686,9 +688,10 @@ def answer_head(text):
     head, *rest = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)
     if rest and not re.search(r"\s", head.strip()):  # "rh/dashboard.py — X did Y": a lone label; the words name it
         head = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)[0]
-    line = head.strip().rstrip(".")
+    # a label gets cut by the list's ellipsis, which would leave a false ':1…' of a line number: the number goes whole
+    line = _LINE_NO.sub(r"\1", head).strip().rstrip(".")
     if len(line) > 100:
-        line = line[:98].rsplit(" ", 1)[0].rstrip(",;:") + "…"
+        line = line[:98].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
     return line
 
 

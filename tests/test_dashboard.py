@@ -214,6 +214,16 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(dashboard.answer_head("Finished.\nOK\nHere is what changed:\n\nRounded the ETA"), "Rounded the ETA")
         self.assertEqual(dashboard.answer_head("Done. Rounded the ETA to whole hours."), "Rounded the ETA to whole hours")
         self.assertEqual(dashboard.answer_head("OK"), "")
+        # a status word's dash goes with it: '— renamed the label' named a swarm run (critic r9 F13)
+        self.assertEqual(dashboard.answer_head("Done — renamed the label to Run"), "renamed the label to Run")
+        # a label is cut by the list's ellipsis, which would cut a line number to a false ':1…': the number goes whole
+        self.assertEqual(dashboard.answer_head("The label is renamed at rh/dashboard.py:1623"),
+                         "The label is renamed at rh/dashboard.py")
+        self.assertEqual(dashboard.answer_head("Fixed rh/serve.py:12:5 and app.js:40-52 today"),
+                         "Fixed rh/serve.py and app.js today")
+        self.assertEqual(dashboard.answer_head("Ran it at 10:30 and it passed"), "Ran it at 10:30 and it passed")
+        # its own cut is one '…' with no full stop before it
+        self.assertEqual(dashboard.answer_head("aaa" + " b." * 40)[-3:], " b…")
         # a lone path or name before the aside is a label, not what was done: the words after it name the run
         self.assertEqual(dashboard.answer_head("**`rh/dashboard.py`** — `_left` rounds an hour or more to whole hours. More."),
                          "_left rounds an hour or more to whole hours")

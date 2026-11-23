@@ -2051,6 +2051,9 @@ form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-col
   border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
 .peek-head .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .peek-head .n { flex: none; font: 12px var(--mono); }
+.peek-copy { margin-left: auto; padding: 2px 8px; border: 0; border-radius: 6px; background: none;
+  color: var(--muted); font-size: 12px; cursor: pointer; }
+.peek-copy:hover, .peek-copy:focus-visible { color: var(--text); background: rgb(255 255 255 / .06); }
 /* a file's own counts sit after its name in the diff, in the head's colours */
 .peek .dl.file .n { margin-left: 10px; font: 12px var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
 :is(.peek-head, .peek .dl.file) .n.add { color: #7ee2a0; }

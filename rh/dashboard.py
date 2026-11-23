@@ -2403,8 +2403,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         file_rows = []
         for file in files:
             path = str(file.get("path", ""))
-            link = (f'<a href="{_text("/job/" + jid + "/file?p=" + quote(path) + "&t=" + ctx["token"])}" '
-                    f'target="_blank" rel="noopener">{_text(path)}</a>' if ctx["live"] else _text(path))
+            file_url = ("/job/" + jid + "/file?p=" + quote(path) + "&t=" + ctx["token"]
+                        if ctx["live"] else "")
+            link = (f'<a href="{_text(file_url)}" target="_blank" rel="noopener">{_text(path)}</a>'
+                    if ctx["live"] else _text(path))
             details = ""
             if preview and preview.get("path") == path:
                 # (own names: render's head and text are the page's)
@@ -2412,8 +2414,11 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 diff_head = (_diff_head(peek_text, whole=not preview.get("more"))
                              if path.endswith((".patch", ".diff")) else "")
                 more = (('<span class="dl">…</span>' if diff_head else "\n…") if preview.get("more") else "")
+                # the preview may be cut short, so Copy fetches the file's whole text at the row link's URL
+                copy = (f'<button type="button" class="peek-copy" data-copy-url="{_text(file_url)}" '
+                        'aria-label="Copy the whole patch">Copy</button>' if ctx["live"] and diff_head else "")
                 details = (f'<details class="file-preview"><summary>Preview</summary><div class="peek-card">'
-                           + (f'<div class="peek-head">{diff_head}</div>' if diff_head else "")
+                           + (f'<div class="peek-head">{diff_head}{copy}</div>' if diff_head else "")
                            + f'<pre class="peek{" diff" if diff_head else ""}" tabindex="0">'
                            f'{_peek_html(path, peek_text, whole=not preview.get("more"))}{more}</pre></div></details>')
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'

@@ -668,6 +668,25 @@ class ListsTest(unittest.TestCase):
         self.assertIn("$$('.user-message, pre.peek.diff')", dashboard.SCRIPT)
         self.assertIn("pre.peek.diff.more:not(.whole)", dashboard.STYLE)
 
+    def test_a_patch_preview_copies_the_whole_file_not_the_preview(self):
+        # A preview cut short would copy a partial patch, so the card's Copy fetches the file's whole text at the
+        # row link's URL; the static page has no script to run it, so it offers no button.
+        patch = ("diff --git a/x.py b/x.py\nindex 1..2 100644\n--- a/x.py\n+++ b/x.py\n@@ -7,3 +7,3 @@ def f():\n"
+                 " keep\n-old <line>\n+new <line>\n")
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"].update(files=[{"path": "changes.patch", "size": 300}],
+                            peek={"path": "changes.patch", "text": patch, "more": True})
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        link = re.search(r'<a href="([^"]+)"[^>]*>changes\.patch</a>', body)
+        self.assertIsNotNone(link)
+        buttons = re.findall(r'<button[^>]*class="peek-copy"[^>]*>', body)
+        self.assertEqual(len(buttons), 1)
+        self.assertIn(f'data-copy-url="{link.group(1)}"', buttons[0])
+        self.assertIn('aria-label="Copy the whole patch"', buttons[0])
+        self.assertNotIn("peek-copy", pane(dashboard.render(done, NOW)))
+        self.assertIn("copyUrl", dashboard.SCRIPT)
+        self.assertIn("fetch(b.dataset.copyUrl", dashboard.SCRIPT)
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

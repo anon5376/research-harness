@@ -924,6 +924,19 @@ async function copy(b) {
   setTimeout(() => { b.textContent = was; }, 1600);
 }
 
+// A patch preview's Copy fetches the file's whole text at the row link's URL: the preview itself may be cut short.
+async function copyUrl(b) {
+  let done = false;
+  try {
+    const r = await fetch(b.dataset.copyUrl, { credentials: 'same-origin' });
+    if (r.ok) { await navigator.clipboard.writeText(await r.text()); done = true; }
+  } catch (err) { done = false; }
+  const was = b.dataset.was || b.textContent;
+  b.dataset.was = was;
+  b.textContent = done ? 'Copied' : 'Open it to copy';
+  setTimeout(() => { b.textContent = was; }, 1600);
+}
+
 // A fenced block in an answer offers Copy at its corner. The button sits in a wrapper beside the pre, not in it,
 // so it stays at the corner while long lines scroll; it names the code's id, so what is copied is the code alone.
 let codeN = 0;
@@ -1028,6 +1041,8 @@ document.addEventListener('click', e => {
     return;
   }
   for (const d of $$('details.act[open], details.opts[open]')) if (!d.contains(e.target)) d.open = false;
+  const u = e.target.closest && e.target.closest('[data-copy-url]');
+  if (u) { copyUrl(u); return; }
   const c = e.target.closest && e.target.closest('[data-copy]');
   if (c) { copy(c); return; }
   const m = e.target.closest && e.target.closest('[data-more]');

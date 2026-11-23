@@ -93,13 +93,16 @@ def _devin(binary, work, brief, extra, answer):
                                                    "terminal": False}})
         opened = call("session/new", {"cwd": str(work), "mcpServers": []})
         session = opened["sessionId"]
-        # `--model` is a start-up default; if the session came up on another model, ask for this one by name.
-        current = next((o.get("currentValue") for o in opened.get("configOptions") or []
-                        if isinstance(o, dict) and o.get("id") == "model"), None)
-        if model and current and current != model:
+        # `--model` is a start-up default; if the session came up on another model, ask for this one by name, but
+        # only by a name its menu lists: the menu names families (swe-2-high) and keeps thinking (max) as its own
+        # option, so "swe-2-max" is refused there while the start-up flag has already chosen it.
+        menu = next((o for o in opened.get("configOptions") or [] if isinstance(o, dict) and o.get("id") == "model"), {})
+        current = menu.get("currentValue")
+        names = {x.get("value") for x in menu.get("options") or [] if isinstance(x, dict)}
+        if model and current and current != model and (not names or model in names):
             call("session/set_config_option", {"sessionId": session, "configId": "model", "value": model})
             current = model
-        print(f"model: {current or model or 'default'}", flush=True)
+        print(f"model: {model or current or 'default'}", flush=True)
         stop = call("session/prompt", {"sessionId": session, "prompt": [{"type": "text", "text": brief}]}).get("stopReason")
     except (RuntimeError, KeyError, BrokenPipeError) as error:
         print(f"\ndevin: {error}", flush=True)

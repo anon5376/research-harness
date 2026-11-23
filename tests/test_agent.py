@@ -34,8 +34,9 @@ FAKE = textwrap.dedent('''
             send(id=m["id"], result={"protocolVersion": 1})
         elif m["method"] == "session/new":
             assert m["params"]["mcpServers"] == []
-            send(id=m["id"], result={"sessionId": "s1", "configOptions": [
-                 {"id": "model", "currentValue": "swe-2-max"}, {"id": "mode", "currentValue": "accept-edits"}]})
+            menu = here / "menu.json"  # a real session's model menu, when the test supplies one
+            send(id=m["id"], result={"sessionId": "s1", "configOptions": json.loads(menu.read_text()) if menu.exists()
+                 else [{"id": "model", "currentValue": "swe-2-max"}, {"id": "mode", "currentValue": "accept-edits"}]})
         elif m["method"] == "session/set_config_option":
             choices.append(m["params"]["configId"] + "=" + m["params"]["value"])
             send(id=m["id"], result={})
@@ -73,6 +74,26 @@ class DevinAcpTest(unittest.TestCase):
             self.assertEqual(code, 0)
             self.assertEqual(answer.read_text(encoding="utf-8"), "Fixed the typo.\n")
             self.assertEqual(json.loads((tmp / "choices.json").read_text()), ["model=swe-2-high", "no", "yes", "no"])
+
+    def test_a_model_with_its_thinking_level_is_not_switched_by_a_name_the_menu_lacks(self):
+        # `devin acp --model swe-2-max` opens on the SWE-2 family at Max thinking: the session's model menu lists
+        # families (swe-2-high) and thinking is its own option. Asking the menu for "swe-2-max" by name is refused
+        # ("Invalid value") and failed every SWE-2 Max and Flash Max run; the start-up flag already chose it.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            fake = tmp / "devin"
+            fake.write_text(f"#!{sys.executable}\n" + FAKE, encoding="utf-8")
+            fake.chmod(0o755)
+            (tmp / "menu.json").write_text(json.dumps([
+                {"id": "model", "currentValue": "swe-2-high",
+                 "options": [{"value": "swe-2-high"}, {"value": "swe-2-flash-medium"}]},
+                {"id": "thought_level", "currentValue": "max", "options": [{"value": "high"}, {"value": "max"}]}]))
+            work = tmp / "work"
+            work.mkdir()
+            answer = tmp / "answer.md"
+            code = agent._devin(str(fake), work, "fix the typo", ["--model", "swe-2-max"], answer)
+            self.assertEqual(code, 0)
+            self.assertNotIn("model=swe-2-max", json.loads((tmp / "choices.json").read_text()))
 
 
 def git(cwd, *args):

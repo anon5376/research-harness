@@ -2280,8 +2280,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word),
                        _text("still being checked")]
     elif swarming:
-        ended = sum(ctx["states"].get(r) not in (*_LIVE, *_PRE) for r in runs)
-        status_line.append(_text(f"{ended} of {len(runs)} runs ended"))
+        pass  # how many runs have finished is said once, by the Swarm card's head beside its bar
     elif check_rows:
         if len(check_values) == len(check_rows):
             checks_text = f'{sum(value is True for value in check_values)}/{len(check_rows)} checks'

@@ -330,7 +330,9 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("waiting for fix.w2", page)
         status = re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)
         self.assertIn("Running", status)
-        self.assertIn("1 of 2 runs ended", status)
+        # the count is said once, in the Swarm card's head beside its bar, not again in the status line above it
+        self.assertNotIn("of 2", text(status))
+        self.assertEqual(text(page).count("1 of 2"), 1)
         self.assertNotIn("No output received yet", page)  # the judge has none until it starts
         # once the judge has checked the runs, each row says whether its changes passed
         done = opened(view, "fix.best", kind="local-shell", state="waiting")

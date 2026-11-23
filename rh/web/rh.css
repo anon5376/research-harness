@@ -1844,6 +1844,18 @@ a.sw-run:hover { background: var(--surface); }
   mask-image: none; }
 .user-message + .ask-more { position: relative; height: 22px; margin: -32px 16px 10px auto; padding: 0 2px;
   color: var(--muted); }
+/* A bubble's text folds in its own span: three whole lines, the end of the third fading over 64px, no characters
+   added (the clamp's '…' read 'tests....' after a full stop). The bubble keeps its fill and is not clamped itself. */
+.user-message > .um-t { display: block; }
+.user-message:not(.whole) > .um-t { display: block; max-height: 3lh; overflow: hidden; }
+.user-message:has(+ .ask-more):not(.whole) > .um-t {
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
+  -webkit-mask-size: 100% calc(100% - 1lh), 100% 1lh; mask-size: 100% calc(100% - 1lh), 100% 1lh;
+  -webkit-mask-position: top, bottom; mask-position: top, bottom; -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+.user-message:has(> .um-t) { max-height: none; overflow: visible; }
+.user-message:has(> .um-t):has(+ .ask-more):not(.whole) { display: flow-root; -webkit-line-clamp: unset; overflow: visible;
+  max-height: none; }
 /* A swarm run's check verdict: a quiet word, red when its changes failed the check. */
 .sw-c { margin-left: 6px; padding: 1px 6px; border-radius: 5px; background: rgb(255 255 255 / .06); color: var(--muted);
   font-size: 12px; }
@@ -1956,8 +1968,8 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
 /* Folded, its third line fades out at the end rather than taking the clamp's "…" (which after a full stop reads "....") */
 .q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;
   -webkit-line-clamp: unset; max-height: 3lh; overflow: hidden;
-  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 55%, transparent);
-  mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 55%, transparent);
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
+  mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 64px), transparent);
   -webkit-mask-size: 100% calc(100% - 1lh), 100% 1lh; mask-size: 100% calc(100% - 1lh), 100% 1lh;
   -webkit-mask-position: top, bottom; mask-position: top, bottom;
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }

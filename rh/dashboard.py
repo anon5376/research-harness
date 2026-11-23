@@ -2221,7 +2221,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             if not isinstance(run, dict):
                 continue
             if run.get("ask"):
-                turns.append(f'<div class="user-message">{_text(_reflow(run["ask"]))}</div>')
+                turns.append(f'<div class="user-message"><span class="um-t">{_text(_reflow(run["ask"]))}</span></div>')
             link = (f'<a class="mono" href="{_url(ctx, "/job/" + str(run.get("id")))}" data-nav>{_text(run.get("id"))}</a>'
                     if ctx["live"] else f'<span class="mono">{_text(run.get("id"))}</span>')
             # each earlier turn wears the status row the current one does, above what its agent said
@@ -2235,7 +2235,9 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         work.append(_region("j-thread", "".join(turns), "section", "s-j-thread", ' aria-label="Earlier runs"'))
     original_prompt = ask_of(spec)
     if original_prompt:
-        work.append(_region("j-brief", f'<div class="user-message">{_text(_reflow(original_prompt))}</div>',
+        # the ask's text has its own span: it folds and fades there, and the bubble keeps its fill
+        work.append(_region("j-brief", f'<div class="user-message"><span class="um-t">{_text(_reflow(original_prompt))}'
+                                       '</span></div>',
                             "section", "s-j-brief", ' aria-label="Original request"' if not spec.get("prior")
                             else ' aria-label="Follow-up"'))
     elif spec.get("prior"):

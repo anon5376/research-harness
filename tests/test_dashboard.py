@@ -1170,7 +1170,7 @@ class DashboardTest(unittest.TestCase):
         # A one-sentence brief remains visible as the original request.
         single = opened(live_view(), "live-job")
         single["open"]["job"]["spec"]["brief"] = "Count the words."
-        self.assertIn('<div class="user-message">Count the words.</div>', pane(dashboard.render(single, NOW, token=TOKEN)))
+        self.assertIn('<div class=\"user-message\"><span class=\"um-t\">Count the words.</span></div>', pane(dashboard.render(single, NOW, token=TOKEN)))
         single["open"]["job"]["spec"]["brief"] = "Read the last 90 nightly logs and list every test that timed out in timeouts.md."
         single["meta"] = {"live-job": {"brief": single["open"]["job"]["spec"]["brief"]}}
         page = dashboard.render(single, NOW, token=TOKEN)
@@ -2384,6 +2384,27 @@ console.log(JSON.stringify([
                       dashboard.STYLE)
         self.assertIn("html[data-live-app] .sea-page::before { background: radial-gradient(", dashboard.STYLE)
 
+    def test_a_folded_brief_fades_and_adds_no_characters(self):
+        # The brief bubble's fold took the line clamp's ellipsis: after a full stop it read 'tests....', after a space
+        # 'Running ...', while the Inbox faded (critic r10 F1). Its text sits in its own span, which folds to three
+        # lines and fades the end of the third over 64px; the bubble keeps its fill (a mask on it would cut a hole in
+        # its translucent background) and is no longer clamped itself.
+        page = pane(dashboard.render(opened(live_view(), "live-job"), NOW, token=TOKEN))
+        self.assertRegex(page, r'<div class="user-message"><span class="um-t">[^<]+</span></div>')
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        fold = rule(".user-message:not(.whole) > .um-t")
+        for spec in ("display: block", "max-height: 3lh", "overflow: hidden"):
+            self.assertIn(spec, fold)
+        fade = rule(".user-message:has(+ .ask-more):not(.whole) > .um-t")
+        self.assertIn("linear-gradient(to right, #000 calc(100% - 64px), transparent)", fade)
+        bubble = rule(".user-message:has(> .um-t):has(+ .ask-more):not(.whole)")
+        for spec in ("-webkit-line-clamp: unset", "overflow: visible", "max-height: none"):
+            self.assertIn(spec, bubble)
+        self.assertIn("b.querySelector(':scope > .um-t') || b", dashboard.SCRIPT)
+        # the Inbox title fades the same way
+        self.assertIn("linear-gradient(to right, #000 calc(100% - 64px), transparent)",
+                      rule(".q-head .q-title.user-message:has(+ .ask-more):not(.whole)"))
+
     def test_a_files_preview_toggle_sits_on_its_row(self):
         # 'Preview' hung 18px in under its file while 'Output' sat on the column edge, so two sibling folds read as a
         # nesting (critic r9 F11). It is a trailing 'Preview ›' on the file's own row, and a long name stops short of it.
@@ -2504,7 +2525,7 @@ console.log(JSON.stringify([
         view["meta"] = {"live-job": {"brief": view["open"]["job"]["spec"]["brief"]}}
         page = dashboard.render(view, NOW, token=TOKEN)
         self.assertIn(f"{first}</h1>", page)
-        prompt = re.search(r'<div class="user-message">(.*?)</div>', page, re.S).group(1)
+        prompt = re.search(r'<div class=\"user-message\"><span class=\"um-t\">(.*?)</span></div>', page, re.S).group(1)
         # Hard-wrapped lines run on; a blank line, a list item and a fenced block keep their own lines.
         self.assertEqual(html.unescape(prompt), first + ". Write it to timeouts.md. Keep it short.\n\nCover:\n"
                          "- each test and its slowest run\n2) the date\n\n```\nlog --a\nb\n```")
@@ -2530,7 +2551,7 @@ console.log(JSON.stringify([
                 view["meta"] = {"live-job": {"brief": brief}}
                 page = dashboard.render(view, NOW, token=TOKEN)
                 self.assertIn(f">{html.escape(heading, quote=False)}</h1>", page)
-                content = re.search(r'<div class="user-message">(.*?)</div>', page, re.S)
+                content = re.search(r'<div class=\"user-message\"><span class=\"um-t\">(.*?)</span></div>', page, re.S)
                 self.assertEqual(content and html.unescape(content.group(1)), prompt)
 
     def test_the_launch_prompt_shows_whole_lines(self):

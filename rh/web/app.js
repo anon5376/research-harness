@@ -1940,7 +1940,9 @@ function fadeAll() {
   for (const b of $$('.user-message, pre.peek.diff')) {
     fadeLong(b);
     // an ask cut to its first lines offers the rest once
-    const long = b.classList.contains('whole') || b.scrollHeight > b.clientHeight + 2;
+    // a bubble's text folds in its own span, so that is what runs past its lines
+    const t = b.querySelector(':scope > .um-t') || b;
+    const long = b.classList.contains('whole') || t.scrollHeight > t.clientHeight + 2;
     const next = b.nextElementSibling, has = next && next.matches('.ask-more');
     if (long && !has) {
       const more = document.createElement('button');

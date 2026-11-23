@@ -964,7 +964,7 @@ class ServeTest(unittest.TestCase):
                 log = self.home / "jobs" / "compare" / "out.log"
                 self.assertTrue(until(lambda: log.exists() and "Comparing the two sets." in log.read_text()))
                 page = self.request("/job/compare", origin=origin)[2]
-                self.assertIn('<div class="user-message">Compare both sets.</div>', page)
+                self.assertIn('<div class=\"user-message\"><span class=\"um-t\">Compare both sets.</span></div>', page)
                 self.assertIn('<details class="worked"', page)
                 self.assertIn("Comparing the two sets.", page)
                 self.assertIn('<details class="jd-inspector"><summary>', page)
@@ -1049,9 +1049,9 @@ class ServeTest(unittest.TestCase):
         page = self.request("/job/tidy-up-r2")[2]
         self.assertIn('data-region="j-thread"', page)
         self.assertIn("<strong>Tidied</strong> the intro.", page)
-        self.assertIn('<div class="user-message">Tidy the README.</div>', page)
-        self.assertIn('<div class="user-message">now the install part</div>', page)
-        self.assertEqual(re.findall(r'<div class="user-message">([^<]*)</div>', page),
+        self.assertIn('<div class=\"user-message\"><span class=\"um-t\">Tidy the README.</span></div>', page)
+        self.assertIn('<div class=\"user-message\"><span class=\"um-t\">now the install part</span></div>', page)
+        self.assertEqual(re.findall(r'<div class="user-message"><span class="um-t">([^<]*)</span></div>', page),
                          ["Tidy the README.", "now the install part"])  # each ask once, no "Follow-up:" glue
 
     def test_setup_saves_the_environment_and_closes_its_step(self):

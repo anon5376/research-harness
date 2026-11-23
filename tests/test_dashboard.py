@@ -367,10 +367,17 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("I chose run w1", text(row))
         self.assertIn("The label is renamed in the header", text(re.search(r"<h1.*?</h1>", pane(page), re.S).group(0)))
         # a judge that leads with the change's own title keeps it
-        for said in ("The applied diff is verified by inspection", "Both runs passed"):  # also the judge on itself
+        for said in ("The applied diff is verified by inspection", "Both runs passed",  # also the judge on itself
+                     "The full diff is clean"):
             done["meta"]["fix.best"]["said"] = said
             row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
             self.assertIn("The label is renamed in the header", text(row))
+        # a judge that combined runs has no one run to name it by: its remark on itself gives way to the brief
+        done["meta"]["fix.best"].update(said="The full diff is clean", kept="combined")
+        row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        self.assertNotIn("diff is clean", text(row))
+        self.assertIn("Fix the typo", text(row))
+        done["meta"]["fix.best"]["kept"] = "w1"
         done["meta"]["fix.best"]["said"] = "Renamed the Options label to Run"
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("Renamed the Options label to Run", text(row))
@@ -2374,6 +2381,26 @@ console.log(JSON.stringify([
         self.assertIn("position: relative", rule(".session-file"))
         self.assertIn("margin-left: 0", rule(".session-file > .file-preview"))
         self.assertIn("padding-right:", rule(".session-file:has(> .file-preview) > .session-file-main"))
+
+    def test_the_new_job_page_names_its_keys_under_the_composer(self):
+        # A /new page without the hint, the hint above the composer or on another page, a line that stays drawn
+        # while the brief holds text, or one a phone still draws, must fail.
+        page = pane(dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN))
+        strip = re.search(r'<section class="c-strip.*?</section>', page, re.S).group(0)
+        self.assertIn(dashboard._SEP_HTML.join(("<kbd>/</kbd> commands", "<kbd>⌘K</kbd> jump to anything")),
+                      re.search(r'<p class="compose-hint" aria-hidden="true">(.*?)</p>', strip).group(1))
+        self.assertLess(strip.index("</form>"), strip.index("compose-hint"))
+        for other in (pane(dashboard.render(live_view(), NOW, token=TOKEN)),
+                      pane(dashboard.render(opened(live_view(), "live-job"), NOW, token=TOKEN))):
+            self.assertNotIn("compose-hint", other)
+        self.assertIn(".c-strip:has(.c-text:not(:placeholder-shown)) .compose-hint { visibility: hidden; }",
+                      dashboard.STYLE)
+        blocks = re.findall(r"@media \(max-width: 600px\) \{(.*?)\n\}", dashboard.STYLE, re.S)
+        self.assertTrue(any(re.search(r"\.compose-hint \{[^}]*display: none", b) for b in blocks))
+        # its key caps are boxes (an inline kbd ignores height), 18px tall
+        caps = dashboard.STYLE.split(".compose-hint kbd {", 1)[1].split("}", 1)[0]
+        self.assertIn("display: inline-block", caps)
+        self.assertIn("height: 18px", caps)
 
     def test_cancel_says_what_it_does_to_a_job_that_already_ran(self):
         # A stalled job's Cancel said "It will not start", about a job that has been running for hours. rh job cancel

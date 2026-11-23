@@ -1930,8 +1930,15 @@ a.sw-run:hover { background: var(--surface); }
 .c-strip .where-bar .worker-picker { flex-basis: auto; }
 .c-strip.has-repo .compose-intro { margin-bottom: 52px; }
 .c-strip.has-repo .compose-title { letter-spacing: -.01em; }
+/* One quiet line under the composer names the keys it answers to; while the brief holds text it steps aside but
+   keeps its room, so the page does not jump. */
+.compose-hint { margin: 16px 0 0; font: 12px var(--ui); color: #6e7383; text-align: center; }
+.compose-hint kbd { display: inline-block; vertical-align: 1px; height: 18px; padding: 0 5px; margin-right: 6px; border-radius: 4px; background: #1a1f2c;
+  font: 11px/18px var(--mono); }
+.c-strip:has(.c-text:not(:placeholder-shown)) .compose-hint { visibility: hidden; }
 @media (max-width: 600px) {
   .sea-page > .dock:has(> .c-strip.has-repo) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
+  .compose-hint { display: none; }
 }
 /* On a wide screen menus open below the composer, clear of the line above it, so it stays while one is open. */
 @media (min-width: 601px) {

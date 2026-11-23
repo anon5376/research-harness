@@ -1810,8 +1810,11 @@ def _compose_strip(ctx, view, focus=False):
     repo = str((ctx.get("workspace") or {}).get("repo") or "")
     title = (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(repo)}">{_text(repo)}</h1>'
              if repo else '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1>')
+    # On its own page the composer names the keys it answers to; the shortcuts sheet lists them for a reader.
+    hint = (f'<p class="compose-hint" aria-hidden="true"><kbd>/</kbd> commands{_SEP_HTML}'
+            '<kbd>⌘K</kbd> jump to anything</p>' if focus else "")
     return (f'<section class="c-strip{" has-repo" if repo else ""}" aria-labelledby="compose-title">'
-            f'<div class="compose-intro">{title}</div>' + form + '</section>')
+            f'<div class="compose-intro">{title}</div>' + form + hint + '</section>')
 
 
 def _reef(ctx, view, jobs):
@@ -2848,12 +2851,12 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     # a judge that leads with the change's own title keeps it.
     for jid, m in list(meta.items()):
         runs = m.get("after") if isinstance(m, dict) and isinstance(m.get("after"), list) else []
-        meta_line = re.match(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The (applied )?(diff|patch) is\b"
+        meta_line = re.match(r"(I|We)\s+(chose|kept|picked|took|went with|combined)\b|The (\w+ )?(diff|patch) is\b"
                              r"|(Both|Neither|All) runs?\b", str(m.get("said") or "")) if runs else None
         kept = str(m.get("kept") or "") if runs and (meta_line or not m.get("said")) else ""
         won = next((r for r in runs if isinstance(r, str) and kept in (r, r.rsplit(".", 1)[-1])), None) if kept else None
         said = str((meta.get(won) or {}).get("said") or "") if won and isinstance(meta.get(won), dict) else ""
-        if said:
+        if said or meta_line:  # with no one run to name it by (a combined judge), the brief names it, not the remark
             meta = {**meta, jid: {**m, "said": said}}
     # A swarm's runs are its judge's work: the swarm is one row, live while any of its runs works. A run keeps a row
     # only while its own page is open, so the sidebar lights what the header names.

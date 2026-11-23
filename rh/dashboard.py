@@ -19,8 +19,18 @@ from urllib.parse import quote
 # The look and the client ship beside this module; rh serve sends the fonts from rh/web/fonts (see FONTS).
 _WEB = Path(__file__).with_name("web")
 STYLE = (_WEB / "rh.css").read_text(encoding="utf-8")
-SCRIPT = (_WEB / "app.js").read_text(encoding="utf-8")
+# bg.js draws the halftone field; it rides in front of app.js so /app.js stays the one script.
+SCRIPT = (_WEB / "bg.js").read_text(encoding="utf-8") + "\n" + (_WEB / "app.js").read_text(encoding="utf-8")
+# A live page compares this with each page it fetches and reloads when they differ, so a restarted server never
+# pours new markup into a page still wearing the old stylesheet and script.
+BUILD = format(zlib.crc32((STYLE + SCRIPT).encode("utf-8")), "08x")
 FONTS = ("GeistSerif-Square.woff2", "GeistMono-VF.woff2")  # the only files GET /fonts/<name> serves
+BACKGROUNDS = ("halftone.webp", "clouds.webp")
+PRESETS = ("beam", "arc", "clouds", "aurora", "dunes", "orbit", "quiet", "off")
+TINTS = ("cobalt", "violet", "teal", "ember", "mono")
+_LEGACY = {"halftone": "beam"}  # names saved by earlier versions
+_SEP = " · "
+_SEP_HTML = '<span class="sep">·</span>'
 # The live page's faces. The snapshot leaves them out: it is one file and loads nothing, so it falls back to the
 # system's serif and monospace.
 _FACES = ('@font-face{font-family:"Geist Serif";src:url(/fonts/GeistSerif-Square.woff2) format("woff2");'
@@ -62,8 +72,22 @@ _PLATFORMS = {"gpt-chat": "GPT Pro", "codex-cloud": "Codex cloud", "codex-cloud-
               "local-shell": HERE}
 _PLACES = {"gpt-chat": "with GPT Pro", "codex-cloud": "in Codex cloud", "local-shell": f"on {HERE}"}
 _WHERE = {"local-shell": "mac", "codex-cloud": "cloud", "gpt-chat": "chat"}  # what the list's tabs filter on
-_WORKERS = (("chat", "GPT Pro", "chat"), ("cloud", "Codex cloud", "cloud"), ("mac", HERE, "mac"))  # filter, name, icon
+_WORKERS = (("chat", "GPT Pro"), ("cloud", "Codex cloud"), ("mac", HERE))
 _NEEDS = ("net", "python", "git", "loopback", "browser", "gpu")  # capabilities the composer offers
+# Reasoning effort levels, lowest first, named as Codex names them; the policy and the contract use the keys
+_ANSWER_WORDS = (("chat", "In the chat"), ("file", "As answer.md"))
+# Who an agent's answer is from, by the provider its command runs (rh/agent.py PROVIDER ...)
+_AGENT_WHO = {"codex": ("Codex", "openai"), "claude": ("Claude", "claude"), "devin": ("Devin", "devin")}
+_EFFORTS = (("light", "Light"), ("medium", "Medium"), ("high", "High"), ("extra-high", "Extra High"), ("max", "Max"),
+            ("ultra", "Ultra"))
+_NEED_WORDS = {"net": "Internet", "python": "Python", "git": "Git", "loopback": "Local ports", "browser": "Browser",
+               "gpu": "GPU"}
+
+
+def _minutes(m):
+    """A time limit as people say it: 15 min, 2 h, 1 h 30 min."""
+    h, rest = divmod(int(m), 60)
+    return f"{h} h {rest} min" if h and rest else f"{h} h" if h else f"{rest} min"
 _STALE = 300  # seconds without a check before the status line says the checks may have stopped
 _TAIL = 12  # lines of a failed job's output shown open, as where it stopped
 _CODEX = "https://chatgpt.com/codex"  # the pages outside the app a live page links to: a hand launch,
@@ -122,6 +146,27 @@ _ICONS = {
     "chat": ('<path d="M12 3.5 13.7 9a2 2 0 0 0 1.3 1.3l5.5 1.7-5.5 1.7a2 2 0 0 0-1.3 1.3L12 20.5l-1.7-5.5A2 2 0 0 0 9 '
              '13.7L3.5 12 9 10.3A2 2 0 0 0 10.3 9z"/>'),
     "jobs": '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
+    "inspector": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M14 5v14"/>',
+    "sidebar": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M10 5v14"/>',
+    "plus": '<path d="M12 5v14M5 12h14"/>',
+    "effort": '<path d="M5 18v-2.5M9.67 18v-5M14.33 18v-7.5M19 18V8"/>',
+    # Claude's mark, from Simple Icons (CC0), filled like OpenAI's
+    "claude": '<path fill="currentColor" stroke="none" d="m4.7144 15.9555 4.7174-2.6471.079-.2307-.079-.1275h-.2307l-.7893-.0486-2.6956-.0729-2.3375-.0971-2.2646-.1214-.5707-.1215-.5343-.7042.0546-.3522.4797-.3218.686.0608 1.5179.1032 2.2767.1578 1.6514.0972 2.4468.255h.3886l.0546-.1579-.1336-.0971-.1032-.0972L6.973 9.8356l-2.55-1.6879-1.3356-.9714-.7225-.4918-.3643-.4614-.1578-1.0078.6557-.7225.8803.0607.2246.0607.8925.686 1.9064 1.4754 2.4893 1.8336.3643.3035.1457-.1032.0182-.0728-.164-.2733-1.3539-2.4467-1.445-2.4893-.6435-1.032-.17-.6194c-.0607-.255-.1032-.4674-.1032-.7285L6.287.1335 6.6997 0l.9957.1336.419.3642.6192 1.4147 1.0018 2.2282 1.5543 3.0296.4553.8985.2429.8318.091.255h.1579v-.1457l.1275-1.706.2368-2.0947.2307-2.6957.0789-.7589.3764-.9107.7468-.4918.5828.2793.4797.686-.0668.4433-.2853 1.8517-.5586 2.9021-.3643 1.9429h.2125l.2429-.2429.9835-1.3053 1.6514-2.0643.7286-.8196.85-.9046.5464-.4311h1.0321l.759 1.1293-.34 1.1657-1.0625 1.3478-.8804 1.1414-1.2628 1.7-.7893 1.36.0729.1093.1882-.0183 2.8535-.607 1.5421-.2794 1.8396-.3157.8318.3886.091.3946-.3278.8075-1.967.4857-2.3072.4614-3.4364.8136-.0425.0304.0486.0607 1.5482.1457.6618.0364h1.621l3.0175.2247.7892.522.4736.6376-.079.4857-1.2142.6193-1.6393-.3886-3.825-.9107-1.3113-.3279h-.1822v.1093l1.0929 1.0686 2.0035 1.8092 2.5075 2.3314.1275.5768-.3218.4554-.34-.0486-2.2039-1.6575-.85-.7468-1.9246-1.621h-.1275v.17l.4432.6496 2.3436 3.5214.1214 1.0807-.17.3521-.6071.2125-.6679-.1214-1.3721-1.9246L14.38 17.959l-1.1414-1.9428-.1397.079-.674 7.2552-.3156.3703-.7286.2793-.6071-.4614-.3218-.7468.3218-1.4753.3886-1.9246.3157-1.53.2853-1.9004.17-.6314-.0121-.0425-.1397.0182-1.4328 1.9672-2.1796 2.9446-1.7243 1.8456-.4128.164-.7164-.3704.0667-.6618.4008-.5889 2.386-3.0357 1.4389-1.882.929-1.0868-.0062-.1579h-.0546l-6.3385 4.1164-1.1293.1457-.4857-.4554.0608-.7467.2307-.2429 1.9064-1.3114Z"/>',
+    # Devin's mark from the ACP registry (cdn.agentclientprotocol.com, as T3 Code shows it), and Cognition's from
+    # cognition.ai/icon.svg without its 5% inner shadow; both scaled into the 24 box
+    "devin": '<g fill="currentColor" stroke="none" transform="translate(1.480 0) scale(0.0800)"><path d="M1.84577e-10 100.797V38.6224C1.88813e-05 35.8899 1.45777 33.365 3.82414 31.9988L57.6539 0.920185C60.0203 -0.446051 62.9358 -0.446051 65.3022 0.920185L119.132 31.9988C121.498 33.3651 122.956 35.8899 122.956 38.6224V70.375C123.192 80.9262 128.769 91.103 138.577 96.7655C148.384 102.428 159.986 102.169 169.242 97.0979L196.74 81.2217C199.107 79.8554 202.022 79.8554 204.388 81.2217L258.218 112.3C260.585 113.667 262.042 116.191 262.042 118.924V181.081C262.042 183.814 260.585 186.339 258.218 187.705L204.388 218.783C202.022 220.15 199.107 220.15 196.74 218.783L169.464 203.036C160.173 197.847 148.465 197.536 138.579 203.244C128.772 208.906 123.195 219.083 122.959 229.634V261.378C122.959 264.111 121.501 266.635 119.135 268.002L65.3048 299.08C62.9384 300.447 60.0229 300.447 57.6566 299.08L3.82673 268.002C1.46036 266.635 0.00260562 264.111 0.00260562 261.378V199.221C0.0026245 196.488 1.46038 193.963 3.82675 192.597L57.6565 161.519C60.0229 160.152 62.9384 160.152 65.3048 161.519L92.8656 177.431C102.11 182.467 113.679 182.711 123.463 177.062C133.349 171.355 138.934 161.06 139.086 150.419C138.85 139.868 133.274 128.601 123.466 122.938C113.658 117.276 102.056 117.534 92.8007 122.606L65.1758 138.645C62.7991 140.025 59.8649 140.024 57.4894 138.642L3.80216 107.407C1.44816 106.038 -1.88809e-05 103.52 1.84577e-10 100.797Z"/></g>',
+    "cognition": '<g fill="currentColor" stroke="none" transform="scale(1.11649) translate(0.747952 0.731469)"><path d="M13.2603 8.85657C13.6689 8.62171 14.174 8.62171 14.5826 8.85657L15.6386 9.46628C15.6723 9.48514 15.7089 9.5 15.746 9.51028C15.7534 9.51314 15.7609 9.51485 15.7694 9.516C15.806 9.52457 15.8431 9.52914 15.8797 9.53085H15.8854C15.89 9.53085 15.8929 9.53085 15.8974 9.52914C15.9311 9.52914 15.9649 9.52343 15.9986 9.516C16.0043 9.516 16.0106 9.51428 16.0163 9.51143C16.0517 9.50114 16.0866 9.48628 16.1191 9.46914C16.122 9.46743 16.1266 9.46628 16.1294 9.46457L18.2403 8.24514C18.3917 8.15828 18.4843 7.99714 18.4843 7.82228V5.384C18.4843 5.20914 18.3917 5.04742 18.2403 4.96114L16.1294 3.74171C15.978 3.65485 15.7917 3.65485 15.6403 3.74171L13.5294 4.96114C13.5294 4.96114 13.5237 4.96571 13.5209 4.96685C13.4889 4.98571 13.4574 5.00971 13.4311 5.036C13.4266 5.04057 13.4237 5.04457 13.4191 5.04914C13.3957 5.07428 13.3751 5.10228 13.3563 5.13142C13.3534 5.136 13.3506 5.14 13.3477 5.14628C13.33 5.17885 13.3151 5.21257 13.3049 5.24914C13.302 5.25657 13.3003 5.264 13.2991 5.27257C13.2906 5.30914 13.2843 5.34742 13.2843 5.38742V6.60685C13.2843 7.07714 13.0317 7.516 12.6231 7.75085C12.2146 7.98571 11.7094 7.98571 11.3009 7.75085L10.2449 7.14114C10.2111 7.12228 10.1746 7.10742 10.1374 7.09714C10.13 7.09428 10.1226 7.09257 10.114 7.09142C10.0774 7.08285 10.0403 7.07828 10.0037 7.07657H9.98771C9.95228 7.07657 9.91857 7.08228 9.88485 7.08971C9.87914 7.08971 9.87285 7.09142 9.86885 7.09257C9.83228 7.10285 9.79857 7.11771 9.76428 7.13542C9.76142 7.13714 9.75685 7.13828 9.75399 7.14L7.64314 8.35942C7.49171 8.44628 7.39914 8.60742 7.39914 8.78228V11.2206C7.39914 11.3954 7.49171 11.5571 7.64314 11.6434L9.75399 12.8629C9.75399 12.8629 9.76142 12.8657 9.76428 12.8674C9.79799 12.8851 9.83171 12.9 9.86885 12.9103C9.87457 12.912 9.88085 12.9131 9.88657 12.9149C9.92028 12.9223 9.95399 12.9269 9.98771 12.928C9.99228 12.928 9.99514 12.9297 9.99971 12.9297H10.0054C10.042 12.9297 10.0791 12.924 10.1157 12.9149C10.1231 12.9131 10.1306 12.9103 10.1391 12.9091C10.1757 12.8989 10.2111 12.884 10.2466 12.8651L11.3026 12.2554C11.7111 12.0206 12.2163 12.0206 12.6243 12.2554C13.0311 12.4903 13.2854 12.9297 13.2854 13.4V14.6194C13.2854 14.6589 13.2911 14.6971 13.3003 14.7337C13.302 14.7411 13.3031 14.7497 13.306 14.7571C13.3163 14.7926 13.3311 14.8274 13.3483 14.86C13.3511 14.8646 13.354 14.8686 13.3574 14.8749C13.3751 14.904 13.3957 14.932 13.4209 14.9571C13.4254 14.9617 13.4283 14.9657 13.4329 14.9703C13.4591 14.9966 13.49 15.0189 13.5226 15.0394C13.5254 15.0411 13.5283 15.044 13.5311 15.0451L15.642 16.2646C15.7169 16.3086 15.802 16.3309 15.886 16.3309C15.97 16.3309 16.0551 16.3086 16.13 16.2646L18.2409 15.0451C18.3923 14.9583 18.4849 14.7971 18.4849 14.6223V12.184C18.4849 12.0091 18.3923 11.8474 18.2409 11.7611L16.13 10.5417C16.13 10.5417 16.1226 10.5389 16.1197 10.5371C16.086 10.5194 16.0523 10.5046 16.0157 10.4943C16.01 10.4931 16.0054 10.4931 15.9997 10.4914C15.966 10.4829 15.9306 10.4783 15.8969 10.4783H15.8809C15.8443 10.4783 15.8077 10.484 15.7706 10.4931C15.7631 10.4949 15.7557 10.4977 15.7489 10.4989C15.7123 10.5091 15.6769 10.524 15.6414 10.5429L14.5854 11.1526C14.1786 11.3874 13.6717 11.3874 13.2637 11.1526C12.8569 10.9177 12.6026 10.4783 12.6026 10.008C12.6026 9.53771 12.8551 9.09885 13.2637 8.86343L13.262 8.85771L13.2603 8.85657Z"/><path d="M1.75971 8.24743L3.87057 9.46685C3.94542 9.51085 4.03057 9.53314 4.11457 9.53314C4.19857 9.53314 4.28371 9.51085 4.35857 9.46685L6.46942 8.24743C6.46942 8.24743 6.47514 8.24285 6.47799 8.24171C6.51057 8.22285 6.54085 8.19885 6.56771 8.17257C6.57228 8.168 6.57514 8.164 6.57971 8.15942C6.60314 8.13428 6.62371 8.10628 6.64314 8.07714C6.64599 8.07257 6.64885 8.06857 6.65171 8.06228C6.66942 8.02971 6.68428 7.996 6.69457 7.95942C6.69742 7.952 6.69914 7.94457 6.70028 7.936C6.70885 7.89943 6.71514 7.86114 6.71514 7.82171V6.60228C6.71514 6.132 6.96771 5.69314 7.37628 5.45828C7.78485 5.22342 8.28999 5.22342 8.69857 5.45828L9.75457 6.068C9.78828 6.08685 9.82485 6.10171 9.86199 6.112C9.86942 6.11485 9.87685 6.11657 9.88542 6.11771C9.92199 6.12628 9.95742 6.13085 9.99571 6.13257H10.0014C10.006 6.13257 10.0089 6.13085 10.0134 6.13085C10.0471 6.13085 10.0809 6.12514 10.1146 6.11771C10.1203 6.11771 10.1266 6.116 10.1323 6.11314C10.1689 6.10285 10.2026 6.088 10.2369 6.07028C10.2397 6.06914 10.2443 6.06742 10.2471 6.06571L12.358 4.84628C12.5094 4.75942 12.602 4.59828 12.602 4.42342V1.98514C12.602 1.81028 12.5094 1.64857 12.358 1.56228L10.2471 0.342853C10.0957 0.255996 9.90942 0.255996 9.75799 0.342853L7.64714 1.56228C7.64714 1.56228 7.64142 1.56685 7.63857 1.568C7.60657 1.58685 7.57571 1.61085 7.54885 1.63714C7.54428 1.64171 7.54142 1.64571 7.53685 1.65028C7.51342 1.67542 7.49285 1.70342 7.47342 1.73257C7.47057 1.73714 7.46771 1.74114 7.46485 1.74742C7.44714 1.78 7.43228 1.81371 7.42199 1.85028C7.41914 1.85771 7.41742 1.86514 7.41628 1.87371C7.40714 1.91028 7.40142 1.94857 7.40142 1.98857V3.208C7.40142 3.67828 7.14885 4.11714 6.74028 4.35257C6.33342 4.58742 5.82657 4.58742 5.41799 4.35257L4.36199 3.74285C4.32828 3.724 4.29171 3.70914 4.25457 3.69885C4.24714 3.696 4.23971 3.69428 4.23114 3.69314C4.19457 3.68457 4.15742 3.68 4.12085 3.67828H4.10485C4.06942 3.67828 4.03571 3.684 4.00199 3.69142C3.99628 3.69142 3.98999 3.69314 3.98599 3.69428C3.94942 3.70457 3.91571 3.71942 3.88142 3.73714C3.87857 3.73885 3.87399 3.74 3.87114 3.74171L1.76028 4.96114C1.60885 5.048 1.51628 5.20914 1.51628 5.384V7.82228C1.51628 7.99714 1.60885 8.15885 1.76028 8.24514V8.248L1.75971 8.24743Z"/><path d="M12.3551 15.1514L10.2443 13.932C10.2443 13.932 10.2369 13.9291 10.234 13.9274C10.2003 13.9097 10.1666 13.8954 10.1294 13.8851C10.1237 13.8834 10.1174 13.8823 10.1117 13.8806C10.078 13.8731 10.0443 13.8674 10.0089 13.8674H9.99285C9.95628 13.8674 9.91914 13.8731 9.88257 13.8823C9.87514 13.884 9.86771 13.8869 9.86028 13.888C9.82371 13.8983 9.78828 13.9131 9.75285 13.932L8.69685 14.5417C8.28999 14.7766 7.78314 14.7766 7.37628 14.5417C6.96771 14.3069 6.71514 13.8674 6.71514 13.3971V12.1777C6.71514 12.1383 6.70942 12.1 6.70028 12.0629C6.69914 12.0554 6.69742 12.0469 6.69457 12.0394C6.68428 12.004 6.66942 11.9691 6.65171 11.9366C6.64885 11.932 6.64599 11.928 6.64314 11.9217C6.62542 11.8926 6.60485 11.8646 6.57971 11.8394C6.57514 11.8349 6.57228 11.8309 6.56828 11.8263C6.54199 11.8 6.51114 11.7777 6.47857 11.7571C6.47571 11.7554 6.47285 11.7526 6.46999 11.7514L4.35914 10.532C4.20771 10.4451 4.02142 10.4451 3.86999 10.532L1.75914 11.7514C1.60771 11.8383 1.51514 11.9994 1.51514 12.1743V14.6126C1.51514 14.7874 1.60771 14.9491 1.75914 15.0354L3.86999 16.2549C3.86999 16.2549 3.87742 16.2577 3.88028 16.2594C3.91399 16.2771 3.94771 16.2914 3.98314 16.3017C3.98885 16.3034 3.99514 16.3046 4.00085 16.3063C4.03457 16.3137 4.06714 16.3183 4.10199 16.3194C4.10657 16.3194 4.11057 16.3206 4.11399 16.3206H4.11971C4.15628 16.3206 4.19342 16.3149 4.22828 16.3057C4.23571 16.304 4.24428 16.3011 4.25171 16.3C4.28828 16.2897 4.32371 16.2749 4.35914 16.256L5.41514 15.6463C5.82371 15.4114 6.32885 15.4114 6.73742 15.6463C7.14428 15.8811 7.39857 16.3206 7.39857 16.7909V18.0103C7.39857 18.0497 7.40428 18.088 7.41342 18.1251C7.41514 18.1326 7.41628 18.1411 7.41914 18.1486C7.42942 18.184 7.44428 18.2189 7.46199 18.2514C7.46485 18.256 7.46771 18.26 7.47057 18.2663C7.48828 18.2954 7.50885 18.3234 7.53399 18.3486C7.53857 18.3531 7.54142 18.3571 7.54542 18.3617C7.57171 18.388 7.60257 18.4103 7.63514 18.4309C7.63799 18.4326 7.64085 18.4354 7.64428 18.4366L9.75514 19.656C9.82999 19.7 9.91514 19.7223 9.99914 19.7223C10.0831 19.7223 10.1683 19.7 10.2431 19.656L12.354 18.4366C12.5054 18.3497 12.598 18.1886 12.598 18.0137V15.5754C12.598 15.4006 12.5054 15.2389 12.354 15.1526L12.3551 15.1514Z"/></g>',
+    # OpenAI's mark, from Simple Icons (CC0), filled rather than stroked like the rest
+    "openai": '<path fill="currentColor" stroke="none" d="M22.2819 9.8211a5.9847 5.9847 0 0 0-.5157-4.9108 6.0462 6.0462 0 0 0-6.5098-2.9A6.0651 6.0651 0 0 0 4.9807 4.1818a5.9847 5.9847 0 0 0-3.9977 2.9 6.0462 6.0462 0 0 0 .7427 7.0966 5.98 5.98 0 0 0 .511 4.9107 6.051 6.051 0 0 0 6.5146 2.9001A5.9847 5.9847 0 0 0 13.2599 24a6.0557 6.0557 0 0 0 5.7718-4.2058 5.9894 5.9894 0 0 0 3.9977-2.9001 6.0557 6.0557 0 0 0-.7475-7.0729zm-9.022 12.6081a4.4755 4.4755 0 0 1-2.8764-1.0408l.1419-.0804 4.7783-2.7582a.7948.7948 0 0 0 .3927-.6813v-6.7369l2.02 1.1686a.071.071 0 0 1 .038.052v5.5826a4.504 4.504 0 0 1-4.4945 4.4944zm-9.6607-4.1254a4.4708 4.4708 0 0 1-.5346-3.0137l.142.0852 4.783 2.7582a.7712.7712 0 0 0 .7806 0l5.8428-3.3685v2.3324a.0804.0804 0 0 1-.0332.0615L9.74 19.9502a4.4992 4.4992 0 0 1-6.1408-1.6464zM2.3408 7.8956a4.485 4.485 0 0 1 2.3655-1.9728V11.6a.7664.7664 0 0 0 .3879.6765l5.8144 3.3543-2.0201 1.1685a.0757.0757 0 0 1-.071 0l-4.8303-2.7865A4.504 4.504 0 0 1 2.3408 7.872zm16.5963 3.8558L13.1038 8.364 15.1192 7.2a.0757.0757 0 0 1 .071 0l4.8303 2.7913a4.4944 4.4944 0 0 1-.6765 8.1042v-5.6772a.79.79 0 0 0-.407-.667zm2.0107-3.0231l-.142-.0852-4.7735-2.7818a.7759.7759 0 0 0-.7854 0L9.409 9.2297V6.8974a.0662.0662 0 0 1 .0284-.0615l4.8303-2.7866a4.4992 4.4992 0 0 1 6.6802 4.66zM8.3065 12.863l-2.02-1.1638a.0804.0804 0 0 1-.038-.0567V6.0742a4.4992 4.4992 0 0 1 7.3757-3.4537l-.142.0805L8.704 5.459a.7948.7948 0 0 0-.3927.6813zm1.0976-2.3654l2.602-1.4998 2.6069 1.4998v2.9994l-2.5974 1.4997-2.6067-1.4997Z"/>',
+    "clock": '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+    "tag": '<path d="M3.5 12.2V5a1.5 1.5 0 0 1 1.5-1.5h7.2l8.3 8.3a1.5 1.5 0 0 1 0 2.1l-7 7a1.5 1.5 0 0 1-2.1 0z"/><circle cx="8" cy="8" r="1.3"/>',
+    "plug": '<path d="M9 3.5v5M15 3.5v5M6.5 8.5h11v3a5.5 5.5 0 0 1-11 0zM12 17v3.5"/>',
+    "term": '<rect x="3" y="4.5" width="18" height="15" rx="2.5"/><path d="m7.5 9.5 3 2.5-3 2.5M12.5 15h4"/>',
+    "folder": '<path d="M3.5 7a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+    "branch": ('<circle cx="6.5" cy="5.5" r="2"/><circle cx="6.5" cy="18.5" r="2"/><circle cx="17.5" cy="7.5" r="2"/>'
+               '<path d="M6.5 7.5v9M17.5 9.5c0 4-11 3-11 7"/>'),
+    "gear": ('<circle cx="12" cy="12" r="3"/><path d="m9.2 4-.6 2.1-1.8 1-2-.5-1.9 3.2 1.5 1.6v2.1l-1.5 1.6 1.9 3.2'
+             ' 2-.5 1.8 1 .6 2.1h3.7l.6-2.1 1.8-1 2 .5 1.9-3.2-1.5-1.6v-2.1l1.5-1.6-1.9-3.2-2 .5-1.8-1-.6-2.1z"/>'),
     "coord": '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
 }
 _RING = '<circle cx="7" cy="7" r="5.6" fill="none" stroke="currentColor" stroke-width="1.4"/>'
@@ -213,7 +258,7 @@ def _clock(timestamp, now):
 
 def _date(now):
     t = time.localtime(now)
-    return f"{_DAYS[t.tm_wday]} {t.tm_mday} {_MONTHS[t.tm_mon - 1]} · {t.tm_hour:02d}:{t.tm_min:02d}"
+    return f"{_DAYS[t.tm_wday]} {t.tm_mday} {_MONTHS[t.tm_mon - 1]}{_SEP_HTML}{t.tm_hour:02d}:{t.tm_min:02d}"
 
 
 def _midnight(now):
@@ -582,15 +627,14 @@ class _Job:
         self.title = _title(self.meta, self.id)
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
-    def headline(self, runs=1):
-        """The one line the list shows beside the title: what it needs when it needs you, else its state; for a
-        failure repeated by `runs` runs of its brief, how many times."""
+    def headline_parts(self, runs=1):
+        """Text parts of the one-line list headline, keeping user text separate from authored separators."""
         if self.items:
-            return _ask_line(self.items[0])[0]
+            return [_ask_line(self.items[0])[0]]
         if self.handoff:
-            return "Launch it in Codex"
+            return ["Launch it in Codex"]
         if self.mine:
-            return "Paused from the app"
+            return ["Paused from the app"]
         detail = _plain(self.row.get("detail"))
         parts = []
         held = [s for s in self.stops if s.get("owner") != "app"]
@@ -600,11 +644,11 @@ class _Job:
             parts.append("Paused")
         if self.failure or self.held:
             word = f"{self.word} {runs} times" if runs > 1 else self.word
-            return " · ".join(parts + [f"{word}: {detail}" if detail else word])
+            return parts + [f"{word}: {detail}" if detail else word]
         if self.setup:
-            return " · ".join(parts + ["Waits for Codex cloud to be set up"])
+            return parts + ["Waits for Codex cloud to be set up"]
         if self.native:
-            return " · ".join(parts + [self.word])
+            return parts + [self.word]
         if self.group == "live" and self.state in ("draft", "ready", "launching"):
             parts.append("Starting")
         elif self.state == "running" and self.kind in _PLACES:
@@ -613,7 +657,15 @@ class _Job:
             parts.append(self.word)
         if detail and self.state not in ("draft", "ready", "launching"):
             parts.append(detail)
-        return " · ".join(parts)
+        return parts
+
+    def headline(self, runs=1):
+        """The headline as plain text for data and non-HTML contexts."""
+        return _SEP.join(self.headline_parts(runs))
+
+    def headline_html(self, runs=1):
+        """Render the harness-authored headline separators as spans, escaping every text part."""
+        return _SEP_HTML.join(_text(part) for part in self.headline_parts(runs))
 
     def since(self):
         """The time the list shows: when it started waiting on you, started running, or finished."""
@@ -667,7 +719,7 @@ class _Job:
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
         cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{_text(self.title)}</span>'
-                 f'<span class="sub">{_text(self.headline(runs))}</span>{_where(self.kind)}'
+                 f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
                 else f'<div class="item">{cells}</div>')
@@ -679,7 +731,7 @@ def _need_row(ctx, key, ask, detail, when, cli, job=None, title=None, status="")
     """The snapshot's printed card for one thing a person can settle, with the command that settles it."""
     about = ""
     if job:
-        tail = f" · {_text(status)}" if status else ""
+        tail = f"{_SEP_HTML}{status}" if status else ""
         about = f'<p class="for">For {_text(title or job)}{tail}</p>'
     say = (f'<p class="ask-t">{ask}</p>' + (f'<p class="detail">{detail}</p>' if detail else "") + about
            + (f'<p class="for">{when}</p>' if when else "") + f'<p class="cli"><code>{_text(cli)}</code></p>')
@@ -777,12 +829,21 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
             f'<li><div>{attach}</div></li></ol>{foot}</div>')
 
 
-def _chat_card(ctx, jid, spec, item, lead):
+def _chat_reply_form(ctx, jid, lead):
+    message = (f'<label class="sr" for="reply-{_text(jid)}">The reply from ChatGPT</label>'
+               f'<textarea class="c-text" id="reply-{_text(jid)}" name="text" rows="4" required '
+               'placeholder="Paste the reply from ChatGPT"></textarea>')
+    return _composer_form(ctx, "/reply", "Save reply", message, job=jid, controls=_worker_note("GPT Pro"),
+                          variant="reply-box", primary=lead)
+
+
+def _chat_card(ctx, jid, spec, item, lead, include_reply=True):
     """A GPT Pro chat waiting on you: the prompt to copy, the way to ChatGPT, and the box its reply goes in."""
     model = (spec.get("model") or {}).get("requested") if isinstance(spec.get("model"), dict) else None
     when = (_when(item["created"], ctx["now"], f"inbox:{item['id']}", "asked ")
             if item and _number(item.get("created")) else "")
-    out = [f'<p class="label">{_dot("warn")}Needs you{" · " + when if when else ""}</p>'
+    when_html = f'{_SEP_HTML}{when}' if when else ""
+    out = [f'<p class="label">{_dot("warn")}Needs you{when_html}</p>'
            '<h3>Ask GPT Pro, then paste its reply</h3>'
            f'<p class="detail">Start a new chat with {_text(model or "GPT Pro")} in ChatGPT and paste this prompt. When '
            'it has answered, paste the whole reply below; the reply is the job\'s result.</p>'
@@ -793,11 +854,8 @@ def _chat_card(ctx, jid, spec, item, lead):
     out.append(f'<div class="acts">{_copy("prompt-" + jid, "Copy prompt")}<a class="btn" href="{_CHATGPT}" '
                'target="_blank" rel="noopener noreferrer">Open ChatGPT<span aria-hidden="true">↗</span>'
                '<span class="sr"> (opens a new tab)</span></a></div>')
-    out.append(f'<form class="reply-box composer" method="post" action="/reply" data-act data-label="Save reply">'
-               f'{_hidden(ctx, [("job", jid)])}<label class="sr" for="reply-{_text(jid)}">The reply from ChatGPT</label>'
-               f'<textarea class="c-text" id="reply-{_text(jid)}" name="text" rows="4" required '
-               'placeholder="Paste the reply from ChatGPT"></textarea><div class="c-row"><span class="c-hint mono">'
-               f'⌘↵ save</span><button class="{_cls("primary" if lead else "")}">Save reply</button></div></form>')
+    if include_reply:
+        out.append(_chat_reply_form(ctx, jid, lead))
     return f'<div class="ask-card chat-card">{"".join(out)}</div>'
 
 
@@ -845,7 +903,7 @@ def _ask_card(ctx, item, opened, lead, view):
         return _native_card(ctx, item, lead=lead)
     ask, detail = _ask_line(item)
     when = (_when(item["created"], ctx["now"], f"inbox:{iid}", "asked ") if _number(item.get("created")) else "")
-    head = (f'<p class="label">{_dot("warn")}Needs you · {when}</p><h3>{_text(ask)}</h3>'
+    head = (f'<p class="label">{_dot("warn")}Needs you{_SEP_HTML}{when}</p><h3>{_text(ask)}</h3>'
             + (f'<p class="detail">{_text(detail)}</p>' if detail else ""))
     return f'<div class="ask-card">{head}{_ask_form(ctx, item, lead)}</div>'
 
@@ -928,7 +986,7 @@ def _checks(view, ctx):
                              _field("Why? (optional)", "reason", placeholder="Paused from the app"),
                              f"Pause {_text(_platform(name))}", "quiet small danger",
                              f"No new job starts on {_text(_platform(name))} until you resume it.", "up left")
-        out.append(f'<div class="route"><p>{_text(_platform(name))}: {_text(route["last_status"])} · {retry}'
+        out.append(f'<div class="route"><p>{_text(_platform(name))}: {_text(route["last_status"])}{_SEP_HTML}{retry}'
                    f'</p>{pause}</div>')
     for stop in ctx["others"]:
         scope = str(stop["scope"])
@@ -972,7 +1030,7 @@ def _host(view, ctx):
         held = host.get("lease") if isinstance(host.get("lease"), dict) else {}
         if held.get("held"):
             age = held.get("age_s")
-            rows.append(_kv("Heavy lease", "in use" + (f" · {_span(round(age))}" if _number(age) else "")))
+            rows.append(_kv("Heavy lease", "in use" + (f"{_SEP_HTML}{_span(round(age))}" if _number(age) else "")))
         if not ok and host.get("reason"):
             rows.append(f'<p class="why">{_text(_sentence(host["reason"]))}.</p>')
         body = "".join(rows)
@@ -1014,16 +1072,9 @@ def _region(key, body, tag="div", cls="", attrs=""):
     return (f'<{tag} class="{cls or key}" data-region="{key}" data-sig="{_sig(_still(body))}"{attrs}>{body}</{tag}>')
 
 
-def _kpill(ctx):
-    if not ctx["live"]:
-        return ""
-    return (f'<button type="button" class="k-pill" data-pal aria-label="Jump to anything, ⌘K">{_ic("search", True)}'
-            '<span>Jump to anything</span><kbd>⌘K</kbd></button>')
-
-
-def _top(ctx, left, right=""):
-    """The panel's top bar: what this page is on the left, its actions and ⌘K on the right."""
-    body = f'{left}<div class="top-r">{right}{_kpill(ctx)}</div>'
+def _top(left, right=""):
+    """The panel's title and page-specific actions."""
+    body = left + (f'<div class="top-r">{right}</div>' if right else "")
     return f'<header class="top" data-region="top" data-still data-sig="{_sig(_still(body))}">{body}</header>'
 
 
@@ -1098,7 +1149,7 @@ def _item_row(ctx, item):
     about, act = (f"For job {_text(item['job'])}" if item.get("job") else "From the harness"), ""
     href = _url(ctx, "/inbox/" + str(item["id"]))
     if _native_item(item):
-        about = (f'It does not list {_text(_env_of(item))}, so cloud jobs wait · <span class="mono">codex cloud</span> '
+        about = (f'It does not list {_text(_env_of(item))}, so cloud jobs wait{_SEP_HTML}<span class="mono">codex cloud</span> '
                  'lists them, <span class="mono">rh doctor</span> checks')
         if ctx["live"]:
             act = (f'<span class="do"><a class="btn gbtn" href="{href}" data-nav data-k="r">{_ic("cloud", True)}'
@@ -1127,20 +1178,15 @@ def _job_list(jobs, stop_rows, ctx):
         out.append(_section(f"g-{key}", heading, _rows(items), extra, "group", hidden=not items, h="h3"))
     none = not jobs and not stop_rows
     empty = (f'<p class="empty no-jobs" data-region="no-jobs" data-sig="{_sig(none)}"{"" if none else " hidden"}>'
-             '<b>No jobs yet.</b>A job you start, or one added with rh job add, shows up here.</p>')
+             '<b>No jobs yet.</b></p>')
     return empty + "".join(out)
 
 
 def _lane(jobs, stop_rows, ctx, here=None):
-    """Linear's list beside whatever is open: every job, grouped by what you do next, filtered by who works on it.
-    The open job's row is lit."""
-    tabs = ['<button type="button" role="tab" aria-selected="true" data-where="">All</button>']
-    tabs += [f'<button type="button" role="tab" aria-selected="false" data-where="{w}">{_text(word)}</button>'
-             for w, word, _ in _WORKERS]
-    new = (f'<a class="icon-btn" href="{_url(ctx, "/new")}" data-nav data-k="n" aria-label="New job, N">{_ic("new")}</a>'
-           if ctx["can_add"] else "")
-    head = (f'<div class="lane-head"><h2>Jobs</h2><div class="tabs" role="tablist" aria-label="Who works on it">'
-            f'{"".join(tabs)}</div>{new}</div>')
+    """The sidebar queue, grouped by next action and filterable by worker."""
+    workers = "".join(f'<option value="{key}">{_text(name)}</option>' for key, name in _WORKERS)
+    head = ('<div class="lane-head"><h2>Jobs</h2><select data-job-filter aria-label="Filter jobs by worker">'
+            f'<option value="">All workers</option>{workers}</select></div>')
     listed = _job_list(jobs, stop_rows, ctx)
     if here:
         mark = f'data-key="job:{_text(here)}"'
@@ -1165,7 +1211,8 @@ def _coord(view, ctx, jobs):
         dot = "bad"
     live = sum(j.group == "live" for j in jobs)
     seats = [x for x in view.get("seats", []) if isinstance(x, dict) and x.get("name")]
-    said = f'{_dot(dot, dot == "live")}<span>{word}</span><span class="soft num">· {live} live</span>'
+    said = (f'{_dot(dot, dot == "live")}<span class="coord-status">{word}{_SEP_HTML}'
+            f'<span class="soft num">{live} live</span></span>')
     line = f'<span class="coord-line" data-region="coord" data-sig="{_sig(said)}">{said}</span>'
     parts = [f'<h2 class="side-h">Check loop</h2>{_checks(view, ctx)}']
     if ctx["live"]:
@@ -1186,10 +1233,10 @@ def _coord(view, ctx, jobs):
             tone, state, job, _ = _seat_state(str(seat["name"]), jobs)
             rows.append(f'<li>{_dot({"accent": "live", "amber": "warn"}.get(tone, "neutral"))}'
                         f'<span class="mono">{_text(seat["name"])}</span><span class="soft">{_text(state)}'
-                        f'{" · " + _text(job.id) if job else ""}</span></li>')
+                        f'{_SEP_HTML + _text(job.id) if job else ""}</span></li>')
         parts.append(f'<h2 class="side-h">Seats</h2><ul class="seat-list">{"".join(rows)}</ul>')
     return (f'<details class="coord"><summary aria-label="Coordination: the check loop, Codex cloud, {HERE} and the '
-            f'seats">{line}{_ic("coord", True)}</summary><div class="coord-panel">{"".join(parts)}</div></details>')
+            f'seats">{line}</summary><div class="coord-panel">{"".join(parts)}</div></details>')
 
 
 def _seat_state(name, jobs):
@@ -1212,74 +1259,183 @@ def _creatures(jobs, view):
     return out
 
 
-def _composer(ctx, draft, ready, first):
+def _worker_note(label, title="Worker"):
+    return f'<span class="ghost model-note" title="{_text(title)}">{_text(label)}</span>'
+
+
+def _repository_input(value=""):
+    return ('<label>Repository input<input type="text" name="input_path" autocomplete="off" spellcheck="false" '
+            f'class="mono" placeholder="notes/source.md" value="{value}"></label>')
+
+
+def _composer_form(ctx, action, label, message, *, job=None, worker="", options="", opened="", controls="",
+                   variant="", primary=True, followup=False, where="", files=False, picked=""):
+    """Render the shared message field, controls and submit button for each supported action."""
+    name = picked.rsplit("/", 1)[-1]
+    add = (f'<button class="ghost add-input" type="button" data-add-input aria-label="Attach a repository file" '
+           f'title="Attach a repository file" aria-haspopup="dialog">{_ic("plus", True)}</button>'
+           f'<input type="hidden" name="input_path" value="{_text(picked)}">'
+           f'<span class="file-chip" title="{_text(picked)}"{"" if picked else " hidden"}>{_ic("file", True)}'
+           f'<span class="file-name">{_text(name)}</span><button type="button" class="file-x" data-clear-input '
+           f'aria-label="Remove the attached file">×</button></span>') if files else ""
+    opts = (f'<details class="opts"{opened}><summary class="ghost opts-btn" aria-label="Options" title="Options">'
+            f'{_ic("coord", True)}</summary>'
+            f'<div class="opts-body">{options}</div></details>') if options else ""
+    send = ' data-followup' if followup else ''
+    cls = _cls("primary send" if primary else "send")
+    return (f'<form class="compose composer{(" " + variant) if variant else ""}" method="post" action="{action}" '
+            f'data-act data-label="{label}">{_hidden(ctx, [("job", job)] if job else [])}{message}'
+            f'<div class="c-row">{add}{worker}<div class="compose-tools">{controls}{opts}'
+            f'<button class="{cls}" aria-label="{label}" title="{label}"{send}>{_ic("up")}</button></div></div>{where}</form>')
+
+
+def _composer(ctx, draft, ready, policy):
     """The one control that starts a job: what it should do, where it runs, its name, and the rest folded away."""
     draft = draft if isinstance(draft, dict) else {}
     value = lambda name: _text(draft.get(name, ""))  # noqa: E731
-    kind = draft.get("kind") or ("codex-cloud" if ready else "local-shell")
-    picked = {k: " checked" if kind == k else "" for k in ("gpt-chat", "local-shell", "codex-cloud")}
+    kind = draft.get("kind") or ("codex-cloud" if ready else "local-agent")
+    if kind not in ("gpt-chat", "local-agent", "local-shell", "codex-cloud"):
+        kind = "local-agent"
+    cloud = "Codex cloud" if ready else f"Codex cloud{_SEP}setup required"
+    workers = (("gpt-chat", "GPT Pro", "chat"), ("local-agent", HERE, "mac"), ("codex-cloud", cloud, "cloud"),
+               ("local-shell", "Shell", "term"))
+    options = "".join(f'<option value="{key}"{" selected" if kind == key else ""}>{_ic(icon, True)}{_text(name)}</option>'
+                      for key, name, icon in workers)
     have = set(draft.get("needs", [])) if isinstance(draft.get("needs"), list) else set()
-    needs = "".join(f'<label><input type="checkbox" name="needs" value="{n}"{" checked" if n in have else ""}>{n}</label>'
-                    for n in _NEEDS)
+    needs = "".join(f'<label class="need"><input type="checkbox" name="needs" value="{n}"{" checked" if n in have else ""}>'
+                    f'{_NEED_WORDS[n]}</label>' for n in _NEEDS)
     timeout = value("timeout_min") or "120"
-    later = "" if ready else "<small>set up first</small>"
-    form = (f'<form class="compose composer" method="post" action="/job" data-act data-label="Start job">'
-            f'{_hidden(ctx, [])}<label class="sr" for="brief">What should the job do?</label>'
-            '<textarea class="c-text" id="brief" name="brief" rows="1" required placeholder="Describe a job: what to '
-            f'find, write and check">{value("brief")}</textarea>'
-            '<div class="cmd"><label for="command">Command</label><input type="text" id="command" name="command" '
-            f'class="mono" autocomplete="off" spellcheck="false" placeholder="sh -c \'date &gt; today.txt\'" '
-            f'value="{value("command")}"><small>Runs in runs/&lt;name&gt;/, so write plain file names. Pipes and &gt; '
-            'need sh -c, as shown.</small></div>'
-            '<div class="c-row"><fieldset class="seg where"><legend class="sr">Who works on it</legend>'
-            f'<label><input type="radio" name="kind" value="gpt-chat"{picked["gpt-chat"]}>{_ic("chat", True)}'
-            'GPT Pro</label>'
-            f'<label><input type="radio" name="kind" value="codex-cloud"{picked["codex-cloud"]}>{_ic("cloud", True)}'
-            f'Codex cloud{later}</label>'
-            f'<label><input type="radio" name="kind" value="local-shell"{picked["local-shell"]}>{_ic("mac", True)}'
-            f'{HERE}</label></fieldset>'
-            '<label class="name"><span class="mono">name</span><input type="text" name="id" required autocomplete="off" '
-            'spellcheck="false" class="mono" pattern="[a-z0-9][a-z0-9._\\-]{0,62}" placeholder="todo-scan" '
-            f'aria-label="Job name" value="{value("id")}"></label>'
-            '<details class="opts"><summary class="chip">Options</summary><div class="opts-body">'
-            '<label><span>Done when <span class="soft">· a command that exits 0 when the job worked</span></span>'
-            f'<input type="text" name="accept" autocomplete="off" spellcheck="false" class="mono" '
-            f'placeholder="test -s todo.md" value="{value("accept")}"></label>'
-            f'<fieldset><legend>It needs</legend><div class="needs">{needs}</div></fieldset>'
-            '<label>Time limit, minutes<input type="text" name="timeout_min" inputmode="numeric" '
-            f'pattern="[0-9]{{1,5}}" value="{timeout}"></label></div></details>'
-            '<span class="c-hint mono">⌘↵ start</span>'
-            f'<button class="btn primary send" aria-label="Start job">{_ic("up")}</button></div></form>')
-    if first:
-        form += ('<div class="how"><ol class="steps">'
-                 f'<li><div><p><b>Describe a job and start it.</b> A job on {HERE} runs one command in its own '
-                 'folder.</p></div></li>'
-                 '<li><div><p><b>Watch it here.</b> Its page shows the output as it runs and the files it made when '
-                 'it is done.</p></div></li>'
-                 '<li><div><p><b>Answer when it asks.</b> A question or a step only you can take shows up under '
-                 'Needs you and in the Inbox.</p></div></li></ol></div>')
+    opened = " open" if draft else ""
+    model_names = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6.1-terra": "GPT-6.1 Terra",
+                   "gpt-6.1-sol-pro": "GPT-6.1 Sol Pro", "gpt-6-pro": "GPT-6 Pro",
+                   "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5",
+                   "claude-haiku-5-5": "Claude Haiku 5.5", "claude-fable-5-2": "Claude Fable 5.2",
+                   "swe-2-high": "SWE-2 High", "swe-2-max": "SWE-2 Max", "swe-2-flash-high": "SWE-2 Flash"}
+    # Codex on this Mac follows the same dated policy as Codex cloud: its models, at standard speed.
+    # This Mac runs any provider's agent; each group is a provider, each model carries its mark.
+    codex_models = list(policy.get("codex-cloud", {}).get("models", ()))
+    providers = (("openai", "OpenAI", codex_models),
+                 ("claude", "Anthropic", list(policy.get("claude-local", {}).get("models", ()))),
+                 ("devin", "Cognition", list(policy.get("devin-local", {}).get("models", ()))))
+    routes = {"gpt-chat": [("openai", "", list(policy.get("gpt-chat", {}).get("models", ())))],
+              "codex-cloud": [("openai", "", codex_models)],
+              "local-agent": [p for p in providers if p[2]]}
+    # Reasoning effort, like Codex's: the levels a provider's CLI knows, of which the dated policy allows some.
+    effort_tables = {("gpt-chat", "openai"): "gpt-chat", ("codex-cloud", "openai"): "codex-cloud",
+                     ("local-agent", "openai"): "codex-local", ("local-agent", "claude"): "claude-local"}
+
+    def effort_levels(route, prov):
+        levels = [key for key, _ in _EFFORTS if key != "ultra" or prov == "openai"] if prov != "devin" else []
+        table = effort_tables.get((route, prov))
+        allowed = set(policy.get(table, {}).get("efforts", ())) if table else set()
+        return levels, [key for key in levels if key in allowed]
+
+    models, controls, picked_name, picked_effort, effort_selects = [], [], "", "", []
+    for route, groups in routes.items():
+        disabled = " disabled hidden" if route != kind else ""
+        rules = policy.get(route, {})
+        entries = [key for _, _, keys in groups for key in keys]
+        if entries:
+            pick = draft.get("model") if draft.get("model") in entries else entries[0]
+
+            def opts(prov, keys):
+                levels, allowed = effort_levels(route, prov)
+                return "".join(f'<option value="{_text(key)}" data-prov="{prov}" data-levels="{" ".join(levels)}" '
+                               f'data-efforts="{" ".join(allowed)}"{" selected" if pick == key else ""}>'
+                               f'{_ic(prov, True)}{_text(model_names.get(key, key))}</option>' for key in keys)
+            values = "".join(f'<optgroup label="{label}">{opts(prov, keys)}</optgroup>' if label else opts(prov, keys)
+                             for prov, label, keys in groups if keys)
+            # the effort that goes with the chosen model: the draft's if its provider allows it, else the highest
+            pick_prov = next(prov for prov, _, keys in groups if pick in keys)
+            allowed = effort_levels(route, pick_prov)[1]
+            if allowed:
+                effort = draft.get("effort") if draft.get("effort") in allowed else allowed[-1]
+                levels = "".join(f'<option value="{key}"{" selected" if effort == key else ""}>{word}</option>'
+                                 for key, word in _EFFORTS)
+                effort_selects.append(f'<select class="effort-pick" name="effort" data-route="{route}" '
+                                      f'aria-label="Reasoning effort"{disabled}>{levels}</select>')
+            if route == kind:
+                picked_name = model_names.get(pick, pick)
+                picked_effort = dict(_EFFORTS).get(effort, "") if allowed else ""
+            models.append(f'<select class="ghost model-pick" data-route="{route}" name="model" aria-label="Model" '
+                          f'title="Model"{disabled}>{values}</select>')
+    marks = "".join(f'<span class="wk-ic" data-for="{key}">{_ic(icon, True)}</span>' for key, _, icon in workers)
+    prov_marks = "".join(f'<span class="prov" data-prov="{prov}" aria-hidden="true">{_ic(prov, True)}</span>'
+                         for prov in ("openai", "claude", "devin"))
+    # The model picker after T3 Code's: the button shows the provider's mark and the model; the script opens a panel
+    # with a rail of providers (Cognition for Devin), a search over every model and one row per model. The selects
+    # stay underneath as the form's values.
+    rail_marks = "".join(f'<span data-mark="{m}">{_ic(m, True)}</span>' for m in ("openai", "claude", "devin", "cognition"))
+    trigger = (f'<button type="button" class="mp-trigger" aria-haspopup="dialog" aria-expanded="false" '
+               f'aria-label="Model" title="Model">{prov_marks}<span class="mp-name">{_text(picked_name)}</span>'
+               f'{_ic("chev", True)}</button><template class="mp-marks">{rail_marks}</template>')
+    effort_picker = ('<div class="effort-picker">' + "".join(effort_selects)
+                     + f'<button type="button" class="ef-trigger" aria-haspopup="dialog" aria-expanded="false" '
+                       f'aria-label="Reasoning effort" title="Reasoning effort"{"" if picked_effort else " hidden"}>'
+                       f'{_ic("effort", True)}<span class="ef-name">{picked_effort}</span>{_ic("chev", True)}</button></div>')
+    worker_picker = f'<div class="model-picker">{trigger}' + "".join(models) + '</div>' + effort_picker
+    runner = (f'<div class="worker-picker">{marks}<select class="ghost" name="kind" aria-label="Where it runs" '
+              f'title="Where it runs">{options}</select></div>')
+    message = ('<label class="sr" for="brief">What should the job do?</label>'
+               '<textarea class="c-text" id="brief" name="brief" rows="1" required '
+               f'placeholder="Describe a coding or research job…">{value("brief")}</textarea>')
+    minutes = [15, 30, 60, 120, 240, 480]
+    if timeout.isdigit() and int(timeout) not in minutes:
+        minutes = sorted(minutes + [int(timeout)])
+    spans = "".join(f'<label class="seg"><input type="radio" name="timeout_min" value="{m}"'
+                    f'{" checked" if str(m) == timeout else ""}><span>{_minutes(m)}</span></label>' for m in minutes)
+
+    def row(cls, icon, label, val, hint, body):
+        return (f'<details class="op-row{(" " + cls) if cls else ""}"><summary>{_ic(icon, True)}<span class="op-label">'
+                f'{label}</span><span class="op-val" data-op-val>{val}</span>{_ic("chev", True)}</summary>'
+                f'<div class="op-edit"><p class="op-hint">{hint}</p>{body}</div></details>')
+
+    answer = draft.get("answer") if draft.get("answer") in ("chat", "file") else "chat"
+    places = "".join(f'<label class="seg"><input type="radio" name="answer" value="{key}"'
+                     f'{" checked" if answer == key else ""}><span>{word}</span></label>' for key, word in _ANSWER_WORDS)
+    # Two groups: what you get back, and how the job runs. Each row says its current value in words.
+    fields = (
+        '<p class="op-title answer-option">Result</p>'
+        + row("answer-option", "chat", "Answer", dict(_ANSWER_WORDS)[answer],
+              "Where the agent's reply goes. In the chat shows it on the job page as a message; as answer.md keeps "
+              "it as a file you open.", f'<div class="segs">{places}</div>')
+        + '<p class="op-title">Running</p>'
+        + row("", "clock", "Time limit", _minutes(int(timeout)) if timeout.isdigit() else "2 h",
+              "The job is stopped if it is still running after this long.", f'<div class="segs">{spans}</div>')
+        + row("accept-option", "check", "Test when done", _text(draft.get("accept", "")) or "Don't test",
+              "A command to run after the job, for example pytest -q. The job only counts as done if it passes.",
+              '<input type="text" name="accept" autocomplete="off" spellcheck="false" class="mono" '
+              f'placeholder="pytest -q" value="{value("accept")}">')
+        + row("", "plug", "Requires", ", ".join(_NEED_WORDS[n] for n in _NEEDS if n in have) or "Nothing special",
+              "The job only starts on a machine that has everything ticked here.", f'<div class="needs">{needs}</div>')
+        + row("cmd", "term", "Command", _text(draft.get("command", "")) or "Run the brief",
+              "What the shell runs. Leave empty to run the brief as typed.",
+              '<input type="text" id="command" name="command" class="mono" autocomplete="off" spellcheck="false" '
+              f'placeholder="make test" value="{value("command")}">')
+        + row("", "tag", "Job name", _text(draft.get("id", "")) or "From the brief",
+              "How the job is listed. Leave empty to name it from the brief.",
+              '<input type="text" name="id" autocomplete="off" spellcheck="false" '
+              'pattern="[a-z0-9][a-z0-9._\\-]{0,62}" '
+              f'placeholder="fix-login-bug" value="{value("id")}">'))
+    workspace = ctx["workspace"]
+    where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}{_text(workspace[key])}</span>'
+                    for key, icon, title in (("repo", "folder", "Repository"), ("branch", "branch", "Branch"))
+                    if workspace.get(key))
+    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker, options=fields, opened=opened,
+                          controls="".join(controls), where=f'<div class="where-bar">{runner}{where}</div>', files=True,
+                          picked=draft.get("input_path", "") if isinstance(draft.get("input_path"), str) else "")
     body = f'<div class="body">{form}</div>'
     return (f'<div class="s-compose" data-region="compose" data-key="section:compose" '
             f'data-sig="{_sig("compose", body)}">{body}</div>')
 
 
-def _tally(ctx, jobs):
-    """The top bar's count: what needs you (the way to the Inbox) and what is live."""
-    live, wait = sum(j.group == "live" for j in jobs), len(ctx["needs"])
-    waits = (f'<a href="{_url(ctx, "/inbox")}" data-nav data-need="{wait}">{_need_word(wait)}</a>' if wait
-             else _need_word(0))
-    pulse = (f'{_dot("warn" if wait else "neutral")}{waits} <span class="sep">·</span> <span class="num">{live}</span> '
-             f'{"job" if live == 1 else "jobs"} live')
-    return f'<p class="tally" data-region="tally" data-still data-sig="{_sig(pulse)}">{pulse}</p>'
-
-
-def _compose_strip(ctx, view, first, focus=False):
-    """Starting a job: Claude Code's input, docked at the foot of the detail, opening up as you type."""
-    form = _composer(ctx, view.get("compose"), ctx["ready"], first)
+def _compose_strip(ctx, view, focus=False):
+    """The same form opens in the center for a new job and docks below the working view."""
+    form = _composer(ctx, view.get("compose"), ctx["ready"], view.get("job_policy") or {})
     if focus:
         form = form.replace('<textarea class="c-text" id="brief"', '<textarea class="c-text" id="brief" autofocus', 1)
-    return ('<section class="c-strip" aria-labelledby="compose-title"><h1 class="sr" id="compose-title" tabindex="-1">'
-            'What should run?</h1>' + form + '</section>')
+    return (f'<section class="c-strip" aria-labelledby="compose-title"><div class="compose-intro">'
+            '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1></div>' + form + '</section>')
 
 
 def _reef(ctx, view, jobs):
@@ -1327,8 +1483,8 @@ def _snapshot_rail(jobs, loose, view, ctx):
         else:
             ask, detail, when, cli = f"On hold: {_plain(j.row.get('detail'))}", _NEXT["held"], "", f"rh job show {j.id}"
         holds = "".join(_hold(s, j.where == "live") for s in j.stops if s.get("owner") != "app")
-        status = (" · ".join(x for x in ("Paused" if j.row.get("paused") else "", j.word, _plain(j.row.get("detail")))
-                             if x) if j.items else "")
+        status = (_SEP_HTML.join(_text(x) for x in ("Paused" if j.row.get("paused") else "", j.word,
+                                                    _plain(j.row.get("detail"))) if x) if j.items else "")
         rows.append(_need_row(ctx, f"card:{j.id}", _text(ask), _text(detail) + holds, when, cli, j.id, j.title, status))
     parts = []
     if rows:
@@ -1341,7 +1497,7 @@ def _snapshot_rail(jobs, loose, view, ctx):
     day = ", ".join(f"{_text(n)} {_text(_STATES[s][0].lower() if s in _STATES else s)}"
                     for s, n in sorted(view.get("last_24h", {}).items()))
     counts = {g: sum(1 for j in jobs if j.group == g) for g in ("live", "next")}
-    parts.append(_section("today", "Today", f'<p>{counts["live"]} live · {counts["next"]} up next · '
+    parts.append(_section("today", "Today", f'<p>{counts["live"]} live{_SEP_HTML}{counts["next"]} up next{_SEP_HTML}'
                                             f'{len(view.get("recent", []))} recently finished</p>'
                                             f'<p class="soft">Last 24 h: {day or "nothing finished"}</p>'))
     return f'<aside class="rail" aria-label="What needs you">{"".join(parts)}</aside>'
@@ -1351,18 +1507,16 @@ def _home(jobs, stop_rows, loose_cards, view, ctx, feedback, heading=""):
     """Today: what needs you first, then the rest of the jobs, under the composer as one line; on the right, the sea,
     where each seat is a jellyfish. A printed snapshot has neither, and lists on the right what needs a person, each
     with the command that settles it."""
-    when = (f'<h1 tabindex="-1">Today</h1><span class="top-meta mono"><span class="when" data-clock>{_date(ctx["now"])}'
+    when = (f'<h1 tabindex="-1">Today</h1><span class="top-meta mono"><span class="when">{_date(ctx["now"])}'
             '</span></span>')
     listed = f'<div class="list">{_job_list(jobs, stop_rows, ctx)}</div>'
     if not ctx["live"]:
         jobs_head = '<div class="jobs-head"><h2 id="jobs-h">Jobs</h2></div>'
-        return (_top(ctx, when) + feedback + f'<div class="page mc"><div class="center"><section class="jobs" '
+        return (_top(when) + feedback + f'<div class="page mc"><div class="center"><section class="jobs" '
                 f'aria-labelledby="jobs-h">{jobs_head}{listed}</section></div>'
                 f'{_snapshot_rail(jobs, loose_cards, view, ctx)}</div>')
-    if heading:
-        when = f'<h1 tabindex="-1">{heading}</h1>'
-    strip = _compose_strip(ctx, view, not jobs, bool(heading)) if ctx["can_add"] else ""
-    return (_top(ctx, when, _tally(ctx, jobs)) + feedback + f'<div class="page sea-page">{_reef(ctx, view, jobs)}'
+    strip = _compose_strip(ctx, view, bool(heading)) if ctx["can_add"] else ""
+    return (feedback + f'<div class="page sea-page">{_reef(ctx, view, jobs)}'
             f'<div class="dock">{strip}</div></div>')
 
 
@@ -1421,6 +1575,11 @@ def _found(cmd, code):
     m = _TEST.fullmatch(str(cmd))
     if m and str(code) == "1":
         return f"{m.group(2) or m.group(3) or m.group(4)} {_LACKS[m.group(1)]}"
+    if str(code) == "127":  # the shell's own code for a program it cannot find
+        word = str(cmd).split()[0] if str(cmd).split() else str(cmd)
+        return f"there is no command named {word} on this Mac"
+    if str(code) == "126":
+        return "the command was found but could not be run"
     return f"it exited with code {code}"
 
 
@@ -1457,19 +1616,6 @@ def _receipt(ctx, opened, job, spec, finished, lead):
             exit_ = "—" if passed is None else f"exit {_text(code)}"
             lines.append(f'<li class="chk">{mark}<code>{_text(cmd)}</code><span class="exit">{exit_}</span></li>')
         parts.append(f'<div class="sub-h">Checks <span class="mono">exit code</span></div><ul>{"".join(lines)}</ul>')
-    files = opened.get("files") if isinstance(opened.get("files"), list) else []
-    where = str(spec.get("write_root") or "")
-    if files:
-        rows = []
-        for f in files:
-            path = str(f.get("path", ""))
-            name = (f'<a href="{_text("/job/" + jid + "/file?p=" + quote(path) + "&t=" + ctx["token"])}" '
-                    f'target="_blank" rel="noopener">{_text(path)}</a>' if ctx["live"] else _text(path))
-            rows.append(f'<li class="fl">{_ic("file", True)}<span class="mono">{name}</span>'
-                        f'<span class="size mono">{_text(_size(f.get("size")))}</span></li>')
-        parts.append(f'<div class="sub-h"><span>Files in {_m(where)}</span></div><ul class="files">{"".join(rows)}</ul>')
-    elif finished and state == "done" and spec.get("kind") == "local-shell":
-        parts.append(f'<p class="soft">It left no files in {_m(where)}.</p>')
     if finished:
         stamp = [_platform(receipt.get("route") or job.get("kind") or spec.get("kind", ""))]
         if job.get("pinned_sha"):
@@ -1479,7 +1625,7 @@ def _receipt(ctx, opened, job, spec, finished, lead):
         if receipt.get("diff_sha256"):
             stamp.append(f"diff {str(receipt['diff_sha256'])[:12]}")
         stamp.append(jid)
-        parts.append(f'<p class="stamp mono">{" · ".join(_text(s) for s in stamp)}</p>')
+        parts.append(f'<p class="stamp mono">{_SEP_HTML.join(_text(s) for s in stamp)}</p>')
     if ctx["live"] and state == "done" and spec.get("kind") == "codex-cloud":
         parts.append(_acts([_button(ctx, "/land", [("job", jid)], "Save to branch", "l", "primary" if lead else "",
                                     "Save to branch")]))
@@ -1494,7 +1640,8 @@ def _props(ctx, job, spec, entry, view):
     now, kind = ctx["now"], job.get("kind") or spec.get("kind", "")
     shown = "env" if entry.native else job.get("state")
     word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]
-    rows = [("State", f'{_ring(shown, kind=kind)}<span>{_text(word)}</span>'),
+    rows = [("Job", f'<span class="mono">{_text(job.get("id", ""))}</span>'),
+            ("State", f'{_ring(shown, kind=kind)}<span>{_text(word)}</span>'),
             ("Runs on", f'{_ic({"local-shell": "mac", "gpt-chat": "chat"}.get(kind, "cloud"), True)}'
                         f'<span>{_text(_platform(kind))}</span>')]
     seat = str(spec.get("seat") or "")
@@ -1505,7 +1652,7 @@ def _props(ctx, job, spec, entry, view):
     for key, label in (("created", "Added"), ("started", "Started"), ("updated", "Updated")):
         if _number(job.get(key)) and not (key == "updated" and entry.where != "recent"):
             rows.append(("Finished" if key == "updated" else label,
-                         f'<span class="mono num">{_clock(job[key], now)}</span>'))
+                         f'<span class="num">{_clock(job[key], now)}</span>', "prop-time"))
     if spec.get("prior"):
         prior = _text(spec["prior"])
         rows.append(("Runs again after", f'<a class="mono" href="{_url(ctx, "/job/" + str(spec["prior"]))}" data-nav>'
@@ -1522,8 +1669,9 @@ def _props(ctx, job, spec, entry, view):
         rows.append(("Writes to", f'<code>{_text(spec["write_root"])}</code>'))
     if spec.get("timeout_min"):
         rows.append(("Time limit", _m(f"{spec['timeout_min']} min")))
-    body = '<h2>Properties</h2>' + "".join(f'<div class="prop"><span class="pk">{k}</span><span class="pv">{v}</span>'
-                                           '</div>' for k, v in rows)
+    body = '<h2>Properties</h2>' + "".join(
+        f'<div class="prop {row[2] if len(row) > 2 else ""}"><span class="pk">{row[0]}</span>'
+        f'<span class="pv">{row[1]}</span></div>' for row in rows)
     return _region("j-props", body, "section")
 
 
@@ -1547,67 +1695,11 @@ def _stops(ctx, entry):
     return _region("j-stops", '<h2>Pauses and stops</h2>' + "".join(parts), "section")
 
 
-def _job_head(ctx, opened, job, spec, entry, finished, creature):
-    """The job's band: its id, title and state over its own patch of water, and how far it has got."""
-    now, state, jid = ctx["now"], job.get("state"), job["id"]
-    kind = job.get("kind") or spec.get("kind", "")
-    receipt = opened.get("receipt") if isinstance(opened.get("receipt"), dict) else {}
-    started = receipt.get("started") or job.get("started")
-    ended = receipt.get("ended") or job.get("updated")
-    shown = "env" if entry.native else state
-    word, tone = _STATES.get(shown, (shown, "neutral"))
-    if kind == "gpt-chat" and state == "handoff":
-        word, tone = _CHAT_WAIT
-    line = [_ring(shown, kind=kind)]
-    if finished:
-        took = (f" in {_m(_duration(ended - started))}" if state == "done"
-                else f" after {_m(_duration(ended - started))}") if _number(started) and _number(ended) else ""
-        line.append(f"<b>{_text(word)}{took}.</b>")
-        why = _clause(_plain(receipt.get("detail") or job.get("detail")))
-        if why and why != word:
-            line.append(f'<span class="sep">·</span><span>{_text(why)}.</span>')
-        if _number(ended):
-            line.append(f'<span class="sep">·</span>{_when(ended, now, "j:ended", "finished ")}')
-    else:
-        doing = f"Running {_PLACES[kind]}" if state == "running" and kind in _PLACES else word
-        line.append(f"<b>{_text(doing)}</b>")
-        if _number(job.get("started")):
-            line.append(f'<span class="sep">·</span>{_when(job["started"], now, "j:started", "started ")}')
-        elif _number(job.get("created")):
-            line.append(f'<span class="sep">·</span>{_when(job["created"], now, "j:added", "added ")}')
-    if entry.seat:
-        line.append(f'<span class="sep">·</span><span>seat <span class="mono">{_text(entry.seat)}</span></span>')
-    prog = []
-    limit = spec.get("timeout_min")
-    if _number(started) and _number(limit) and limit > 0:
-        used = (ended if finished and _number(ended) else now) - started
-        took = (f'<span class="num">{_text(_span(max(0, round(used))))}</span>' if finished
-                else _when(started, now, "j:used", short=True))
-        prog.append(f'<div class="pg wide"><span class="pg-k">Time used</span><b>{took}<em> / {_text(limit)} min</em></b>'
-                    f'{_cells(-(-used * 20 // (limit * 60)), 20, "amber" if state == "stalled" else "muted")}</div>')
-    log = opened.get("log")
-    if isinstance(log, str) and log.strip() and not finished:  # once it ends, its output is folded below, with its count
-        n = len(log.rstrip("\n").splitlines())
-        # The page holds only the end of a long log (serve's last 200 lines or 64 KB), so a cut one is "last".
-        cut = finished or opened.get("log_cut")
-        prog.append(f'<div class="pg"><span class="pg-k">Output</span><b class="num">{n}</b>'
-                    f'<span class="pg-s">{"last lines" if cut else "lines so far"}</span></div>')
-    checks = _checks_of(opened, spec, finished) if finished or state not in _PRE else []
-    if checks:
-        passed = sum(1 for p, _, _ in checks if p)
-        sub = "run when it ends" if any(p is None for p, _, _ in checks) else "passed"
-        prog.append(f'<div class="pg"><span class="pg-k">Checks</span><b class="num">{passed}<em> / {len(checks)}</em>'
-                    f'</b><span class="pg-s">{sub}</span></div>')
-    files = opened.get("files") if isinstance(opened.get("files"), list) else []
-    if files:
-        prog.append(f'<div class="pg"><span class="pg-k">Files</span><b class="num">{len(files)}</b>'
-                    f'<span class="pg-s">in {_m(spec["write_root"]) if spec.get("write_root") else "its folder"}'
-                    '</span></div>')
-    body = (_tank([creature], "j-water") + '<div class="jd-head-in">'
-            f'<p class="jd-id mono" data-clear>{_text(jid)} <span class="sep">·</span> {_text(_platform(kind))}</p>'
-            f'<h1 tabindex="-1" data-clear>{_text(_lead(spec)[0] or jid)}</h1>'
-            f'<p class="jd-state" data-clear>{"".join(line)}</p>'
-            + (f'<div class="jd-prog" data-clear>{"".join(prog)}</div>' if prog else "") + '</div>')
+def _job_head(title, kind):
+    """A compact, persistent title and worker crumb for the session view."""
+    body = ('<div class="jd-head-in">'
+            f'<h1 tabindex="-1" data-clear>{_text(title)}</h1>'
+            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p></div>')
     return _region("j-head", body, "section", "jd-head")
 
 
@@ -1620,7 +1712,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     crumbs = (f'<nav class="crumbs" aria-label="Breadcrumb"><a href="{_url(ctx, "/")}" data-nav>Today</a>'
               if ctx["live"] else '<nav class="crumbs" aria-label="Breadcrumb"><span>Today</span>')
     if not job:
-        top = _top(ctx, crumbs + f'{_ic("chev", True)}<span class="mono">{_text(jid)}</span></nav>')
+        top = _top(crumbs + f'{_ic("chev", True)}<span class="mono">{_text(jid)}</span></nav>')
         body = (f'<div class="missing" data-region="j-missing" data-sig="{_sig(jid)}"><h1 tabindex="-1">No job named '
                 f'{_text(jid)}</h1><p class="soft">It may have been a typo in the address. The jobs the harness knows '
                 'are on Today.</p></div>')
@@ -1635,21 +1727,20 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         entry = _Job(row, where, ctx)
     state = job.get("state")
     finished = entry.where == "recent" or state in ("done", "cancelled") or state in _FAILED
+    receipt = opened.get("receipt")
+    receipt = receipt if isinstance(receipt, dict) else {}
+    started_at = receipt.get("started") or job.get("started")
+    ended_at = receipt.get("ended") or (job.get("updated") if finished else None)
     title = _title(spec, jid)
-    group = {"needs": "Needs you", "live": "Live", "next": "Up next", "ended": "Ended today",
-             "earlier": "Earlier"}[entry.group]
     acts = []
     if ctx["live"] and not finished and not entry.mine:
         acts.append(_pause(ctx, jid))
     if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
         acts.append(_cancel(ctx, jid))
-    top = _top(ctx, crumbs + f'{_ic("chev", True)}<span>{group}</span>{_ic("chev", True)}'
-                             f'<span class="mono">{_text(jid)}</span></nav>', "".join(acts))
-    # Its seat's jellyfish: dim once the job has ended, whatever the ending, since nothing works on it any more.
-    tone = "faint" if finished else {"needs": "amber", "live": "accent"}.get(entry.group, "faint")
-    creature = _creature(entry.seat or _platform(kind), tone, 0, 1, (0.88, 0.62))
-    main = [_job_head(ctx, opened, job, spec, entry, finished, creature), feedback]
+    head = _job_head(_lead(spec)[0] or jid, kind)
     work = []
+    if feedback:
+        work.append(feedback)
     failed = finished and state != "done" and state != "cancelled"
     # A failed job leads with the check that failed: what it ran and its exit code, before anything else.
     bad = next(((cmd, code) for passed, cmd, code in _checks_of(opened, spec, True) if passed is False), None)
@@ -1658,7 +1749,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if len(runs) > 1:
         named = [f'<b class="mono">{_text(j.id)}</b>' if j.id == jid else
                  f'<a class="mono" href="{_url(ctx, "/job/" + j.id)}" data-nav>{_text(j.id)}</a>' for j in runs]
-        others = f'<p class="fail-runs">Failed the same way {len(runs)} times: {" · ".join(named)}</p>'
+        others = f'<p class="fail-runs">Failed the same way {len(runs)} times: {_SEP_HTML.join(named)}</p>'
     if failed and (bad or others):
         said_fail = ""
         if bad:
@@ -1667,15 +1758,39 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                          f'<p class="fail-c"><code>{_text(bad[0])}</code><span class="exit mono">exit '
                          f'{_text(bad[1])}</span></p>')
         work.append(_region("j-fail", said_fail + others, "section", "s-j-fail", ' aria-label="What failed"'))
-    said = _lead(spec)[1]
-    if said:
-        work.append(_region("j-brief", f'<div class="bubble">{_text(_reflow(said))}</div>', "section", "s-j-brief",
-                            ' aria-label="What it was asked"'))
+    original_prompt = str(spec.get("brief") or "").strip()
+    if original_prompt:
+        work.append(_region("j-brief", f'<div class="user-message">{_text(_reflow(original_prompt))}</div>',
+                            "section", "s-j-brief", ' aria-label="Original request"'))
+    check_rows = _checks_of(opened, spec, finished or state not in _PRE)
+    check_values = [passed for passed, _, _ in check_rows if passed is not None]
+    shown = "env" if entry.native else state
+    word = _CHAT_WAIT[0] if kind == "gpt-chat" and shown == "handoff" else _STATES.get(shown, (shown,))[0]
+    result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
+    status_line = [_text("Done" if state == "done" else word)]
+    if check_rows:
+        if len(check_values) == len(check_rows):
+            checks_text = f'{sum(value is True for value in check_values)}/{len(check_rows)} checks'
+        elif check_values:
+            checks_text = f'{len(check_values)}/{len(check_rows)} checks checked'
+        else:
+            checks_text = f'{len(check_rows)} {"check" if len(check_rows) == 1 else "checks"} pending'
+        status_line.append(_text(checks_text))
+    if _number(started_at) and _number(ended_at):
+        status_line.append(_text(_duration(ended_at - started_at)))
+    elif _number(started_at) and not finished:
+        status_line.append(_when(started_at, now, "j:worked", short=True))
+    result.append(f'<span class="job-result-status">{_SEP_HTML.join(status_line)}</span>')
+    work.append(_region("job-result", "".join(result), "p", "job-result"))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
+    chat_dock = ""
     for item in entry.items:
-        cards.append(_chat_card(ctx, jid, spec, item, lead) if item.get("kind") == "chat"
-                     else _ask_card(ctx, item, opened, lead, view))
+        if item.get("kind") == "chat":
+            cards.append(_chat_card(ctx, jid, spec, item, lead, include_reply=False))
+            chat_dock = _chat_reply_form(ctx, jid, lead)
+        else:
+            cards.append(_ask_card(ctx, item, opened, lead, view))
         lead = False
     if entry.handoff:
         cards.append(_launch_card(ctx, jid, opened, lead))
@@ -1689,7 +1804,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if entry.mine:
         stop = entry.mine[0]
         verb, detail, when, act = _resume(ctx, stop, lead, "this job", [("job", jid)])
-        cards.append(f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you · {when}</p>'
+        cards.append(f'<div class="ask-card"><p class="label">{_dot("warn")}Needs you{_SEP_HTML}{when}</p>'
                      f'<h3>{verb} from the app: {_text(_clause(stop["reason"]))}</h3><p class="detail">{detail}</p>'
                      f'{_acts(act) if ctx["live"] else ""}</div>')
         lead = False
@@ -1701,8 +1816,18 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         work.append(_region("j-asks", "".join(cards), "section", "s-j-asks", ' aria-label="Needs you"'))
     answer = opened.get("reply")
     if isinstance(answer, str) and answer.strip():
-        work.append(_region("j-answer", f'<p class="who">{_ic("chat", True)}GPT Pro</p><div class="said">'
-                            f'{_text(_reflow(answer))}</div>', "section", "msg ai", ' aria-label="The reply"'))
+        work.append(_region("j-answer", f'<p class="who">{_ic("chat", True)}GPT Pro</p><div class="assistant-message">'
+                            f'{_text(_reflow(answer))}</div>',
+                            "section", "msg ai", ' aria-label="The reply"'))
+    said = opened.get("answer")
+    if isinstance(said, str) and said.strip():
+        command = spec.get("command") if isinstance(spec.get("command"), list) else []
+        provider = command[2] if len(command) > 2 and str(command[1]).endswith("agent.py") else (
+            "codex" if kind == "codex-cloud" else "")
+        who, mark = _AGENT_WHO.get(provider, ("Answer", "chat"))
+        work.append(_region("j-answer", f'<p class="who" data-prov="{provider}">{_ic(mark, True)}{who}</p>'
+                            f'<div class="assistant-message">{_text(_reflow(said))}</div>',
+                            "section", "msg ai", ' aria-label="The answer"'))
     if not finished:
         loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
         doing = (f"Running {_PLACES[kind]}" if state == "running" and kind in _PLACES else entry.word)
@@ -1723,12 +1848,24 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     log = opened.get("log")
     log = log if isinstance(log, str) and log.strip() else ""
     lines = log.rstrip("\n").splitlines()
-    if log and not finished:
-        tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
-        last = "last " if opened.get("log_cut") else ""
-        head = f'{tag}<span class="lines mono">{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}</span>'
-        work.append('<div class="out">' + _section("j-output", "Output", f'<pre class="log" tabindex="0">{_text(log)}'
-                                                   '</pre>', head) + '</div>')
+    files = opened.get("files") if isinstance(opened.get("files"), list) else []
+    if files:
+        preview = opened.get("peek") if isinstance(opened.get("peek"), dict) else None
+        file_rows = []
+        for file in files:
+            path = str(file.get("path", ""))
+            link = (f'<a href="{_text("/job/" + jid + "/file?p=" + quote(path) + "&t=" + ctx["token"])}" '
+                    f'target="_blank" rel="noopener">{_text(path)}</a>' if ctx["live"] else _text(path))
+            details = ""
+            if preview and preview.get("path") == path:
+                more = "\n…" if preview.get("more") else ""
+                details = (f'<details class="file-preview"><summary>Preview</summary>'
+                           f'<pre class="peek" tabindex="0">{_text(preview.get("text", ""))}{more}</pre></details>')
+            file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'
+                             f'<span class="session-file-size">{_text(_size(file.get("size")))}</span></span>'
+                             f'{details}</li>')
+        work.append(_region("session-files", '<ul class="session-files">' + "".join(file_rows) + '</ul>',
+                            "section", "session-file-list", ' aria-label="Files produced"'))
     if failed and log:
         tail = "\n".join(lines[-_TAIL:])
         code = next((c for p, _, c in _checks_of(opened, spec, True) if p is False), None)
@@ -1736,33 +1873,44 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 f'{"exit " + _text(code) if code is not None else "last lines"}</span></div>'
                 f'<pre class="log ended err" tabindex="0">{_text(tail)}</pre>')
         work.append(_region("j-error", body, "section", "out", ' aria-label="Where it stopped"'))
+    if not finished or log:
+        tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
+        last = "last " if opened.get("log_cut") else ""
+        line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
+        if _number(started_at):
+            elapsed = (_duration(ended_at - started_at) if finished and _number(ended_at)
+                       else _when(started_at, now, "j:worked", short=True))
+        else:
+            elapsed = "duration unavailable"
+        output_status = (f'Output{_SEP_HTML}{_text(line_count)}' if log else "No output received yet")
+        work_summary = (f'<summary class="worked-summary"><span>Worked {elapsed}</span>'
+                        f'<span class="worked-output">{output_status}</span>{tag}</summary>')
+        output_body = (f'<pre class="log" tabindex="0">{_text(log)}</pre>' if log else
+                       '<p class="soft">The worker has not produced output yet.</p>')
+        worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'
+        work.append(_region("j-output", worked_body, "details", "worked", ' aria-label="Worked and output"'))
     if finished and ctx["live"]:
         again = state != "done" or spec.get("kind") != "codex-cloud"
-        form = (f'<form class="reply composer" method="post" action="/again" data-act data-label="Run again">'
-                f'{_hidden(ctx, [("job", jid)])}<label class="sr" for="changed">What should change?</label>'
-                '<textarea class="c-text" id="changed" name="changed" rows="1" placeholder="Ask for a change, or leave '
-                'this empty to run it again as it was"></textarea><div class="c-row"><span class="c-hint mono">⌘↵ run'
-                f'</span><button class="{_cls("primary" if lead and again and state != "done" else "")}">Run again'
-                '</button></div></form>')
-        reply = _region("j-reply", form, "section", "jd-compose", ' aria-label="Run again"')
+        message = ('<label class="sr" for="changed">What should change?</label>'
+                   '<textarea class="c-text" id="changed" name="changed" rows="1" '
+                   'placeholder="Ask for a change, or send empty to rerun"></textarea>')
+        reply = _composer_form(ctx, "/again", "Run again", message, job=jid, files=True,
+                               controls=_worker_note(_platform(kind)), followup=True,
+                               primary=lead and again and state != "done")
     else:
         reply = ""
-    if failed:
-        work.append(reply)
-    peek = opened.get("peek") if isinstance(opened.get("peek"), dict) else None
-    if finished and peek:
-        more = '\n…' if peek.get("more") else ""
-        body = (f'<div class="head"><h2>{_text(peek.get("path", ""))}</h2><span class="lines mono">what it made</span>'
-                f'</div><pre class="peek" tabindex="0">{_text(peek.get("text", ""))}{more}</pre>')
-        work.append(_region("j-peek", body, "section", "out", ' aria-label="A file it made"'))
-    if finished and log and (not failed or len(lines) > _TAIL):
-        body = (f'<details class="fold"><summary><span class="fold-t">Output</span><span class="lines mono">last '
-                f'{len(lines)} {"line" if len(lines) == 1 else "lines"}</span></summary>'
-                f'<pre class="log ended" tabindex="0">{_text(log)}</pre></details>')
-        work.append(_region("j-output", body, "section", "out"))
-    if not failed:
-        work.append(reply)
-    main.append(f'<div class="jd-body">{"".join(work)}</div>')
+    if chat_dock:
+        dock_content = chat_dock
+        dock_region = "j-chat-reply"
+        dock_label = "Save reply"
+    else:
+        dock_content = reply
+        dock_region = "j-reply"
+        dock_label = "Run again"
+    scroll = f'<div class="jd-scroll"><div class="jd-body">{"".join(work)}</div></div>'
+    dock = (_region(dock_region, dock_content, "section", "jd-compose session-dock", f' aria-label="{dock_label}"')
+            if dock_content else "")
+    dock = f'<div class="jd-dock">{dock}</div>' if dock else ""
     lines, seen = [], None
     for ev in [e for e in opened.get("events", []) if isinstance(e, dict)][-60:]:
         made = _event(ev, now, kind)
@@ -1775,9 +1923,15 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             _receipt(ctx, opened, job, spec, finished, lead and finished) if started else "", _stops(ctx, entry)]
     if lines:
         side.append(_section("j-timeline", "Timeline", _rows(lines, "rows timeline")))
-    page = (f'<div class="page jd"><div class="jd-main">{"".join(main)}</div>'
-            f'<aside class="jd-side" aria-label="Job details">{"".join(side)}</aside></div>')
-    return "job:" + jid, top + page, title
+    record = "".join(side)
+    if ctx["live"]:
+        record = (f'<details class="jd-inspector"><summary>{_ic("inspector", True)}'
+                  '<span class="sr">Job details</span></summary>'
+                  f'<div class="jd-record">{record}</div></details>')
+    page = (f'<div class="page jd" data-session="1" data-state="{_text(state)}"><div class="jd-main">{head}{scroll}{dock}</div>'
+            f'<aside class="jd-side" aria-label="Job details">{record}</aside></div>')
+    actions = _region("job-actions", "".join(acts), "div", "job-actions") if acts else ""
+    return "job:" + jid, actions + page, title
 
 
 def _ib_row(ctx, entry, picked):
@@ -1789,8 +1943,10 @@ def _ib_row(ctx, entry, picked):
     created = entry["created"]
     age = _when(created, ctx["now"], f"age:{entry['key']}", short=True) if _number(created) else ""
     head = job.title if job else entry["ask"]
-    sub = (f'{_text(entry["ask"])} · <span class="mono">{_text(jid)}</span>' if job else
-           f'<span class="mono">{_text(jid)}</span> · a job not listed here' if jid
+    sub = (f'{job.headline_html(len(entry.get("runs", [])) or 1)}{_SEP_HTML}<span class="mono">{_text(jid)}</span>'
+           if job and not entry["item"] else
+           f'{_text(entry["ask"])}{_SEP_HTML}<span class="mono">{_text(jid)}</span>' if job else
+           f'<span class="mono">{_text(jid)}</span>{_SEP_HTML}a job not listed here' if jid
            else "The app's own pause" if entry["stop"] else "The harness")
     current = ' aria-current="true"' if picked else ""
     # a job's entry wears the ring it wears on Today, so a state has one mark in both places
@@ -1806,7 +1962,7 @@ def _settled_row(ctx, item, picked):
     ask, _ = _ask_line(item)
     jid = item.get("job")
     note = str(item.get("resolution") or "").strip()
-    sub = " · ".join(x for x in ((f'<span class="mono">{_text(jid)}</span>' if jid else ""), _text(note)) if x)
+    sub = _SEP_HTML.join(x for x in ((f'<span class="mono">{_text(jid)}</span>' if jid else ""), _text(note)) if x)
     current = ' aria-current="true"' if picked else ""
     inner = (f'<span class="ib-ic">{_ic("check")}</span><span class="ib-t">{_text(ask)}</span>'
              f'<span class="ib-age mono num">{_clock(item["resolved"], ctx["now"])}</span>'
@@ -1841,9 +1997,9 @@ def _ib_detail(ctx, entry, settled, view, missing):
     ask, detail = _ask_line(item)
     who = [f'<span class="mono">{_text(jid) if jid else "harness"}</span>']
     if job:
-        who.append(f'<span class="sep">·</span><span>{_text(_platform(job.kind))}</span>')
+        who.append(f'{_SEP_HTML}<span>{_text(_platform(job.kind))}</span>')
     if _number(item.get("created")):
-        who.append(f'<span class="sep">·</span><span>asked at <span class="mono num">{_clock(item["created"], ctx["now"])}'
+        who.append(f'{_SEP_HTML}<span>asked at <span class="mono num">{_clock(item["created"], ctx["now"])}'
                    f'</span>' + (f', waiting {_when(item["created"], ctx["now"], "q:age", short=True)}' if entry else "")
                    + '</span>')
     about = ""
@@ -1851,7 +2007,7 @@ def _ib_detail(ctx, entry, settled, view, missing):
         link = (f'<a href="{_url(ctx, "/job/" + job.id)}" data-nav>{_text(job.title)}</a>' if ctx["live"]
                 else _text(job.title))
         about = (f'<p class="q-job" data-clear>{_dot("warn" if entry else "neutral")}<span>On “{link}”</span>'
-                 f'<span class="sep">·</span><span>{_text(job.word)}</span></p>')
+                 f'{_SEP_HTML}<span>{_text(job.word)}</span></p>')
     tone = "amber" if entry and not (job and job.state in _FAILED) else "faint"
     # An item on a job is its seat's jellyfish; one from the harness itself is the octopus.
     water = (_tank([_creature(job.seat or "harness", tone, 1, 1, (0.9, 0.55))], "q-water") if job else
@@ -1932,8 +2088,8 @@ def _inbox_pane(view, ctx, feedback):
             tabs.append(f'<button type="button" role="tab" aria-selected="false" data-kind="{tab}">{word} '
                         f'<span class="num">{counts[tab]}</span></button>')
     tabbar = (f'<div class="tabs" role="tablist" aria-label="Filter">{"".join(tabs)}</div>' if ctx["live"] else "")
-    top = _top(ctx, '<h1 tabindex="-1">Inbox</h1>'
-                    f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span> · '
+    top = _top('<h1 tabindex="-1">Inbox</h1>'
+                    f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>{_SEP_HTML}'
                     f'<span class="num">{len(settled)}</span> settled today</span>')
     lists = (_section("ib-wait", "Needs you", _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
                       f'<span class="n num">{len(waiting)}</span><span class="ib-gh-r mono">newest first</span>{tabbar}')
@@ -1979,40 +2135,54 @@ def _palette(jobs, ctx, keys):
             f'data-sig="{_sig(_still(body))}">{body}</dialog>')
 
 
-def _sidebar(ctx, view, page, wait):
+def _sidebar(ctx, view, page, wait, queue):
     live = ctx["live"]
     if live:
-        new = (f'<a class="icon-btn" href="{_url(ctx, "/new")}" data-nav data-k="n" aria-label="New job, N">{_ic("new")}</a>'
+        new = (f'<a class="new-job" href="{_url(ctx, "/new")}" data-nav data-k="n" aria-label="New job, N">'
+               f'{_ic("new")}<span>New job</span><kbd aria-hidden="true">N</kbd></a>'
                if ctx["can_add"] else "")
-        ws = (f'<a class="ws-btn" href="{_url(ctx, "/")}" data-nav>{_mark()}<span>research-harness</span></a>'
-              f'<button type="button" class="icon-btn" data-pal aria-label="Jump to anything, ⌘K">{_ic("search")}'
-              f'</button>{new}')
-        links = [("inbox", "Inbox", "/inbox", page.startswith("inbox")),
-                 ("jobs", "Jobs", "/", page in ("home", "new") or page.startswith("job:"))]
+        ws = ('<div class="mode-tabs" role="tablist" aria-label="Mode">'
+              '<button type="button" role="tab" data-mode="coding" aria-selected="true">Coding</button>'
+              '<button type="button" role="tab" data-mode="research" aria-selected="false">Research</button></div>'
+              f'<span class="ws-tools"><button type="button" class="icon-btn" data-pal aria-label="Jump to anything, ⌘K">'
+              f'{_ic("search")}</button><button type="button" class="icon-btn side-collapse" data-collapse-side '
+              f'aria-label="Hide the sidebar" title="Hide the sidebar">{_ic("sidebar")}</button></span>{new}')
+        links = [("inbox", "Inbox", "/inbox", page.startswith("inbox"))]
         current = ' aria-current="page"'
         nav = "".join(f'<a href="{_url(ctx, path)}" data-nav{current if here else ""}>{_ic(icon)}<span>{word}</span>'
                       + (f'<b class="count num" data-need="{wait}" aria-label="{_need_word(wait)}">{wait}</b>'
                          if icon == "inbox" and wait else "") + '</a>' for icon, word, path, here in links)
-        open_ = {w: sum(1 for j in ctx["jobs"] if j.place == w and j.group in ("needs", "live", "next"))
-                 for w, _, _ in _WORKERS}
-        nav += '<h2 class="side-h nav-h">Workers</h2>' + "".join(
-            f'<button type="button" class="nav-w" data-filter="{w}" aria-pressed="false">{_ic(icon)}'
-            f'<span>{_text(word)}</span>' + (f'<b class="count soft num">{open_[w]}</b>' if open_[w] else "")
-            + '</button>' for w, word, icon in _WORKERS)
         nav = f'<nav class="nav" aria-label="Main" data-region="nav" data-sig="{_sig(nav)}">{nav}</nav>'
-        tools = ('<div class="tools"><button type="button" class="btn quiet small" data-keys hidden>Shortcuts '
-                 '<kbd>?</kbd></button><span class="conn" data-live data-state="on" role="status"></span></div>')
+        tools = (f'<button type="button" class="icon-btn" data-settings aria-label="Settings">{_ic("gear")}</button>'
+                 '<span class="conn" data-live data-state="on" role="status"></span>')
     else:
         ws = f'<p class="ws-btn">{_mark()}<span>research-harness</span></p>'
         nav = ""
         tools = '<div class="tools"><span class="soft">Snapshot</span></div>'
     top = f'<div class="ws" data-region="side-top" data-sig="{_sig(ws)}">{ws}</div>'
     if live:
-        foot = f'<div class="side-foot">{tools}{_coord(view, ctx, ctx["jobs"])}</div>'
+        foot = f'<div class="side-foot side-controls">{_coord(view, ctx, ctx["jobs"])}{tools}</div>'
     else:
         foot = (f'<div class="side-foot">{_host(view, ctx)}<footer class="checks"><h2 class="side-h">Check loop</h2>'
                 f'{_checks(view, ctx)}{tools}</footer></div>')
-    return f'<aside class="side" aria-label="research-harness">{top}{nav}{foot}</aside>'
+    grip = ('<div class="side-grip" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" '
+            'tabindex="0"></div>') if live else ""
+    return f'<aside class="side" aria-label="research-harness" id="sidebar">{top}{nav}{queue}{foot}{grip}</aside>'
+
+
+def _settings(ctx, preset, tint="cobalt"):
+    choices = "".join(f'<label><input type="radio" name="background" value="{name}"'
+                      f'{" checked" if name == preset else ""}><canvas class="background-preview" data-preview="{name}" '
+                      f'aria-hidden="true"></canvas><span>{name.capitalize()}</span></label>' for name in PRESETS)
+    tints = "".join(f'<label class="tint" title="{name.capitalize()}"><input type="radio" name="tint" value="{name}"'
+                    f'{" checked" if name == tint else ""} aria-label="{name.capitalize()}">'
+                    f'<span class="tint-dot" data-tint="{name}"></span></label>' for name in TINTS)
+    return ('<dialog class="settings" id="settings" aria-labelledby="settings-title"><header>'
+            '<h2 id="settings-title">Settings</h2><form method="dialog"><button class="icon-btn" aria-label="Close settings">'
+            '×</button></form></header><form action="/appearance" method="post" data-appearance>'
+            f'{_hidden(ctx, [])}<fieldset><legend>Background</legend><div class="background-choices">{choices}</div>'
+            f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form><footer><button type="button" data-keys class="btn quiet small" hidden>'
+            'Keyboard shortcuts <kbd>?</kbd></button></footer></dialog>')
 
 
 def render(view: dict, now: float, token: str | None = None, result=None) -> str:
@@ -2051,6 +2221,7 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     named = opened["job"]["id"] if opened and isinstance(opened.get("job"), dict) else None
     back = f"/job/{named}" if named else "/new" if compose else None
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
+           "workspace": view.get("workspace") or {},
            "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),
            "followed": {str(m.get("prior")) for m in meta.values() if isinstance(m, dict) and m.get("prior")},
            "rerun": _reruns(meta),
@@ -2115,31 +2286,44 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
         page, title = "home", "Research harness"
         pane = _home(jobs, stop_rows, loose, view, ctx, feedback)
     if live and page != "inbox":
-        pane = f'<div class="split">{_lane(jobs, stop_rows, ctx, named)}<div class="detail">{pane}</div></div>'
+        pane = f'<div class="detail">{pane}</div>'
     wait = len(ctx["needs"])
-    side = _sidebar(ctx, view, page, wait)
+    queue = _lane(jobs, stop_rows, ctx, named) if live else ""
+    side = _sidebar(ctx, view, page, wait, queue)
     fast = any(j.state in ("draft", "launching", "collecting") or (j.state == "running" and j.kind == "local-shell")
                or (j.state == "ready" and not j.row.get("detail")) for j in jobs)
     loop = view.get("checks") if isinstance(view.get("checks"), dict) else None
     pace = "fast" if fast and loop and loop.get("mode") == "on" else "calm"
+    preset = _LEGACY.get(view.get("background"), view.get("background"))
+    if preset not in PRESETS:
+        preset = "beam"
+    tint = view.get("tint") if view.get("tint") in TINTS else "cobalt"
     if live:
         head = ('<noscript><meta http-equiv="refresh" content="30"></noscript>\n'
                 '<script src="/app.js" defer></script>\n')
         keys = "".join(f"<dt><kbd>{k}</kbd></dt><dd>{v}</dd>" for k, v in _KEYS)
-        extra = ('<div class="toasts" aria-live="polite"></div>'
+        extra = (_settings(ctx, preset, tint) + '<div class="toasts" aria-live="polite"></div>'
                  '<dialog id="keys" aria-label="Keyboard shortcuts">'
                  f'<p class="title" tabindex="-1" autofocus>Keyboard</p><dl>{keys}</dl>'
                  f'<div class="foot"><a href="{_url(ctx, "/actions")}">Every action as a plain form</a>'
                  '<form method="dialog"><button class="btn">Close</button></form></div></dialog>\n'
                  + _palette(jobs, ctx, set(re.findall(r'data-k="([a-z])"', pane + side))) + "\n")
-        style = _FACES + STYLE
+        style = _FACES + STYLE + '\n:root{--halftone-image:url(/halftone.webp);--clouds-image:url(/clouds.webp);--lens:url(#lg-lens)}'
     else:
         head, extra, style = "", "", STYLE
-    return ('<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n'
+    live_marker = ' data-live-app' if live else ''
+    build = f' data-build="{BUILD}"' if live else ''
+    field = ('<canvas class="bg-field" aria-hidden="true"></canvas>'
+             '<svg class="lg-defs" width="0" height="0" aria-hidden="true" focusable="false"><filter id="lg-lens" x="0" y="0" width="1" height="1" color-interpolation-filters="sRGB"><feFlood flood-color="#fff" result="box"/><feGaussianBlur in="box" stdDeviation="18" result="soft"/><feColorMatrix in="soft" type="matrix" values="0 0 0 1 0  0 0 0 1 0  0 0 0 1 0  0 0 0 0 1" result="field"/><feConvolveMatrix in="field" order="3" kernelMatrix="0 0 0  -1 0 1  0 0 0" divisor="0.03" bias="0.5" preserveAlpha="true" edgeMode="duplicate" result="gx"/><feConvolveMatrix in="field" order="3" kernelMatrix="0 -1 0  0 0 0  0 1 0" divisor="0.03" bias="0.5" preserveAlpha="true" edgeMode="duplicate" result="gy"/><feColorMatrix in="gx" type="matrix" values="1 0 0 0 0  0 0 0 0 0  0 0 0 0 0.5  0 0 0 0 1" result="rx"/><feColorMatrix in="gy" type="matrix" values="0 0 0 0 0  0 1 0 0 0  0 0 0 0 0  0 0 0 0 1" result="ry"/><feComposite in="rx" in2="ry" operator="arithmetic" k1="0" k2="1" k3="1" k4="0" result="map"/><feDisplacementMap in="SourceGraphic" in2="map" scale="90" xChannelSelector="R" yChannelSelector="G"/></filter></svg>') if live else ''
+    sidebar_toggle = field + (f'<button class="icon-btn sidebar-toggle" type="button" aria-label="Toggle sidebar" '
+                      f'aria-expanded="false" aria-controls="sidebar">{_ic("sidebar")}</button>'
+                      '<div class="side-scrim" aria-hidden="true"></div>') if live else ''
+    return (f'<!doctype html>\n<html lang="en"{live_marker}>\n<head>\n<meta charset="utf-8">\n'
             '<meta name="viewport" content="width=device-width, initial-scale=1">\n'
             f'<title>{_text(title)}</title>\n'
             f'{head}<style>{style}</style>\n</head>\n<body data-now="{now:.3f}" data-open="{_text(page)}" '
             f'data-here="{_text("job:" + named if named else "")}" '
-            f'data-pace="{pace}" data-jobs="{1 if jobs else 0}">\n'
-            f'<div class="app">{side}<main class="pane" data-pane="{_text(page)}" tabindex="-1">{pane}</main></div>\n'
+            f'data-pace="{pace}" data-jobs="{1 if jobs else 0}" data-background="{preset}" data-tint="{tint}"{build}>\n'
+            f'<div class="app">{sidebar_toggle}{side}<main class="pane" data-pane="{_text(page)}" '
+            f'tabindex="-1">{pane}</main></div>\n'
             f'{extra}</body>\n</html>\n')

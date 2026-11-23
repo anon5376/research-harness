@@ -56,7 +56,7 @@ def contrast(a, b):
 
 TOKEN = "serve-token-1"
 ROUTES = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup", "/handoff")
+          "/checks", "/again", "/setup", "/handoff", "/appearance")
 UNSEEN = {"id": 10, "kind": "operator-step", "job": None, "action": supervisor.ENV_STEP.format(env="research-harness"),
           "detail": "codex cloud answered: cloud exec exited 1: Error: environment 'research-harness' not found; run "
                     "`codex cloud` to list available environments. Cloud jobs wait and launch by themselves",
@@ -109,6 +109,7 @@ class Forms(HTMLParser):
     def __init__(self, source):
         super().__init__()
         self.forms, self.current = [], None
+        self.select = None
         self.feed(source)
         self.close()
 
@@ -117,6 +118,10 @@ class Forms(HTMLParser):
         if tag == "form":
             self.current = {"action": attrs.get("action"), "method": attrs.get("method"), "fields": {}}
             self.forms.append(self.current)
+        elif tag == "select" and self.current is not None:
+            self.select = attrs.get("name")
+        elif tag == "option" and self.select and "selected" in attrs:
+            self.current["fields"][self.select] = attrs.get("value", "")
         elif tag in ("input", "textarea") and self.current is not None and attrs.get("name"):
             if attrs.get("type") in ("radio", "checkbox") and attrs["name"] in self.current["fields"]:
                 if "checked" not in attrs:
@@ -126,6 +131,8 @@ class Forms(HTMLParser):
     def handle_endtag(self, tag):
         if tag == "form":
             self.current = None
+        elif tag == "select":
+            self.select = None
 
 
 class Page(HTMLParser):
@@ -226,9 +233,9 @@ class DashboardTest(unittest.TestCase):
                                  "Last 24 h: nothing finished"):
                     self.assertIn(sentence, shown)
         self.assertRegex(dashboard.render(full_view(), NOW), r'<p class="empty no-jobs"[^>]* hidden><b>No jobs yet\.')
-        # The live app with no jobs at all opens on the composer and walks a first-time user through three steps.
+        # The live app with no jobs opens on the same form used after the first job.
         first = " ".join(Page(dashboard.render({**empty, "can_add": True}, NOW, token=TOKEN)).text)
-        for sentence in ("What should run?", "Describe a job and start it.", "Watch it here.", "Answer when it asks."):
+        for sentence in ("What are we building?", "What should the job do?"):
             self.assertIn(sentence, first)
         busy = " ".join(Page(dashboard.render(live_view(), NOW, token=TOKEN)).text)
         self.assertNotIn("Describe a job and start it.", busy)
@@ -264,7 +271,6 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("@font-face", page)
         self.assertIn("color-scheme: dark", page)
         self.assertIn("overflow-wrap", page)
-        self.assertIn("min-width: 1024px", page)
         parsed = Page(page)
         tags = [tag for tag, _ in parsed.tags]
         for tag in ("html", "head", "title", "style", "body", "aside", "main"):
@@ -283,7 +289,8 @@ class DashboardTest(unittest.TestCase):
         # that leaves a token dark, must fail.
         style = re.search(r"<style>(.*)</style>", dashboard.render(full_view(), NOW), re.S).group(1)
         dark = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", style.split("}", 1)[0]))
-        light_block = re.search(r"@media \(prefers-color-scheme: light\) \{\s*:root \{(.*?)\}", style, re.S)
+        light_block = re.search(r"@media \(prefers-color-scheme: light\) \{\s*:root:not\(\[data-live-app\]\) \{(.*?)\}",
+                                style, re.S)
         self.assertIsNotNone(light_block)
         light = dict(re.findall(r"--([a-z-]+):\s*(#[0-9a-f]{6});", light_block.group(1)))
         self.assertIn("color-scheme: light", light_block.group(1))
@@ -326,7 +333,7 @@ class DashboardTest(unittest.TestCase):
         # failure count, or a healthy harness that names its process.
         view = full_view()
         shown = text(dashboard.render(view, NOW))
-        for value in ("Harness 12 s ago", "asked 31 s ago", "Codex cloud: rate-limited · retrying in 40 s",
+        for value in ("Harness 12 s ago", "asked 31 s ago", "Codex cloud: rate-limited·retrying in 40 s",
                       "Paused by lead:", "review output", "live-job", "Running", "Worker output", "queued-job",
                       "On hold: Waiting for input", ASK.capitalize(), CHECK, "finished-job", "Accepted output",
                       "Last 24 h: 2 done, 1 failed"):
@@ -446,7 +453,7 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(one("/checks")[0]["fields"], {"t": TOKEN, "on": "0"})
         self.assertEqual(one("/again", job="broke-job")[0]["fields"], {"t": TOKEN, "job": "broke-job", "changed": ""})
         self.assertEqual(set(one("/job")[0]["fields"]),
-                         {"t", "brief", "id", "kind", "command", "accept", "needs", "timeout_min"})
+                         {"t", "brief", "id", "kind", "command", "accept", "needs", "timeout_min", "input_path", "answer"})
         self.assertEqual(set(one("/harvest", "web-job", job="web-job")[0]["fields"]), {"t", "job", "text", "next"})
         self.assertEqual(set(one("/attach", "web-job", job="web-job")[0]["fields"]), {"t", "job", "task_id", "next"})
         self.assertEqual(one("/resume", "web-job", job="web-job", pause="on")[0]["fields"].keys(),
@@ -455,7 +462,7 @@ class DashboardTest(unittest.TestCase):
                          {"t", "job", "reason", "pause", "next"})
         self.assertEqual(set(one("/land", "finished-job", job="finished-job")[0]["fields"]), {"t", "job", "next"})
         self.assertEqual(set(one("/again", "finished-job", job="finished-job")[0]["fields"]),
-                         {"t", "job", "changed", "next"})
+                         {"t", "job", "changed", "next", "input_path"})
         self.assertEqual(set(one("/job/cancel", "queued-job", job="queued-job")[0]["fields"]),
                          {"t", "job", "reason", "next"})
         self.assertEqual(set(one("/inbox/resolve", "live-job", id="7")[0]["fields"]), {"t", "id", "note", "next"})
@@ -518,7 +525,7 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(opened(view, "cloud-job"), NOW, token=TOKEN)
         self.assertEqual([f["fields"]["job"] for f in Forms(page).forms if f["action"] == "/handoff"], ["cloud-job"])
         self.assertIn("Error: environment 'research-harness' not found", text(page))
-        head = re.search(r'<p class="jd-state".*?</p>', page, re.S).group(0)
+        head = re.search(r'<p class="job-result".*?</p>', page, re.S).group(0)
         props = re.search(r'<section class="j-props".*?</section>', page, re.S).group(0)
         for part in (head, props):
             self.assertIn("Waiting for environment", text(part))
@@ -565,7 +572,7 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render({**view, "new": True, "compose": draft}, NOW, token=TOKEN)
         self.assertIn('data-open="new"', page)
         self.assertIn("&lt;b&gt;scan&lt;/b&gt; &amp; &quot;sort&quot;</textarea>", page)
-        self.assertIn('value="local-shell" checked', page)
+        self.assertIn('value="local-shell" selected', page)
         self.assertIn('value="net" checked', page)
         self.assertIn('value="45"', page)
         self.assertIn('value="python3 x.py"', page)
@@ -573,12 +580,39 @@ class DashboardTest(unittest.TestCase):
         # that has no command, so the browser must not require one.
         command = page[page.index('id="command"'):page.index('>', page.index('id="command"'))]
         self.assertNotIn("required", command)
-        # Codex cloud is the default only once it is set up; before that a new job runs on this machine.
+        # Codex cloud is the default only once it is set up; before that a new job goes to Codex on this machine.
         def kind(page):
             return Forms(page).forms[[f["action"] for f in Forms(page).forms].index("/job")]["fields"]["kind"]
-        self.assertEqual(kind(dashboard.render(view, NOW, token=TOKEN)), "local-shell")
-        self.assertIn("set up first", text(dashboard.render(view, NOW, token=TOKEN)))
+        self.assertEqual(kind(dashboard.render(view, NOW, token=TOKEN)), "local-agent")
+        self.assertIn(f"Codex cloud{dashboard._SEP}setup required", text(dashboard.render(view, NOW, token=TOKEN)))
         self.assertEqual(kind(dashboard.render({**view, "cloud_ready": True}, NOW, token=TOKEN)), "codex-cloud")
+
+    def test_new_job_has_one_labeled_creation_path(self):
+        view = live_view()
+        page = Page(dashboard.render(view, NOW, token=TOKEN))
+        links = [attrs for tag, attrs in page.tags if tag == "a" and attrs.get("href", "").startswith("/new?")
+                 and attrs.get("data-k") == "n"]
+        self.assertEqual(len(links), 1)
+        self.assertIn("New job", links[0].get("aria-label", ""))
+
+    def test_job_details_stay_closed_until_opened(self):
+        page = pane(dashboard.render(opened(live_view(), "live-job"), NOW, token=TOKEN))
+        record = page.split('<aside class="jd-side"', 1)[1].split("</aside>", 1)[0]
+        self.assertRegex(record, r'<details class="jd-inspector"><summary[^>]*>.*?Job details.*?</summary>')
+        folding = record.split("</summary>", 1)[1].rsplit("</details>", 1)[0]
+        self.assertIn("Properties", text(folding))
+        self.assertIn("Timeline", text(folding))
+
+    def test_an_agents_answer_reads_as_its_message(self):
+        # An answer that is not shown as a message from the agent that ran, or that loses its text, must fail.
+        view = opened(live_view(), "finished-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", answer="chat",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"])
+        view["open"]["answer"] = "Fixed the <typo> in README.md."
+        page = dashboard.render(view, NOW, token=TOKEN)
+        message = re.search(r'<section[^>]*class="msg ai"[^>]*>.*?</section>', page, re.S).group(0)
+        self.assertIn('data-prov="claude"', message)
+        self.assertEqual(text(message), "ClaudeFixed the <typo> in README.md.")
 
     def test_job_page_shows_the_work_left_and_its_record_right(self):
         # Dropping what the job was asked, its output tail, its checks, the files it made or a line of its timeline,
@@ -596,12 +630,12 @@ class DashboardTest(unittest.TestCase):
         view["open"]["peek"] = {"path": "notes.md", "text": "# Notes <draft>", "more": True}
         page = dashboard.render(view, NOW, token=TOKEN)
         right = text(pane(page))
-        for value in ("Write the notes", "Done", "finished-job", dashboard.HERE, "finished 10 s ago", "Done in 1 min 20 s.",
-                      "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Cite each source.", "notes.md exists", "runs/finished-job/",
-                      "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",
+        for value in ("Write the notes", "Done", "2/3 checks", "1 min 20 s", "finished-job", dashboard.HERE,
+                      "exit 0", "test -s notes.md", "exit 1", "Output", "<tail> & end", "Cite each source.",
+                      "notes.md exists", "runs/finished-job/", "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",
                       f"Asked you: {ASK.capitalize()}{dashboard._clock(NOW - 31, NOW)}",
                       f"Mystery thing: raw zz{dashboard._clock(NOW - 5, NOW)}",
-                      "Files in runs/finished-job/", "2.0 KB", "sub dir/a&b.txt", "# Notes <draft>"):
+                      "2.0 KB", "sub dir/a&b.txt", "# Notes <draft>"):
             with self.subTest(value=value):
                 self.assertIn(value, right)
         self.assertIn("&lt;tail&gt; &amp; end", page)
@@ -613,9 +647,10 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('data-open="job:finished-job"', page)
         self.assertIn("<title>Write the notes · Research harness</title>", page)
         work, record = pane(page).split('<aside class="jd-side"', 1)
-        for value in ("Cite each source.", "<tail> & end", "# Notes <draft>"):
+        work = work.split('>', 1)[1]
+        for value in ("Write the notes", "Cite each source.", "<tail> & end", "# Notes <draft>", "2.0 KB"):
             self.assertIn(value, text(work))
-        for value in ("Properties", "Receipt", "exit 1", "2.0 KB", "Timeline", "Worker output"):
+        for value in ("Properties", "Receipt", "exit 1", "Timeline", "Worker output", "finished-job"):
             self.assertIn(value, text(record))
             self.assertNotIn(value, text(work))
         # Pauses and stops show only when there are some; the Codex task id is not shown.
@@ -633,10 +668,10 @@ class DashboardTest(unittest.TestCase):
         missing = dashboard.render({**live_view(), "open": {"id": "ghost", "job": None}}, NOW, token=TOKEN)
         self.assertIn("No job named ghost", text(missing))
         self.assertIn('<a class="p-row" role="option" href="/job/live-job?t=', missing)  # ⌘K still finds every job
-        # A one-sentence brief is the title and is not repeated as a message under it.
+        # A one-sentence brief remains visible as the original request.
         single = opened(live_view(), "live-job")
         single["open"]["job"]["spec"]["brief"] = "Count the words."
-        self.assertEqual(text(pane(dashboard.render(single, NOW, token=TOKEN))).count("Count the words"), 1)
+        self.assertIn('<div class="user-message">Count the words.</div>', pane(dashboard.render(single, NOW, token=TOKEN)))
         single["open"]["job"]["spec"]["brief"] = "Read the last 90 nightly logs and list every test that timed out in timeouts.md."
         single["meta"] = {"live-job": {"brief": single["open"]["job"]["spec"]["brief"]}}
         page = dashboard.render(single, NOW, token=TOKEN)
@@ -759,7 +794,7 @@ class DashboardTest(unittest.TestCase):
                                    ("dataset.due", " data-due="), (".pane", '<main class="pane"'),
                                    ("dataset.pane", " data-pane="), ("dataset.open", " data-open="),
                                    ("a[data-nav]", " data-nav"), (".log", 'class="log"'),
-                                   ("'.compose'", 'class="compose composer"'), (".pane a.item", '<a class="item"'),
+                                   ("'.compose'", 'class="compose composer"'), ("'.side .jobs'", 'class="jobs lane"'),
                                    ("a.ib", '<a class="ib'), ("'.head'", 'class="head"'), ("'.body'", 'class="body"'),
                                    ("[data-copy]", " data-copy="), ("dataset.short", " data-short="),
                                    ("'pace'", " data-pace="), ("'jobs'", " data-jobs="),
@@ -767,8 +802,8 @@ class DashboardTest(unittest.TestCase):
                                    ("dataset.say", " data-say="), ("#pal", 'id="pal"'), ("[data-pal]", " data-pal"),
                                    ("dataset.press", " data-press="), ("[data-tank]", " data-tank"),
                                    ("dataset.creatures", " data-creatures="),
-                                   ("[data-clock]", " data-clock"), ("'data-still'", " data-still"),
-                                   ("'.ibx'", 'class="page ibx"'), ("dataset.where", " data-where="),
+                                   ("'data-still'", " data-still"),
+                                   ("'.ibx'", 'class="page ibx"'), ("[data-job-filter]", " data-job-filter "),
                                    ("dataset.kind", " data-kind="), ("'.n'", 'class="n num"')):
             with self.subTest(hook=in_script):
                 self.assertIn(in_script, dashboard.SCRIPT)
@@ -842,13 +877,13 @@ class DashboardTest(unittest.TestCase):
         # A page with no filled button or with two, or a pause or cancel styled like a safe action, must fail.
         home = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertEqual(len(primaries(home)), 1)
-        self.assertIn('<button class="btn primary send" aria-label="Start job">', home)
+        self.assertIn('<button class="btn primary send" aria-label="Start job" title="Start job">', home)
         for jid in ("live-job", "web-job", "finished-job", "broke-job"):
             with self.subTest(job=jid):
                 right = pane(dashboard.render(opened(live_view(), jid), NOW, token=TOKEN))
                 self.assertEqual(len(primaries(right)), 1)
         broke = pane(dashboard.render(opened(live_view(), "broke-job"), NOW, token=TOKEN))
-        self.assertIn('<button class="btn primary">Run again</button>', broke)
+        self.assertIn('aria-label="Run again" title="Run again" data-followup>', broke)
         pages = dashboard.render(live_view(), NOW, token=TOKEN) + "".join(
             dashboard.render(opened(live_view(), jid), NOW, token=TOKEN) for jid in ("live-job", "queued-job"))
         openers = re.findall(r'<summary class="([^"]+)" data-k="[sc]"', pages)
@@ -869,7 +904,10 @@ class DashboardTest(unittest.TestCase):
             shown = re.sub(r"<(dialog|code|style)\b.*?</\1>", "", page, flags=re.S)
             self.assertEqual(re.findall(r"\b(Run tick|Land|Stops|Routes|Supervisor|Resolve|pid|held|"
                                         r"route|PAUSED|tick|preflight)\b", " ".join(Page(shown).text)), [])
-        self.assertNotIn(" title=", "".join(pages))  # no CLI tooltips standing in for accessible names
+        for page in pages:
+            for tag, attrs in Page(page).tags:
+                if "title" in attrs and tag in {"button", "select"}:
+                    self.assertTrue(attrs.get("aria-label"), attrs)
 
     def test_a_ring_names_each_state_in_its_hue(self):
         # A failure drawn in teal, a hand launch in grey, two states sharing one shape, or a ring a screen reader
@@ -1227,8 +1265,7 @@ console.log(JSON.stringify({ frames, lone, split: [...split.entries()], ramp }))
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_options_opens_inside_the_window(self):
         # Options opening under a composer docked at the window's foot (cut off by the bottom edge), past the right
-        # edge of a narrow window, or taller than the side it opens on; a script that never places it; or a composer
-        # row that runs past a narrow detail instead of wrapping, must fail.
+        # edge of a narrow window, or taller than the side it opens on must fail.
         block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <place>"):dashboard.SCRIPT.index("// </place>")]
         probe = block + """
 const win = { top: 0, right: 1024, bottom: 640, left: 0 };
@@ -1250,8 +1287,6 @@ console.log(JSON.stringify([
         self.assertIn("right: 0", rule(".opts-body.right"))
         self.assertIn("overflow: auto", rule(".opts-body"))
         self.assertIn("d.matches('.opts')) place(d);", dashboard.SCRIPT)
-        narrow = dashboard.STYLE.split("@container (max-width: 640px) {", 1)[1].split("\n}", 1)[0]
-        self.assertIn("flex-wrap: wrap", narrow.split(".c-row {", 1)[1].split("}", 1)[0])
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):
@@ -1360,48 +1395,48 @@ console.log(JSON.stringify([
                 home, box = dashboard.render(v, NOW, token=TOKEN), inbox(v)
                 needs = re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0)
                 waiting = re.search(r'<section class="s-ib-wait".*?</section>', box, re.S).group(0)
-                counts = {"band": re.search(r'<p class="tally".*?data-need="(\d+)"', home, re.S).group(1),
-                          "header": re.search(r'<h3 id="g-needs">Needs you</h3><span class="n num">(\d+)<', needs).group(1),
+                counts = {"header": re.search(r'<h3 id="g-needs">Needs you</h3><span class="n num">(\d+)<', needs).group(1),
                           "badge": re.search(r'<b class="count num" data-need="(\d+)"', home).group(1),
                           "inbox title": re.search(r'<span class="top-meta mono"><span data-need="(\d+)"', box).group(1),
                           "rows": str(needs.count('<li class="row"')), "inbox rows": str(waiting.count('<li class="ib-li"'))}
                 self.assertEqual(set(counts.values()), {str(int(expected))}, counts)
-                self.assertIn(f"{int(expected)} need you", text(home))
+                self.assertIn(f'aria-label="{int(expected)} need you"', home)
                 self.assertIn(f"{int(expected)} need you", text(box))
         empty = {**view, "live": [], "not_started": [], "recent": [], "inbox": [], "stops": []}
         home, box = dashboard.render(empty, NOW, token=TOKEN), inbox(empty)
         self.assertNotIn("data-need=", home + box.split('<main', 1)[1].split('</main>')[0].replace(
             '<span data-need="0">', ""))
-        self.assertIn("nothing needs you", text(home))
+        self.assertNotIn('<header class="top"', pane(home))
         self.assertIn("nothing needs you", text(box))
 
-    def test_rows_say_why_under_the_title(self):
-        # A Needs you row whose reason sits beside the control instead of under the title, or a reason coloured like
-        # an alarm, must fail.
+    def test_sidebar_links_keep_the_reason_in_their_accessible_text(self):
         row = item(dashboard.render(live_view(), NOW, token=TOKEN), "live-job")
         link = re.search(r'<a class="item".*?</a>', row, re.S).group(0)
         self.assertRegex(link, rf'<span class="name">live-job</span><span class="sub">{re.escape(ASK.capitalize())}</span>')
         self.assertNotIn('class="sub', row.split("</a>", 1)[1])  # the control stands alone
-        rules = dict(re.findall(r"\.row \.(\w+) \{([^}]*)\}", dashboard.STYLE))
-        self.assertIn("grid-row: 2", rules["sub"])
-        self.assertIn("color: var(--muted)", rules["sub"])
 
-    def test_finished_pages_lead_with_the_result_and_fold_the_log(self):
-        # A done page that leads with its log, a log left open, a failed page whose fix box is not right under where
-        # it stopped, or a box pinned below the work, must fail.
+    def test_finished_pages_keep_output_collapsible_and_the_reply_in_the_dock(self):
+        # Output stays folded in Worked and the real Run again form lives after the session scroll area.
         log = "\n".join(f"line {n}" for n in range(1, 31))
         done = opened(live_view(), "finished-job", kind="local-shell", log=None)
-        done["open"].update(log=log, peek={"path": "notes.md", "text": "# Notes", "more": False})
-        body = pane(dashboard.render(done, NOW, token=TOKEN)).split('<div class="jd-body">', 1)[1].split("<aside", 1)[0]
-        order = re.findall(r'data-region="(j-peek|j-output|j-reply|j-error)"', body)
-        self.assertEqual(order, ["j-peek", "j-output", "j-reply"])
-        self.assertRegex(body, r'<details class="fold"><summary>.*Output.*last 30 lines.*</summary><pre class="log ended"')
+        done["open"].update(log=log, files=[{"path": "notes.md", "size": 7}],
+                            peek={"path": "notes.md", "text": "# Notes", "more": False})
+        page = pane(dashboard.render(done, NOW, token=TOKEN))
+        body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
+        self.assertIn('data-region="j-output"', body)
+        self.assertIn('<details class="file-preview"><summary>Preview</summary>', body)
+        dock = page.split('<div class="jd-dock">', 1)[1]
+        self.assertIn('data-region="j-reply"', dock)
+        self.assertIn('action="/again"', dock)
+        self.assertNotIn('data-region="j-reply"', body)
         broke = opened(live_view(), "broke-job", kind="local-shell")
         broke["open"].update(log=log, receipt={"route": "local-shell", "checks": [{"cmd": "sh run.sh", "exit": 2}],
                                                "ended": NOW - 10, "detail": "command exited 2"})
-        body = pane(dashboard.render(broke, NOW, token=TOKEN)).split('<div class="jd-body">', 1)[1].split("<aside", 1)[0]
-        order = re.findall(r'data-region="(j-peek|j-output|j-reply|j-error)"', body)
-        self.assertEqual(order, ["j-error", "j-reply", "j-output"])
+        page = pane(dashboard.render(broke, NOW, token=TOKEN))
+        body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
+        order = re.findall(r'data-region="(j-output|j-error)"', body)
+        self.assertEqual(order, ["j-error", "j-output"])
+        self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
         self.assertIn("exit 2", error)
         self.assertIn("line 30", error)
@@ -1425,26 +1460,30 @@ console.log(JSON.stringify([
         self.assertEqual(dashboard._found("test -s flaky.md", 2), "it exited with code 2")
         page = dashboard.render(done, NOW, token=TOKEN)
         self.assertNotIn('class="s-j-fail"', page)
-        self.assertNotIn('<span class="pg-k">Output</span>', page)
         # In the Inbox a failed job wears the red ring it wears on Today.
         row = re.search(r'<li class="ib-li" data-key="job:broke-job".*?</li>', inbox(live_view()), re.S).group(0)
         self.assertIn('<svg class="st t-red"', row)
         short = opened(live_view(), "broke-job", kind="local-shell")
         short["open"]["log"] = "ls: docs/: No such file or directory"
         body = pane(dashboard.render(short, NOW, token=TOKEN))
-        self.assertNotIn('data-region="j-output"', body)  # nothing more to unfold
+        self.assertIn('data-region="j-output"', body)
+        self.assertIn("ls: docs/: No such file or directory", body)
         self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
 
-    def test_machine_words_are_mono_and_the_machine_has_one_name(self):
-        # A duration, size or path set in the serif inside a sentence, ticking times in the serif, or the machine
-        # called anything but its one name, must fail.
+    def test_session_numbers_use_ui_type_and_the_machine_has_one_name(self):
         view = opened(live_view(), "finished-job", kind="local-shell")
         view["open"]["files"] = [{"path": "notes.md", "size": 2048}]
         page = pane(dashboard.render(view, NOW, token=TOKEN))
-        for machine in ('Done in <span class="mono">1 min 20 s</span>', 'Files in <span class="mono">runs/finished-job/'
-                        '</span>', '<span class="mono">120 min</span>', '<span class="size mono">2.0 KB</span>'):
+        self.assertIn('Done·1 min 20 s', text(page))
+        for machine in ('<span class="pk">Job</span>', '<span class="mono">120 min</span>'):
             self.assertIn(machine, page)
-        self.assertRegex(dashboard.STYLE, r"\n\.when \{ font-family: var\(--mono\)")
+        self.assertIn('class="session-file-size"', page)
+        self.assertIn('class="session-file-main"', page)
+        self.assertRegex(page, r'<span class="session-file-main"><svg[^>]*>.*?</svg><a [^>]*>notes\.md</a>'
+                               r'<span class="session-file-size">2\.0 KB</span></span>')
+        self.assertIn('class="prop prop-time"', page)
+        self.assertNotIn('class="session-usage"', page)
+        self.assertRegex(dashboard.STYLE, r"\n\.when \{ font-family: var\(--ui\).*tabular-nums")
         pages = [dashboard.render(full_view(), NOW), dashboard.render(live_view(), NOW, token=TOKEN), page,
                  inbox(live_view()), dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN)]
         for page in pages:
@@ -1457,42 +1496,22 @@ console.log(JSON.stringify([
         self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
 
     def test_today_opens_on_what_needs_you(self):
-        # Look v6 (founder, 1 Nov: one desktop workspace). Anything between the lane's head and Needs you, the list
-        # anywhere but the lane beside the detail, Today's detail without the sea or without the composer docked at its
-        # foot, a brief taller than one line before you type, a send arrow lit while there is nothing to send, a lane
-        # title that wraps, a layout that rearranges for narrow windows, or a first Needs you row lower than 100 px
-        # under the panel's top, must fail. The heights come from the stylesheet.
+        # The queue belongs to the only sidebar, and the main workspace keeps the composer and live background.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
-        self.assertIn('<div class="split"><section class="jobs lane" aria-label="Jobs"><div class="lane-head">', page)
-        lane = page[page.index('<section class="jobs lane"'):page.index('<div class="detail">')]
+        sidebar, detail = page.split('<main class="pane"', 1)
+        self.assertIn('<aside class="side"', sidebar)
+        self.assertNotIn('class="jobs lane"', detail)
+        lane = sidebar.split('<section class="jobs lane"', 1)[1]
+        self.assertIn('aria-label="Filter jobs by worker"', lane)
         ahead = lane[lane.index('<div class="list">'):lane.index('<section class="s-g-needs group"')]
         self.assertNotIn("<section", ahead.replace('<p class="empty no-jobs"', ""))
         self.assertNotIn("<canvas", lane)
-        detail = page[page.index('<div class="detail">'):page.index("</main>")]
         self.assertRegex(detail, r'<div class="page sea-page"><aside class="reef" aria-label="Who is working">'
                                  r'<canvas class="tank-c"')
         dock = detail[detail.index('<div class="dock">'):]
         self.assertIn('<textarea class="c-text" id="brief" name="brief" rows="1"', dock)
-        style = dashboard.STYLE
-        rule = lambda sel, within=style: within.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
-        px = lambda sel, prop: int(re.search(prop + r": (\d+)px", rule(sel)).group(1))  # noqa: E731
-        self.assertIn("height: 30px", rule(".composer textarea.c-text"))
-        self.assertRegex(rule(".compose.composer"), r'grid-template-columns: minmax\(0, 1fr\); grid-template-areas: '
-                                                    r'"text" "cmd" "row";')
-        self.assertIn("position: absolute", rule(".dock"))
-        self.assertIn("bottom: 18px", rule(".dock"))
-        idle = rule(".composer:has(.c-text:placeholder-shown) .send")
-        self.assertNotIn("var(--text)", idle)
-        self.assertIn("background: var(--raised)", idle)
-        self.assertRegex(rule(".lane .row .name"), r"nowrap.*ellipsis")
-        self.assertIn("--lane: 400px;", style)
-        self.assertIn("body { min-width: 1024px; }", style)
-        self.assertNotIn("@media (max-width", style)
-        self.assertLess(px(".lane-head", "height") + px(".lane .group .head", "height"), 100)
 
-    def test_top_bar_can_wrap_without_clipping_its_tally(self):
-        # A single fixed row overflows when Today, its clock, the tally and search cannot fit beside the lane.
-        # Guard the CSS reflow contract here; browser checks own the actual pixel bounds in both schemes.
+    def test_home_workspaces_skip_the_inner_header(self):
         view = live_view()
         pages = {"/": dashboard.render(view, NOW, token=TOKEN),
                  "/new": dashboard.render({**view, "new": True}, NOW, token=TOKEN),
@@ -1501,28 +1520,42 @@ console.log(JSON.stringify([
         for route, page in pages.items():
             with self.subTest(route=route):
                 top = re.search(r'<header class="top"[^>]*>.*?</header>', page, re.S)
-                self.assertIsNotNone(top)
                 if route in ("/", "/new"):
-                    self.assertIn('data-region="tally"', top.group(0))
-                    self.assertIn("jobs live", text(top.group(0)))
-        style = re.search(r"<style>(.*?)</style>", pages["/"], re.S).group(1)
-        block = re.search(r"(?:^|\n)\.top\s*\{([^}]*)\}", style).group(1)
-        declarations = dict(re.findall(r"([\w-]+)\s*:\s*([^;]+);", block))
-        with self.subTest(constraint="row wrapping"):
-            self.assertIn(declarations.get("flex-wrap", "nowrap"), ("wrap", "wrap-reverse"),
-                          "top bar must reflow when its contents exceed one row")
-        with self.subTest(constraint="row containment"):
-            self.assertEqual(declarations.get("height", "auto"), "auto",
-                             "top bar must grow to contain every wrapped row")
+                    self.assertIsNone(top)
+                    self.assertIn('id="compose-title"', pane(page))
+                elif route == "/inbox":
+                    self.assertIsNotNone(top)
+                else:
+                    self.assertIsNone(top)
+                    self.assertIn('class="jd-inspector"', pane(page))
 
-    def test_the_composer_offers_three_workers(self):
-        # A composer without GPT Pro, Codex cloud and This Mac as the three workers, in that order, or one whose GPT
-        # Pro choice posts another kind, must fail.
+    def test_the_composer_offers_its_workers(self):
+        # A composer without GPT Pro, Codex on this Mac, Codex cloud and the plain shell, in that order, or one whose
+        # GPT Pro choice posts another kind, must fail.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
         form = re.search(r'<form class="compose composer".*?</form>', page, re.S).group(0)
-        self.assertEqual(re.findall(r'<input type="radio" name="kind" value="([a-z-]+)"', form),
-                         ["gpt-chat", "codex-cloud", "local-shell"])
-        self.assertRegex(form, r'value="gpt-chat"[^>]*>.*?GPT Pro</label>')
+        chooser = re.search(r'<select[^>]+name="kind".*?</select>', form, re.S).group(0)
+        self.assertEqual(re.findall(r'<option value="([a-z-]+)"', chooser),
+                         ["gpt-chat", "local-agent", "codex-cloud", "local-shell"])
+        self.assertRegex(chooser, r'value="gpt-chat"><svg[^>]*>.*?</svg>GPT Pro</option>')
+
+    def test_model_and_effort_menus_carry_their_own_choices(self):
+        # A model menu holding effort levels, a model without the levels its CLI knows and the policy allows, or an
+        # effort menu that does not start on the highest allowed level, must fail.
+        view = live_view()
+        view["job_policy"] = {"codex-cloud": {"models": ["gpt-6.1-sol"], "efforts": ["max"]},
+                              "codex-local": {"efforts": ["high", "max"]},
+                              "claude-local": {"models": ["claude-opus-5-5"], "efforts": ["light", "high"]},
+                              "devin-local": {"models": ["swe-2-high"]}}
+        form = re.search(r'<form class="compose composer".*?</form>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        local = re.search(r'<select class="ghost model-pick" data-route="local-agent".*?</select>', form, re.S).group(0)
+        self.assertEqual(re.findall(r'<option value="([^"]+)"', local), ["gpt-6.1-sol", "claude-opus-5-5", "swe-2-high"])
+        self.assertIn('value="claude-opus-5-5" data-prov="claude" data-levels="light medium high extra-high max" '
+                      'data-efforts="light high"', local)
+        self.assertIn('data-prov="devin" data-levels="" data-efforts=""', local)
+        effort = re.search(r'<select class="effort-pick" name="effort" data-route="local-agent".*?</select>', form, re.S).group(0)
+        self.assertIn('<option value="max" selected>Max</option>', effort)
+        self.assertIn('<span class="ef-name">Max</span>', form)
 
     def test_a_gpt_pro_chat_hands_off_and_reads_its_reply(self):
         # A chat job waiting on you without its prompt, a Copy, the way to ChatGPT and a /reply form for that job;
@@ -1541,24 +1574,25 @@ console.log(JSON.stringify([
         self.assertIn('data-where="chat"', row)
         self.assertIn("Ask GPT Pro, then paste its reply", text(row))
         self.assertIn(">Ask GPT Pro</a>", row)
-        self.assertRegex(home, r'data-filter="chat"[^>]*>.*?GPT Pro</span><b class="count soft num">1</b>')
+        self.assertIn('<option value="chat">GPT Pro</option>', home)
         spec = {"id": "deep-dive", "kind": "gpt-chat", "brief": "Compare the three pacing designs.",
                 "model": {"requested": "gpt-6.1-sol-pro"}, "write_root": "runs/deep-dive/"}
         page = dashboard.render(opened(view, "deep-dive", kind="gpt-chat", spec=spec), NOW, token=TOKEN)
         self.assertIn('data-key="job:deep-dive" aria-current="page"', page)  # its row is lit in the lane
-        self.assertIn("Waiting for GPT Pro", text(page.split('<div class="detail">', 1)[1]))
-        self.assertNotIn("Launch by hand", text(page.split('<div class="detail">', 1)[1]))  # head and properties alike
-        card = re.search(r'<div class="ask-card chat-card">.*?</form></div>', page, re.S).group(0)
+        self.assertIn("Waiting for GPT Pro", text(pane(page)))
+        self.assertNotIn("Launch by hand", text(pane(page)))  # head and properties alike
+        card = re.search(r'<div class="ask-card chat-card">.*?</div>', page, re.S).group(0)
         self.assertIn('<pre class="prompt" id="prompt-deep-dive" tabindex="0">Compare the three pacing designs.</pre>',
                       card)
         self.assertIn('data-copy="prompt-deep-dive"', card)
         self.assertIn(f'href="{dashboard._CHATGPT}" target="_blank" rel="noopener noreferrer"', card)
         self.assertIn("gpt-6.1-sol-pro", card)
-        reply = [f for f in Forms(card).forms if f["action"] == "/reply"]
+        dock = page.split('<div class="jd-dock">', 1)[1]
+        reply = [f for f in Forms(dock).forms if f["action"] == "/reply"]
         self.assertEqual(len(reply), 1)
         self.assertEqual(set(reply[0]["fields"]), {"t", "job", "text", "next"})
         self.assertEqual(reply[0]["fields"]["job"], "deep-dive")
-        self.assertNotIn('action="/attach"', page.split('<div class="detail">', 1)[1])
+        self.assertNotIn('action="/attach"', pane(page))
         boxed = dashboard.render({**view, "box": True, "pick": 21}, NOW, token=TOKEN)  # the Inbox answers it the same way
         self.assertEqual([f["fields"]["job"] for f in Forms(boxed).forms if f["action"] == "/reply"], ["deep-dive"])
         self.assertIn("Waiting for GPT Pro", text(re.search(r'<p class="q-job".*?</p>', boxed, re.S).group(0)))
@@ -1568,7 +1602,6 @@ console.log(JSON.stringify([
         done["open"]["reply"] = "Design B wins.\n\nIt keeps one clock."
         done["open"]["job"]["detail"] = "Design B wins."  # the reply's first sentence, as rh.chat records it
         page = dashboard.render(done, NOW, token=TOKEN)
-        self.assertIn("Design B wins.</span>", page)
         self.assertNotIn("wins..", page)
         said = re.search(r'<section class="msg ai".*?</section>', page, re.S).group(0)
         self.assertIn("GPT Pro", text(said))
@@ -1581,6 +1614,7 @@ console.log(JSON.stringify([
         # Pause for Codex cloud, must fail.
         view = {**live_view(), "seats": [{"name": "backend", "role": "Backend: the core"}],
                 "host": {"load1": 1.5, "level": 1, "max_load": 10, "ok": True}}
+        view["live"].append({"id": "running-alone", "state": "running", "paused": False, "detail": ""})
         page = dashboard.render(view, NOW, token=TOKEN)
         side = page[page.index('<aside class="side"'):page.index("</aside>", page.index('<aside class="side"'))]
         coord = side[side.index('<details class="coord">'):]
@@ -1590,8 +1624,8 @@ console.log(JSON.stringify([
             self.assertIn(region, coord)
         summary = coord[:coord.index("</summary>")]
         self.assertIn("Checks on", text(summary))
-        live = re.search(r'<span class="num">(\d+)</span> jobs? live', page).group(1)  # the top bar's count
-        self.assertIn(f"· {live} live", text(summary))
+        self.assertNotIn("1 job live", text(pane(page)))
+        self.assertIn("·1 live", text(summary))
         self.assertNotIn("seat", text(summary))  # the pill fits the sidebar; the seats are in the panel
         self.assertIn("backend", text(coord[coord.index("</summary>"):]))
         forms = Forms(coord).forms
@@ -1629,13 +1663,13 @@ console.log(JSON.stringify([
         self.assertEqual(sorted(box), ["sweep-3", "sweep-odd"])
         self.assertRegex(box["sweep-3"], r'<span class="ib-t">Run the test suite twenty times and list every test '
                                          r'that failed at least once\.?</span>')
-        self.assertRegex(box["sweep-3"], r'<span class="ib-s">Failed 3 times: [^<]+ · <span class="mono">sweep-3'
+        self.assertRegex(box["sweep-3"], r'<span class="ib-s">Failed 3 times: [^<]+<span class="sep">·</span><span class="mono">sweep-3'
                                          r'</span></span>')
         # Each run's page names every run that failed the same way, newest first, and links the others.
         for jid in ("sweep-3", "sweep"):
             body = pane(dashboard.render(opened(view, jid, kind="local-shell"), NOW, token=TOKEN))
             said = re.search(r'<p class="fail-runs">.*?</p>', body, re.S).group(0)
-            self.assertTrue(text(said).startswith("Failed the same way 3 times: sweep-3 · sweep-2 · sweep"), said)
+            self.assertTrue(text(said).startswith("Failed the same way 3 times: sweep-3·sweep-2·sweep"), said)
             self.assertEqual(re.findall(r'href="/job/([^"?]+)', said), [r for r in ("sweep-3", "sweep-2", "sweep")
                                                                        if r != jid])
         self.assertNotIn('class="fail-runs"', pane(dashboard.render(opened(view, "sweep-odd", kind="local-shell"),
@@ -1675,16 +1709,14 @@ console.log(JSON.stringify([
         view = opened(live_view(), "live-job", kind="local-shell")
         view["open"]["log"] = "\n".join(f"line {n}" for n in range(200))
         page = pane(dashboard.render(view, NOW, token=TOKEN))
-        self.assertIn('<span class="pg-s">lines so far</span>', page)
-        self.assertIn('<span class="lines mono">200 lines</span>', page)
+        self.assertIn('<span class="worked-output">Output<span class="sep">·</span>200 lines</span>', page)
         view["open"]["log_cut"] = True
         page = pane(dashboard.render(view, NOW, token=TOKEN))
-        self.assertIn('<b class="num">200</b><span class="pg-s">last lines</span>', page)
-        self.assertIn('<span class="lines mono">last 200 lines</span>', page)
-        self.assertNotIn("lines so far", page)
+        self.assertIn('<span class="worked-output">Output<span class="sep">·</span>last 200 lines</span>', page)
+        self.assertNotIn('<div class="jd-dock">', page)
 
-    def test_a_jobs_heading_is_its_whole_first_sentence_said_once(self):
-        # A heading cut short, a brief repeated under its own heading, or a list title left uncut, must fail.
+    def test_a_job_keeps_its_full_request_and_searchable_title(self):
+        # A clipped request or a palette entry too long to read would make it harder to identify the job.
         view = opened(live_view(), "live-job")
         first = ("Read every nightly log from the last ninety days, list each test that timed out with its slowest "
                  "run, and flag any test that timed out more than twice")
@@ -1693,34 +1725,34 @@ console.log(JSON.stringify([
         view["meta"] = {"live-job": {"brief": view["open"]["job"]["spec"]["brief"]}}
         page = dashboard.render(view, NOW, token=TOKEN)
         self.assertIn(f"{first}</h1>", page)
-        self.assertEqual(text(pane(page).split('<aside class="jd-side"', 1)[0]).count(first), 1)
-        bubble = re.search(r'<div class="bubble">(.*?)</div>', page, re.S).group(1)
+        prompt = re.search(r'<div class="user-message">(.*?)</div>', page, re.S).group(1)
         # Hard-wrapped lines run on; a blank line, a list item and a fenced block keep their own lines.
-        self.assertEqual(html.unescape(bubble), "Write it to timeouts.md. Keep it short.\n\nCover:\n- each test and "
-                                                "its slowest run\n2) the date\n\n```\nlog --a\nb\n```")
+        self.assertEqual(html.unescape(prompt), first + ". Write it to timeouts.md. Keep it short.\n\nCover:\n"
+                         "- each test and its slowest run\n2) the date\n\n```\nlog --a\nb\n```")
         listed = re.search(r'href="/job/live-job\?t=[^"]*" data-nav><span class="p-ic">.*?<span class="p-t">(.*?)</span>',
                            page, re.S).group(1)
         self.assertTrue(listed.endswith("…") and len(listed) <= 100 and first.startswith(listed[:-1]), listed)
-        self.assertIn("text-wrap: pretty", dashboard.STYLE.split(".jd-head h1 {", 1)[1].split("}", 1)[0])
+        self.assertIn("text-overflow: ellipsis", dashboard.STYLE.split(".detail .jd-head h1 {", 1)[1].split("}", 1)[0])
 
     def test_a_wrapped_brief_or_an_abbreviation_still_heads_with_the_whole_sentence(self):
         # A heading that stops at a brief's first line break, at "e.g." or at a first list item's "1.", one that runs
         # past "etc." into the next capitalised sentence, or a list under it run into one line, must fail.
         cases = [("Read every nightly log from the last\nninety days and list each timeout. Write timeouts.md.",
-                  "Read every nightly log from the last ninety days and list each timeout", "Write timeouts.md."),
-                 ("Compare e.g. two runs.", "Compare e.g. two runs", None),
-                 ("Scan these logs:\n- build.log\n- test.log", "Scan these logs:", "- build.log\n- test.log"),
-                 ("1. Do X.\n2. Do Y.", "1. Do X", "2. Do Y."),
-                 ("Collect logs, traces, etc. Then stop.", "Collect logs, traces, etc.", "Then stop.")]
-        for brief, heading, under in cases:
+                  "Read every nightly log from the last ninety days and list each timeout",
+                  "Read every nightly log from the last ninety days and list each timeout. Write timeouts.md."),
+                 ("Compare e.g. two runs.", "Compare e.g. two runs", "Compare e.g. two runs."),
+                 ("Scan these logs:\n- build.log\n- test.log", "Scan these logs:", "Scan these logs:\n- build.log\n- test.log"),
+                 ("1. Do X.\n2. Do Y.", "1. Do X", "1. Do X.\n2. Do Y."),
+                 ("Collect logs, traces, etc. Then stop.", "Collect logs, traces, etc.", "Collect logs, traces, etc. Then stop.")]
+        for brief, heading, prompt in cases:
             with self.subTest(brief=brief):
                 view = opened(live_view(), "live-job")
                 view["open"]["job"]["spec"]["brief"] = brief
                 view["meta"] = {"live-job": {"brief": brief}}
                 page = dashboard.render(view, NOW, token=TOKEN)
                 self.assertIn(f">{html.escape(heading, quote=False)}</h1>", page)
-                bubble = re.search(r'<div class="bubble">(.*?)</div>', page, re.S)
-                self.assertEqual(bubble and html.unescape(bubble.group(1)), under)
+                content = re.search(r'<div class="user-message">(.*?)</div>', page, re.S)
+                self.assertEqual(content and html.unescape(content.group(1)), prompt)
 
     def test_the_launch_prompt_shows_whole_lines(self):
         # A prompt box whose height is not a whole number of its lines, a box with no fade or no Show all, or a box
@@ -1746,20 +1778,21 @@ console.log(JSON.stringify([
         self.assertIn("if (m) { more(m); return; }", dashboard.SCRIPT)
         self.assertIn("box.style.height = open ? box.scrollHeight + 'px' : '';", dashboard.SCRIPT)
 
-    def test_a_finished_jobs_page_has_a_muted_meter_and_a_dim_seat(self):
-        # A time meter coloured as a verdict, a finished job's page with its jellyfish drawn amber or teal, or a
-        # question on a failed job drawn amber in the Inbox, must fail.
-        # live-job is running with a question waiting on you, so its seat is amber; the two ended jobs' are dim.
-        for jid, tone in (("broke-job", "faint"), ("finished-job", "faint"), ("live-job", "amber")):
+    def test_sessions_use_inline_status_and_inbox_keeps_its_seat_tones(self):
+        for jid, status in (("broke-job", "Failed"), ("finished-job", "Done"), ("live-job", "Running")):
             with self.subTest(jid=jid):
                 view = opened(live_view(), jid)
                 page = pane(dashboard.render(view, NOW, token=TOKEN))
-                meter = re.search(r'<span class="cells( \w+)?" aria-hidden="true">', page)
-                self.assertEqual(meter.group(1), " muted")
-                found = re.search(r'data-creatures="([^"]*)" data-region="j-water"', page)
-                self.assertEqual(json.loads(html.unescape(found.group(1)))[0]["tone"], tone)
+                self.assertRegex(page, rf'<p class="job-result"[^>]*><svg class="st [^"]+"[^>]*>.*?</svg>'
+                                       rf'<span class="job-result-status">{re.escape(status)}(?:</span>|<span class="sep">·</span>)')
+                self.assertNotIn('data-region="j-water"', page)
+                self.assertNotIn('<div class="jd-prog">', page)
+        done_page = pane(dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN))
+        self.assertIn('<svg class="st t-accent"', done_page.split('class="job-result"', 1)[1])
         stalled = opened(live_view(), "live-job", state="stalled")
-        self.assertIn('<span class="cells amber"', pane(dashboard.render(stalled, NOW, token=TOKEN)))
+        self.assertRegex(pane(dashboard.render(stalled, NOW, token=TOKEN)),
+                         r'<p class="job-result"[^>]*><svg class="st [^"]+"[^>]*>.*?</svg>'
+                         r'<span class="job-result-status">Past its time limit(?:</span>|<span class="sep">·</span>)')
         # In the Inbox, a question on a failed job is drawn dim too; one on a running job, amber.
         view = live_view()
         view["inbox"].append({"id": 9, "kind": "decision", "job": "broke-job", "action": "run it again?", "detail": "",

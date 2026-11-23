@@ -11,6 +11,9 @@ import os
 from pathlib import Path
 import re
 import secrets
+import subprocess
+import sys
+import shutil
 import shlex
 import socket
 import socketserver
@@ -20,7 +23,7 @@ import tomllib
 import urllib.parse
 import webbrowser
 
-from rh import chat, cli, contract, dashboard, lease, oslock, seats
+from rh import chat, cli, config, contract, dashboard, gitx, lease, oslock, seats
 from rh.ledger import TERMINAL, Ledger
 from rh.supervisor import AlreadyRunning, single_instance
 
@@ -35,15 +38,15 @@ _FILES = 50  # files a receipt lists, at most
 _PEEK = 64 * 1024  # a text file up to this size is previewed in the receipt
 _PEEK_LINES = 40
 _FILE_MAX = 1024 * 1024  # bytes GET /job/<id>/file serves, at most
-# The page is one document with one same-origin script, inline styles and its two same-origin fonts; nothing else may
-# load or frame it.
-_CSP = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src data:; "
+# The page uses inline styles and bundled same-origin assets. Outside pages cannot frame it.
+_CSP = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self' data:; "
         "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 _FONTS = {f"/fonts/{name}": dashboard._WEB / "fonts" / name for name in dashboard.FONTS}
+_ART = {f"/{name}": dashboard._WEB / name for name in dashboard.BACKGROUNDS}
 _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup", "/handoff", "/reply")
+          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -151,7 +154,8 @@ def _upload(cfg, job, suffix, text):
 
 def _draft(fields):
     """The New job form as typed, kept so a refused job can be corrected rather than retyped."""
-    draft = {name: _value(fields, name) for name in ("id", "kind", "brief", "command", "accept", "timeout_min")}
+    draft = {name: _value(fields, name) for name in ("id", "kind", "brief", "command", "accept", "timeout_min",
+                                                    "model", "effort", "input_path", "answer")}
     draft["needs"] = fields.get("needs", [])
     return draft
 
@@ -186,11 +190,55 @@ def _job_text(spec):
     return text
 
 
-def _job_file(draft):
+def _repository_input(raw, repo):
+    value = raw.strip()
+    if not value:
+        return None
+    path = Path(value)
+    if path.is_absolute() or not path.parts or ".." in path.parts or "\\" in value or ":" in value:
+        raise ValueError("an input must be a path relative to the repository")
+    root = Path(repo).resolve()
+    if not (root / path).resolve().is_relative_to(root):
+        raise ValueError("an input must stay inside the repository")
+    return {"path": path.as_posix()}
+
+
+def _auto_id(cfg, fields):
+    """A job typed without a name gets one from its first words, made unique against the ledger."""
+    if _value(fields, "id").strip():
+        return
+    words = re.findall(r"[a-z0-9]+", _value(fields, "brief").lower())[:6] or ["job"]
+    base = "-".join(words)[:40].strip("-") or "job"
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        taken = {j["id"] for j in led.jobs()}
+    finally:
+        led.close()
+    name, n = base, 2
+    while name in taken:
+        name, n = f"{base}-{n}", n + 1
+    fields["id"] = [name]
+
+
+def _job_file(draft, repo):
     """The TOML file `rh job add` reads for a New job form; the contract rejects what it would reject."""
-    spec = {"id": draft["id"].strip(), "kind": draft["kind"], "brief": draft["brief"].replace("\r\n", "\n")}
+    agent = draft["kind"] == "local-agent"  # Codex on this Mac: a local job whose command is rh/agent.py
+    spec = {"id": draft["id"].strip(), "kind": "local-shell" if agent else draft["kind"],
+            "brief": draft["brief"].replace("\r\n", "\n")}
+    if item := _repository_input(draft["input_path"], repo):
+        spec["inputs"] = [item]
+    if spec["kind"] != "local-shell":
+        model = {key: draft[field].strip() for field, key in (("model", "requested"), ("effort", "effort"))
+                 if draft[field].strip() and (field != "effort" or spec["kind"] == "codex-cloud")}
+        if model:
+            spec["model"] = model
     if draft["accept"].strip():
         spec["accept"] = draft["accept"].strip()
+    if agent or spec["kind"] == "codex-cloud":  # agents leave an answer.md; the composer says where it is shown
+        answer = draft["answer"].strip() or "chat"
+        if answer not in ("chat", "file"):
+            raise ValueError("answer must be chat or file")
+        spec["answer"] = answer
     if draft["needs"]:
         spec["needs"] = list(draft["needs"])
     timeout = draft["timeout_min"].strip()
@@ -198,15 +246,41 @@ def _job_file(draft):
         if not timeout.isascii() or not timeout.isdigit() or not 0 < int(timeout) <= 10080:
             raise ValueError("the time limit is a whole number of minutes, at most 10080")
         spec["timeout_min"] = int(timeout)
-    if spec["kind"] == "local-shell":
-        try:
-            spec["command"] = shlex.split(draft["command"])
+    if agent:
+        # The model names its provider; each provider's models come from its own table in the dated policy.
+        policy_path = config.REPO / "policy.toml"
+        policy = contract.load_policy(policy_path) if policy_path.is_file() else {}
+        tables = {"codex": "codex-cloud", "claude": "claude-local", "devin": "devin-local"}
+        model = draft["model"].strip()
+        provider = "codex" if not model else next(
+            (name for name, table in tables.items() if model in policy.get(table, {}).get("models", [])), None)
+        if provider is None:
+            allowed = [m for table in tables.values() for m in policy.get(table, {}).get("models", [])]
+            raise ValueError(f"model {model} is not in the model policy: allowed {allowed}")
+        binary = shutil.which(provider)
+        if not binary:
+            raise ValueError(f"{provider.capitalize()} is not installed on this Mac: the {provider} command was not found")
+        extra = ["--model", model] if model else []
+        if provider == "codex":
+            extra += ["-c", 'service_tier="default"']  # the policy keeps fast off
+        effort = draft["effort"].strip()
+        if effort and provider != "devin":  # Devin's effort is part of its model's name
+            efforts = policy.get({"codex": "codex-local"}.get(provider, tables[provider]), {}).get("efforts", [])
+            if effort not in efforts:
+                raise ValueError(f"effort {effort} is not in the policy for {provider}: allowed {efforts}")
+            cli = {"light": "low", "extra-high": "xhigh"}.get(effort, effort)
+            extra += ["-c", f'model_reasoning_effort="{cli}"'] if provider == "codex" else ["--effort", cli]
+        spec["command"] = [sys.executable, str(Path(__file__).with_name("agent.py")), provider, binary, str(repo),
+                           spec["brief"], *extra]
+    elif spec["kind"] == "local-shell":
+        try:  # the shell worker runs the brief as its command unless Options names another
+            spec["command"] = shlex.split(draft["command"].strip() or draft["brief"])
         except ValueError as error:
             raise ValueError(f"command: {error}") from None
     return spec["id"], _job_text(spec)
 
 
-def _again(cfg, old, changed):
+def _again(cfg, old, changed, input_path=""):
     """The next revision of a finished job, as (id, TOML): the same contract under the next free name, pointing back
     at the job it follows, with what changed (a follow-up is also added to the brief)."""
     led = Ledger(Path(cfg["home"]) / "ledger.db")
@@ -235,6 +309,12 @@ def _again(cfg, old, changed):
         spec["write_root"] = job["spec"]["write_root"]
     if changed:
         spec["brief"] = spec["brief"].rstrip() + "\n\nFollow-up: " + changed
+    if item := _repository_input(input_path, cfg["repo"]["path"]):
+        inputs = spec.get("inputs", [])
+        if not any(existing["path"] == item["path"] for existing in inputs):
+            spec["inputs"] = [*inputs, item]
+            if not changed:
+                spec["changed"] = f"added input {item['path']}"
     return new, _job_text(spec)
 
 
@@ -279,10 +359,10 @@ def _action(cfg, path, fields):
     if path == "/job/cancel":
         return ["job", "cancel", "--reason=" + value("reason"), "--", value("job")]
     if path == "/job":
-        job, text = _job_file(_draft(fields))
+        job, text = _job_file(_draft(fields), cfg["repo"]["path"])
         return ["job", "add", "--", str(_upload(cfg, job, ".toml", text))]
     if path == "/again":
-        job, text = _again(cfg, value("job"), value("changed").strip() if "changed" in fields else "")
+        job, text = _again(cfg, value("job"), value("changed").strip(), value("input_path"))
         return ["job", "add", "--", str(_upload(cfg, job, ".toml", text))]
     if path == "/setup":
         env = value("env_id").strip()
@@ -369,11 +449,16 @@ def _outputs(cfg, shown):
     return root if root.is_relative_to(home) and root != home and root.is_dir() else None
 
 
-def _files(root):
+_ANSWER = 200_000  # characters of an answer shown in the chat; the file keeps the rest
+
+
+def _files(root, skip=()):
     """([{path, size}], peek): what a finished job left in its folder, and the start of its first small text file."""
     found, peek = [], None
     for path in sorted(p for p in root.rglob("*") if p.is_file() and not p.is_symlink()):
         rel = path.relative_to(root).as_posix()
+        if rel in skip:
+            continue
         size = path.stat().st_size
         found.append({"path": rel, "size": size})
         if peek is None and size <= _PEEK:
@@ -685,9 +770,22 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             ready = bool(cfg["cloud"]["env_id"])
             meta, settled, items = _meta(cfg)
             view.update({"can_add": True, "compose": draft or {}, "meta": meta, "settled": settled,
+                         "background": cfg.get("appearance", {}).get("background"),
+                         "tint": cfg.get("appearance", {}).get("tint"),
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
                          "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
                          **(extra or {})})
+            if not view.get("open") and not view.get("box"):
+                repo = Path(cfg["repo"]["path"]).resolve()
+                if repo.is_dir():
+                    view["workspace"] = {"repo": repo.name}
+                    ref = gitx.git(repo, "symbolic-ref", "--quiet", "--short", "HEAD", check=False)
+                    if ref.returncode == 0:
+                        view["workspace"]["branch"] = ref.stdout.strip()
+                    elif gitx.git(repo, "rev-parse", "--verify", "HEAD", check=False).returncode == 0:
+                        view["workspace"]["branch"] = "Detached HEAD"
+                policy_path = config.REPO / "policy.toml"
+                view["job_policy"] = contract.load_policy(policy_path) if policy_path.is_file() else {}
             if view.get("box") and view.get("pick") is None:
                 # The Inbox opens on its newest waiting item, as the page lists it.
                 waiting = sorted((i for i in items.values() if not i.get("resolved")),
@@ -724,11 +822,21 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 # The two faces the page names, from a fixed list; like the script, they carry no data.
                 self.reply(200, _FONTS[target.path].read_bytes(), content_type="font/woff2")
                 return
+            if target.path in _ART:
+                self.reply(200, _ART[target.path].read_bytes(), content_type="image/webp")
+                return
             query_fields = urllib.parse.parse_qs(target.query, keep_blank_values=True)
             if not self.valid_token(query_fields):
                 self.reply(403)
                 return
             parts = target.path.split("/")
+            if target.path == "/files":
+                # The picker behind "+": tracked files only, so nothing ignored or private to the machine is offered.
+                r = subprocess.run(["git", "-C", str(cfg["repo"]["path"]), "ls-files", "-z"], capture_output=True,
+                                   timeout=20, check=False)
+                names = [n for n in r.stdout.decode("utf-8", "replace").split("\0") if n][:20000] if r.returncode == 0 else []
+                self.reply(200, json.dumps({"files": names}), content_type="application/json; charset=utf-8")
+                return
             if target.path == "/actions":
                 self.reply(200, _actions(token))
             elif target.path == "/":
@@ -754,7 +862,13 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     shown["prompt"] = prompt if code == 0 else None
                 root = _outputs(cfg, shown) if shown["job"]["state"] in TERMINAL else None
                 if root:
-                    shown["files"], shown["peek"] = _files(root)
+                    # An answer shown in the chat is read here and left out of the files, so it appears once.
+                    said = root / "answer.md"
+                    chat_answer = (shown["job"].get("spec", {}).get("answer", "chat") == "chat" and said.is_file()
+                                   and not said.is_symlink())
+                    if chat_answer:
+                        shown["answer"] = said.read_text(encoding="utf-8", errors="replace")[:_ANSWER]
+                    shown["files"], shown["peek"] = _files(root, skip=("answer.md",) if chat_answer else ())
                 self.page({"open": shown})
             elif (len(parts) == 4 and parts[1] == "job" and parts[3] == "file"
                     and contract.JOB_ID_RE.fullmatch(parts[2])):
@@ -833,6 +947,27 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             if path not in _POSTS or (path == "/checks" and not loop):
                 self.reply(404)
                 return
+            if path == "/appearance":
+                chosen = {}
+                for key, allowed in (("background", dashboard.PRESETS), ("tint", dashboard.TINTS)):
+                    if key in fields:
+                        chosen[key] = _value(fields, key)
+                        if chosen[key] not in allowed:
+                            self.reply(400)
+                            return
+                if not chosen:
+                    self.reply(400)
+                    return
+                with _CLI_LOCK:
+                    try:
+                        for key, value in chosen.items():
+                            config.set_value(f"appearance.{key}", value, cfg["home"])
+                    except (OSError, ValueError):
+                        self.reply(500)
+                        return
+                    cfg.setdefault("appearance", {}).update(chosen)
+                self.reply(204)
+                return
             back = _next(fields)
             made = None
             if path == "/checks":
@@ -848,6 +983,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                 last_result = _result(0 if ok else 1, why, _say(path, fields, ok))
             else:
                 try:
+                    if path == "/job":
+                        _auto_id(cfg, fields)
                     if path in ("/job", "/again"):
                         made = (_value(fields, "id").strip() if path == "/job"
                                 else _again(cfg, _value(fields, "job"), "")[0])

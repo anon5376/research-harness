@@ -5,20 +5,31 @@
 // moves stops under prefers-reduced-motion; the sea reads it when the page loads, so a change while the page is open
 // takes a reload.
 (() => {
+// The composer's two pickers (model, effort): declared first, since the composer syncs them while the page starts.
+let modelPanel = null;
+const EFFORT_WORDS = {light: 'Light', medium: 'Medium', high: 'High', 'extra-high': 'Extra High', max: 'Max', ultra: 'Ultra'};
+let effortPanel = null;
 'use strict';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
 const calm = matchMedia('(prefers-reduced-motion: reduce)');
 const light = matchMedia('(prefers-color-scheme: light)');
+const compact = matchMedia('(max-width: 900px)');
+const sidebarToggle = $('.sidebar-toggle');
 const byKey = (k, r = document) => r.querySelector('[data-key="' + CSS.escape(k) + '"]');
 let skew = 0, inflight = 0, failures = 0, timer = 0, stash = null, ended = false, moving = 0, show = '', kind = '';
 
 const span = s => s < 60 ? s + ' s' : s < 3600 ? Math.floor(s / 60) + ' min'
   : s < 86400 ? Math.floor(s / 3600) + ' h' : Math.floor(s / 86400) + ' d';
 const rel = s => s >= 0 ? span(s) + ' ago' : 'in ' + span(-s);
-const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const two = n => (n < 10 ? '0' : '') + n;
+function setSidebar(open, refocus = false) {
+  if (!sidebarToggle) return;
+  open = open && compact.matches;
+  $('.app').classList.toggle('side-open', open);
+  $('.pane').inert = open;
+  sidebarToggle.setAttribute('aria-expanded', String(open));
+  if (refocus) sidebarToggle.focus();
+}
 function clock() {
   for (const el of $$('[data-t]')) {
     const s = Math.round(Date.now() / 1000 + skew - +el.dataset.t);
@@ -26,10 +37,6 @@ function clock() {
       : s >= 0 && el.dataset.due ? el.dataset.due : (el.dataset.pre || '') + rel(s);
     if (el.textContent !== text) el.textContent = text;
   }
-  const d = new Date(Date.now() + skew * 1000);
-  const day = DAYS[d.getDay()] + ' ' + d.getDate() + ' ' + MONTHS[d.getMonth()] + ' · ' + two(d.getHours()) + ':'
-    + two(d.getMinutes());
-  for (const el of $$('[data-clock]')) if (el.textContent !== day) el.textContent = day;
 }
 function play(el, cls, ms) {
   if (!el) return;
@@ -38,8 +45,8 @@ function play(el, cls, ms) {
 }
 const parse = html => new DOMParser().parseFromString(html, 'text/html');
 const busy = el => !!((el.matches && el.matches('dialog[open]'))
-  || el.querySelector('details[open], dialog[open], [aria-busy="true"]')
-  || (el.contains(document.activeElement) && document.activeElement.matches('input, textarea')));
+  || el.querySelector('details[open]:not(.jd-inspector, .worked), dialog[open], [aria-busy="true"]')
+  || (el.contains(document.activeElement) && document.activeElement.matches('input, textarea, select')));
 const regions = el => $$('[data-region]', el).map(r => r.dataset.region).join(' ');
 
 // ───────── the sea: creatures drawn in characters on one lattice of tall cells ─────────
@@ -535,7 +542,7 @@ let fonts = false;
 function wake() {
   // Tanks that arrived with a page or a poll start here; the ones already running carry on.
   if (!fonts) return;
-  for (const c of $$('canvas[data-tank]')) if (!c.dataset.on) { c.dataset.on = '1'; Tank(c); }
+  for (const c of $$('canvas[data-tank]')) if (!c.dataset.on && c.getClientRects().length) { c.dataset.on = '1'; Tank(c); }
 }
 
 // ───────── the live page ─────────
@@ -634,6 +641,7 @@ function mark() {
   }
   for (const log of $$('.log')) if (!log.dataset.held) log.scrollTop = log.scrollHeight;
   for (const b of $$('[data-copy]')) b.hidden = false;
+  for (const worker of $$('form.compose select[name="kind"]')) requireCommand(worker);
   // A clipped box offers Show all only when it holds more than it shows.
   for (const c of $$('[data-clip]')) {
     const box = c.firstElementChild, more = c.nextElementSibling && $('[data-more]', c.nextElementSibling);
@@ -652,13 +660,12 @@ function more(b) {
 }
 
 function filter() {
-  // The list's tabs (where a job runs; what kind of item waits) filter what is already on the page.
-  const jobs = $('.jobs');
+  // Filter the existing lists without fetching another page.
+  const jobs = $('.side .jobs');
   if (jobs) {
     if (show) jobs.dataset.show = show; else delete jobs.dataset.show;
-    for (const t of $$('[role="tab"][data-where]')) t.setAttribute('aria-selected', String(t.dataset.where === show));
+    $('[data-job-filter]', jobs).value = show;
   }
-  for (const b of $$('[data-filter]')) b.setAttribute('aria-pressed', String(b.dataset.filter === show));
   // The open job's row in the lane is lit; the server marks it, and this keeps it right as pages swap.
   const here = document.body.dataset.here || '';
   for (const r of $$('.lane .row[data-key]')) {
@@ -672,6 +679,9 @@ function filter() {
 }
 
 function apply(doc, nav) {
+  // the server was restarted with a new look or client: load the whole page again rather than mix the two
+  const build = doc.body.dataset.build;
+  if (build && document.body.dataset.build && build !== document.body.dataset.build) { location.reload(); return null; }
   const now = +doc.body.dataset.now;
   if (now) skew = now - Date.now() / 1000;
   for (const k of ['open', 'pace', 'jobs', 'here']) document.body.dataset[k] = doc.body.dataset[k] || '';
@@ -689,6 +699,14 @@ function apply(doc, nav) {
     if (swap && fresh.contains(el)) continue;
     const old = $('[data-region="' + el.dataset.region + '"]');
     if (!old || old.dataset.sig === el.dataset.sig) continue;
+    if (old.matches('.worked') && el.matches('.worked')) {
+      $('summary', old).innerHTML = $('summary', el).innerHTML;
+      const log = $('.log', old), freshLog = $('.log', el);
+      if (log && freshLog) log.textContent = freshLog.textContent;
+      else $('.worked-content', old).replaceWith($('.worked-content', el));
+      old.dataset.sig = el.dataset.sig;
+      continue;
+    }
     if (!$('.body', el)) {
       if (!busy(old)) { old.replaceWith(el); if (!nav && !el.hasAttribute('data-still')) play(el, 'arrived', 400); }
       continue;
@@ -697,10 +715,20 @@ function apply(doc, nav) {
     old.hidden = el.hidden;
   }
   if (swap) {
-    const top = nav ? 0 : pane.scrollTop;
+    const top = nav ? 0 : ($('.jd-scroll', pane) || pane).scrollTop;
     const had = new Set(regions(pane).split(' '));
+    let refocus = null;
+    if (!nav) for (const selector of ['.jd-inspector', '.worked']) {
+      const before = $(selector, pane), after = $(selector, fresh);
+      if (!before || !after) continue;
+      after.open = before.open;
+      if (focused === $('summary', before)) refocus = $('summary', after);
+    }
     pane.replaceWith(fresh);
-    fresh.scrollTop = top;
+    fresh.inert = pane.inert;
+    if (refocus) refocus.focus({ preventScroll: true });
+    const scroller = $('.jd-scroll', fresh) || fresh;
+    scroller.scrollTop = top;
     if (nav) { play($('.page', fresh), 'entering', 300); window.scrollTo(0, 0); }
     else for (const el of $$('[data-region]', fresh)) if (!had.has(el.dataset.region) && !el.hasAttribute('data-still')) play(el, 'arrived', 400);
   }
@@ -715,6 +743,8 @@ function apply(doc, nav) {
   clock();
   mark();
   filter();
+  applyMode();
+  document.dispatchEvent(new Event('rh:page'));
   wake();
   if (!nav) {
     if (focused && focused !== document.body && !focused.isConnected && focusKey) {
@@ -756,6 +786,7 @@ async function poll() {
 }
 
 async function go(url, push) {
+  setSidebar(false);
   moving += 1;
   try {
     const r = await fetch(url, { cache: 'no-store' });
@@ -821,11 +852,17 @@ function pending(form) {
   name.textContent = brief.value.trim().split('\n')[0].slice(0, 80) || (id && id.value) || 'New job';
   const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = 'Starting…';
   a.append(dot, name, sub); li.append(a);
+  const empty = $('.no-jobs'), groupWasHidden = grp.hidden, emptyWasHidden = empty && empty.hidden;
   grp.hidden = false;
-  const empty = $('.no-jobs'); if (empty) empty.hidden = true;
+  if (empty) empty.hidden = true;
   $('.rows', grp).prepend(li);
   play(li, 'arrived', 400);
-  return li;
+  return () => {
+    if (!li.isConnected) return;
+    li.remove();
+    grp.hidden = groupWasHidden;
+    if (empty && empty.isConnected) empty.hidden = emptyWasHidden;
+  };
 }
 
 document.addEventListener('submit', async e => {
@@ -855,7 +892,7 @@ document.addEventListener('submit', async e => {
   } catch (err) { reached = false; say = 'The app did not answer. Is rh serve still running?'; }
   btn.removeAttribute('aria-busy');
   const ok = reached && (code === null || code === 0);
-  if (!ok && early) early.remove();
+  if (early) early();
   if (!(ok && landed)) toast(say || (ok ? label + ': done.' : label + ' did not work.'), ok, out);
   if (!landed) play(btn, ok ? 'ok' : 'no', ok ? 900 : 400);
   if (ok) { const d = form.closest('details'); if (d) d.open = false; if (!landed) form.reset(); }
@@ -951,6 +988,7 @@ document.addEventListener('keydown', e => {
     e.preventDefault();
     if (list.length) pick(list[(at + (e.key === 'ArrowDown' ? 1 : -1) + list.length) % list.length]);
   } else if (e.key === 'Enter') { e.preventDefault(); run(list[at]); }
+  else if (e.key === 'Escape') { e.preventDefault(); closePal(); }
 });
 document.addEventListener('mousemove', e => {
   const r = e.target.closest && e.target.closest('#pal .p-row');
@@ -958,21 +996,32 @@ document.addEventListener('mousemove', e => {
 });
 
 document.addEventListener('click', e => {
+  const target = e.target.closest?.('.sidebar-toggle, .side-scrim');
+  if (target) {
+    const open = sidebarToggle.getAttribute('aria-expanded') === 'true';
+    setSidebar(!open, open);
+    return;
+  }
   for (const d of $$('details.act[open], details.opts[open]')) if (!d.contains(e.target)) d.open = false;
   const c = e.target.closest && e.target.closest('[data-copy]');
   if (c) { copy(c); return; }
   const m = e.target.closest && e.target.closest('[data-more]');
   if (m) { more(m); return; }
   if (e.target.closest && e.target.closest('[data-pal]')) { openPal(); return; }
+  if (e.target.closest && e.target.closest('[data-settings]')) { $('#settings').showModal(); return; }
+  const addInput = e.target.closest && e.target.closest('[data-add-input]');
+  if (addInput) { openFiles(addInput); return; }
+  const clearInput = e.target.closest && e.target.closest('[data-clear-input]');
+  if (clearInput) { attach(clearInput.form, ''); return; }
+  const pick = $('.file-pick');
+  if (pick && !pick.hidden && !pick.contains(e.target)) closeFiles();
   const d = pal();
   if (d && e.target === d) { closePal(); return; }  // a click on the backdrop
   const row = e.target.closest && e.target.closest('#pal .p-row');
   if (row) { e.preventDefault(); run(row); return; }
-  const tab = e.target.closest && e.target.closest('[role="tab"][data-where], [role="tab"][data-kind], [data-filter]');
+  const tab = e.target.closest && e.target.closest('[role="tab"][data-kind]');
   if (tab) {
-    // A worker in the sidebar filters the lane as its tab does; pressed again, it shows every job.
-    if ('filter' in tab.dataset) show = show === tab.dataset.filter ? '' : tab.dataset.filter;
-    else if ('where' in tab.dataset) show = tab.dataset.where; else kind = tab.dataset.kind;
+    kind = tab.dataset.kind;
     filter();
     return;
   }
@@ -980,6 +1029,7 @@ document.addEventListener('click', e => {
   if (!a || e.defaultPrevented || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
   e.preventDefault();
   if (a.href !== location.href) go(a.href, true);
+  else if (a.closest('.side') && $('.app').classList.contains('side-open')) setSidebar(false, true);
 });
 addEventListener('popstate', () => go(location.href, false));
 document.addEventListener('scroll', e => {
@@ -998,13 +1048,19 @@ document.addEventListener('input', e => {
   if (!(t instanceof HTMLElement)) return;
   const form = t.closest('form.compose');
   if (!form) return;
+  if (t.matches('textarea[name="changed"]')) {
+    const send = $('[data-followup]', form);
+    const label = t.value.trim() ? 'Send follow-up' : 'Run again';
+    send.setAttribute('aria-label', label);
+    send.title = label;
+  }
   const id = form.elements.namedItem('id');
   if (t === id) { id.dataset.typed = id.value ? '1' : ''; return; }
   if (t.name === 'brief' && id && !id.dataset.typed) {
     // Content words only, each once, with file extensions dropped: "numbers.txt" adds nothing to "numbers".
     const words = [...new Set(t.value.toLowerCase().replace(/\.[a-z0-9]+\b/g, ' ').replace(/[^a-z0-9\s-]/g, ' ')
       .split(/\s+/).filter(w => w.length > 2 && !NAME_SKIP.has(w)))].slice(0, 3);
-    let name = words.join('-').slice(0, 48).replace(/-+$/, ''), n = 2;
+    let name = words.join('-').slice(0, 48).replace(/^-+|-+$/g, '') || 'job', n = 2;
     const base = name;
     while (name && byKey('job:' + name)) name = base + '-' + n++;
     id.value = name;
@@ -1016,26 +1072,122 @@ document.addEventListener('focusin', e => {
   if (t instanceof HTMLInputElement && t.matches('form.compose input[name="id"]')) { t.select(); picked = t; }
 });
 document.addEventListener('mouseup', e => { if (picked && e.target === picked) e.preventDefault(); picked = null; });
-// On a phone, Today's composer is its one line until it is used. It stays open while focus is in it, and for a moment
-// after focus leaves it empty, so a tap on Codex cloud (which takes no focus) lands before the controls fold away.
-document.addEventListener('focusin', e => {
-  const form = e.target.closest && e.target.closest('.c-strip form.compose');
-  if (form) { clearTimeout(form.shut); form.dataset.open = ''; }
+// Two modes share one app: Coding runs on Codex cloud or this Mac, Research asks GPT Pro. The choice is per viewer.
+let mode = 'coding';
+try { if (localStorage.getItem('rh-mode') === 'research') mode = 'research'; } catch { /* storage may be blocked */ }
+const PROMPTS = {'gpt-chat': 'Ask a research question…', 'codex-cloud': 'Describe what to build or fix…',
+                 'local-agent': 'Describe what to build or fix…',
+                 'local-shell': '$ a shell command, like pytest -q'};
+function applyMode() {
+  document.documentElement.dataset.mode = mode;
+  for (const t of $$('[role="tab"][data-mode]')) t.setAttribute('aria-selected', String(t.dataset.mode === mode));
+  const title = $('#compose-title');
+  if (title) title.textContent = mode === 'research' ? 'What should we find out?' : 'What are we building?';
+  for (const kind of $$('form.compose select[name="kind"]')) {
+    const research = kind.value === 'gpt-chat';
+    if (research !== (mode === 'research')) {
+      const cloud = kind.querySelector('option[value="codex-cloud"]');
+      kind.value = mode === 'research' ? 'gpt-chat'
+        : (cloud && !/setup required/.test(cloud.textContent) ? 'codex-cloud' : 'local-agent');
+    }
+    requireCommand(kind);
+  }
+  if (show && (mode === 'research') !== (show === 'chat')) { show = ''; filter(); }
+}
+document.addEventListener('click', e => {
+  const tab = e.target.closest('[role="tab"][data-mode]');
+  if (!tab || tab.dataset.mode === mode) return;
+  mode = tab.dataset.mode;
+  try { localStorage.setItem('rh-mode', mode); } catch { /* the choice lasts this page only */ }
+  applyMode();
 });
-document.addEventListener('focusout', e => {
-  const form = e.target.closest && e.target.closest('.c-strip form.compose');
-  if (form) form.shut = setTimeout(() => { if (!form.contains(document.activeElement)) delete form.dataset.open; }, 400);
-});
+function requireCommand(worker) {
+  const form = worker.form;
+  const brief = form.elements.namedItem('brief');
+  if (brief) brief.placeholder = PROMPTS[worker.value] || 'Describe a coding or research job…';
+  form.elements.namedItem('accept').disabled = worker.value === 'gpt-chat';
+  for (const choice of $$('[data-route]', form)) {
+    choice.hidden = choice.dataset.route !== worker.value;
+    if (choice instanceof HTMLSelectElement) choice.disabled = choice.hidden;
+  }
+  const label = $('[data-worker-name]', form.parentElement);
+  if (label) label.textContent = worker.selectedOptions[0].text.split(/\s*·\s*/)[0];
+  const models = $('.model-picker', form);
+  if (models) syncModel(models);
+  syncEffort(form);
+}
+// The field behind everything is drawn, not loaded: a halftone scene in the chosen colour, redrawn on resize.
+function drawField() {
+  const bg = window.RHBackground;
+  const field = $('.bg-field');
+  if (!bg || !field) return;
+  const {background, tint} = document.body.dataset;
+  field.hidden = background === 'off';
+  if (!field.hidden) bg.render(field, {preset: background, tint, width: innerWidth, height: innerHeight});
+}
+function drawPreviews() {
+  const bg = window.RHBackground;
+  if (!bg) return;
+  // A scene drawn at thumbnail size is a handful of dots; draw it at window size and shrink it instead.
+  const big = document.createElement('canvas');
+  for (const c of $$('canvas.background-preview')) {
+    bg.render(big, {preset: c.dataset.preview, tint: document.body.dataset.tint, width: 1440, height: 900, dpr: 1});
+    c.width = 264; c.height = 160;
+    const g = c.getContext('2d');
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(big, 0, 0, c.width, c.height);
+  }
+}
+let fieldTimer = 0;
+addEventListener('resize', () => { clearTimeout(fieldTimer); fieldTimer = setTimeout(drawField, 120); });
+drawField();
+setTimeout(drawPreviews, 300);
+let savedBackground = document.body.dataset.background;
+let savedTint = document.body.dataset.tint;
+let appearanceSave = Promise.resolve();
+function chooseBackground(choice) {
+  const key = choice.name;
+  const chosen = choice.value;
+  const form = choice.form;
+  const body = new URLSearchParams(new FormData(form));
+  document.body.dataset[key] = chosen;
+  drawField();
+  if (key === 'tint') drawPreviews();
+  appearanceSave = appearanceSave.then(async () => {
+    const response = await fetch(form.action, {method: 'POST', body});
+    if (!response.ok) throw new Error('Appearance could not be saved');
+    if (key === 'tint') savedTint = chosen; else savedBackground = chosen;
+  }).catch(() => {
+    if (document.body.dataset[key] === chosen) {
+      const saved = key === 'tint' ? savedTint : savedBackground;
+      document.body.dataset[key] = saved;
+      form.elements.namedItem(key).value = saved;
+      drawField();
+      if (key === 'tint') drawPreviews();
+    }
+    toast('Appearance could not be saved.', false, '');
+  });
+}
 document.addEventListener('change', e => {
-  const form = e.target.closest && e.target.closest('form.compose');
-  if (!form) return;
-  const cmd = form.elements.namedItem('command'), k = form.querySelector('input[name="kind"]:checked');
-  if (cmd && k) cmd.required = k.value === 'local-shell';
+  if (e.target.matches('[data-job-filter]')) {
+    show = e.target.value;
+    filter();
+  } else if (e.target.matches('form.compose select[name="kind"]')) {
+    requireCommand(e.target);
+  } else if (e.target.matches('[data-appearance] input:is([name="background"], [name="tint"])')) {
+    chooseBackground(e.target);
+  }
 });
+document.addEventListener('invalid', e => {
+  const options = e.target.closest('form.compose details.opts');
+  if (options) options.open = true;
+}, true);
 
-const items = () => $$('.pane a.item, .pane a.ib').filter(el => el.getClientRects().length || el.parentElement.getClientRects().length);
+const items = () => $($('.ibx') && !$('.app').classList.contains('side-open') ? '.ibx' : '.side .jobs')
+  ?.querySelectorAll('a.item, a.ib');
 function move(step) {
-  const list = items();
+  if (compact.matches && sidebarToggle && !$('.ibx') && !$('.app').classList.contains('side-open')) setSidebar(true);
+  const list = Array.from(items() || []).filter(el => el.getClientRects().length || el.parentElement.getClientRects().length);
   if (!list.length) return;
   const cur = document.activeElement && document.activeElement.closest('a.item, a.ib');
   let i = list.indexOf(cur);
@@ -1101,6 +1253,9 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     const d = t.closest && t.closest('details[open]');
     if (d) { d.open = false; $('summary', d).focus(); e.preventDefault(); return; }
+    if ($('.app').classList.contains('side-open') && !$('dialog[open]')) {
+      setSidebar(false, true); e.preventDefault(); return;
+    }
     if (t.matches && t.matches('input, textarea')) { t.blur(); e.preventDefault(); return; }
     const last = $('.toasts .toast:last-child');
     if (last && !$('dialog[open]')) { drop(last); e.preventDefault(); }
@@ -1130,15 +1285,585 @@ document.addEventListener('keydown', e => {
 document.addEventListener('visibilitychange', () => { if (!document.hidden) poll(); });
 
 const keysButton = $('[data-keys]');
-if (keysButton) { keysButton.hidden = false; keysButton.addEventListener('click', () => $('#keys').showModal()); }
+if (sidebarToggle) {
+  document.documentElement.classList.add('has-sidebar-toggle');
+  compact.addEventListener('change', () => setSidebar(false));
+}
+if (keysButton) {
+  keysButton.hidden = false;
+  keysButton.addEventListener('click', () => { $('#settings').close(); $('#keys').showModal(); });
+}
 const first = $('#result');
 if (first) { report(first); first.remove(); }
 skew = (+document.body.dataset.now || Date.now() / 1000) - Date.now() / 1000;
 clock();
 mark();
 filter();
+applyMode();
 (document.fonts ? document.fonts.ready : Promise.resolve()).then(() => { fonts = true; wake(); });
 setInterval(clock, 1000);
 live('on');
 timer = setTimeout(poll, pace());
+
+
+// "+" opens a file picker over the composer: the repository's tracked files, filtered as you type.
+let repoFiles = null, filesFor = null, fileRows = [], fileAt = 0;
+async function loadFiles() {
+  if (repoFiles) return repoFiles;
+  const t = new URLSearchParams(location.search).get('t') || '';
+  try {
+    const r = await fetch('/files?t=' + encodeURIComponent(t));
+    repoFiles = r.ok ? (await r.json()).files : [];
+  } catch { repoFiles = []; }
+  return repoFiles;
+}
+function attach(form, path) {
+  form.elements.namedItem('input_path').value = path;
+  const chip = $('.file-chip', form);
+  chip.hidden = !path;
+  chip.title = path;
+  $('.file-name', chip).textContent = path.split('/').pop();
+}
+function filePanel() {
+  let pick = $('.file-pick');
+  if (pick) return pick;
+  pick = document.createElement('div');
+  pick.className = 'file-pick';
+  pick.setAttribute('role', 'dialog');
+  pick.setAttribute('aria-label', 'Attach a repository file');
+  pick.hidden = true;
+  const search = document.createElement('input');
+  search.className = 'file-search';
+  search.type = 'search';
+  search.placeholder = 'Search files…';
+  search.setAttribute('aria-label', 'Search the repository');
+  search.autocomplete = 'off';
+  search.spellcheck = false;
+  const list = document.createElement('ul');
+  list.className = 'file-list';
+  list.setAttribute('role', 'listbox');
+  pick.append(search, list);
+  document.body.append(pick);
+  document.dispatchEvent(new Event('rh:page'));
+  search.addEventListener('input', () => listFiles(search.value));
+  search.addEventListener('keydown', e => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (fileRows.length) { fileAt = (fileAt + (e.key === 'ArrowDown' ? 1 : -1) + fileRows.length) % fileRows.length; lightFile(); }
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (fileRows[fileAt]) chooseFile(fileRows[fileAt].dataset.path);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeFiles();
+    }
+  });
+  list.addEventListener('mousedown', e => {
+    const row = e.target.closest('.file-row');
+    if (row) { e.preventDefault(); chooseFile(row.dataset.path); }
+  });
+  return pick;
+}
+function listFiles(query) {
+  const list = $('.file-pick .file-list');
+  const q = query.trim().toLowerCase();
+  const all = repoFiles || [];
+  const scored = [];
+  for (const path of all) {
+    const low = path.toLowerCase(), base = low.slice(low.lastIndexOf('/') + 1);
+    const at = q ? low.indexOf(q) : 0;
+    if (at < 0) continue;
+    scored.push([q ? (base.startsWith(q) ? 0 : base.includes(q) ? 1 : 2) : 0, path.length, path]);
+  }
+  scored.sort((a, b) => a[0] - b[0] || a[1] - b[1] || (a[2] < b[2] ? -1 : 1));
+  list.replaceChildren();
+  fileRows = [];
+  for (const [, , path] of scored.slice(0, 80)) {
+    const row = document.createElement('li');
+    row.className = 'file-row';
+    row.setAttribute('role', 'option');
+    row.dataset.path = path;
+    const cut = path.lastIndexOf('/');
+    const name = document.createElement('span');
+    name.className = 'file-row-name';
+    name.textContent = path.slice(cut + 1);
+    const dir = document.createElement('span');
+    dir.className = 'file-row-dir';
+    dir.textContent = cut > 0 ? path.slice(0, cut) : '';
+    const icon = $('.file-chip .ic', filesFor || document);
+    if (icon) row.append(icon.cloneNode(true));
+    row.append(name, dir);
+    list.append(row);
+    fileRows.push(row);
+  }
+  if (!fileRows.length) {
+    const none = document.createElement('li');
+    none.className = 'file-none';
+    none.textContent = repoFiles === null ? 'Loading files…' : all.length ? 'No file matches' : 'No tracked files in this repository';
+    list.append(none);
+  }
+  fileAt = 0;
+  lightFile();
+}
+function lightFile() {
+  fileRows.forEach((row, i) => row.setAttribute('aria-selected', String(i === fileAt)));
+  if (fileRows[fileAt]) fileRows[fileAt].scrollIntoView({block: 'nearest'});
+}
+async function openFiles(button) {
+  const pick = filePanel();
+  filesFor = button.form;
+  const r = button.getBoundingClientRect();
+  const width = Math.min(420, innerWidth - 24);
+  pick.style.width = width + 'px';
+  pick.style.left = Math.max(12, Math.min(r.left - 6, innerWidth - width - 12)) + 'px';
+  const above = r.top > 340;
+  pick.style.top = above ? '' : (r.bottom + 8) + 'px';
+  pick.style.bottom = above ? (innerHeight - r.top + 8) + 'px' : '';
+  pick.hidden = false;
+  const search = $('.file-search', pick);
+  search.value = '';
+  listFiles('');
+  search.focus();
+  await loadFiles();
+  if (!pick.hidden) listFiles(search.value);
+}
+function chooseFile(path) {
+  if (filesFor) attach(filesFor, path);
+  const brief = filesFor && $('textarea.c-text', filesFor);
+  closeFiles();
+  if (brief) brief.focus();
+}
+function closeFiles() {
+  const pick = $('.file-pick');
+  if (pick) pick.hidden = true;
+}
+
+// Liquid glass needs an SVG filter as a backdrop, which only Chromium draws; elsewhere surfaces stay frosted.
+if (/Chrome\//.test(navigator.userAgent)) document.documentElement.classList.add('lg-on');
+
+// The sidebar is docked to the left edge: drag its edge to resize it, hide it to give the work the whole window.
+const root = document.documentElement;
+try {
+  const w = +localStorage.getItem('rh-side');
+  if (w >= 200 && w <= 440) root.style.setProperty('--side', w + 'px');
+  if (localStorage.getItem('rh-side-hidden') === '1') root.classList.add('side-hidden');
+} catch { /* defaults */ }
+function sideWidth(w) {
+  w = Math.round(Math.max(200, Math.min(440, w)));
+  root.style.setProperty('--side', w + 'px');
+  try { localStorage.setItem('rh-side', String(w)); } catch { /* this page only */ }
+}
+function hideSide(hidden) {
+  root.classList.toggle('side-hidden', hidden);
+  try { localStorage.setItem('rh-side-hidden', hidden ? '1' : '0'); } catch { /* this page only */ }
+}
+document.addEventListener('pointerdown', e => {
+  const grip = e.target.closest && e.target.closest('.side-grip');
+  if (!grip || compact.matches) return;
+  e.preventDefault();
+  grip.setPointerCapture(e.pointerId);
+  root.classList.add('side-dragging');
+  const move = ev => sideWidth(ev.clientX);
+  const stop = () => {
+    root.classList.remove('side-dragging');
+    grip.removeEventListener('pointermove', move);
+    grip.removeEventListener('pointerup', stop);
+    grip.removeEventListener('pointercancel', stop);
+  };
+  grip.addEventListener('pointermove', move);
+  grip.addEventListener('pointerup', stop);
+  grip.addEventListener('pointercancel', stop);
+});
+document.addEventListener('keydown', e => {
+  if (e.target.matches && e.target.matches('.side-grip') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault();
+    sideWidth(parseFloat(getComputedStyle(root).getPropertyValue('--side')) + (e.key === 'ArrowRight' ? 16 : -16));
+  }
+});
+document.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('[data-collapse-side]')) { hideSide(true); return; }
+  const toggle = e.target.closest && e.target.closest('.sidebar-toggle');
+  if (toggle && !compact.matches && root.classList.contains('side-hidden')) {
+    e.stopImmediatePropagation();
+    hideSide(false);
+  }
+}, true);
+
+// Job settings rows show their current value; editing a row updates it.
+const NEED_WORDS = {net: 'Internet', python: 'Python', git: 'Git', loopback: 'Local ports', browser: 'Browser', gpu: 'GPU'};
+function minutesText(m) {
+  const h = Math.floor(m / 60), r = m % 60;
+  return h && r ? `${h} h ${r} min` : h ? `${h} h` : `${r} min`;
+}
+function rowValue(row) {
+  const out = $('[data-op-val]', row);
+  if (!out) return;
+  const time = $('input[name="timeout_min"]:checked', row);
+  const place = $('input[name="answer"]:checked', row);
+  if (place) { out.textContent = place.nextElementSibling.textContent; return; }
+  const needs = $$('input[name="needs"]', row);
+  const text = $('input[type="text"]', row);
+  if (time) out.textContent = minutesText(+time.value);
+  else if (needs.length) out.textContent = needs.filter(n => n.checked).map(n => NEED_WORDS[n.value] || n.value).join(', ') || 'Nothing special';
+  else if (text) {
+    const empty = {accept: "Don't test", command: 'Run the brief', id: 'From the brief'}[text.name] || '';
+    out.textContent = text.value.trim() || empty;
+  }
+}
+document.addEventListener('input', e => { const row = e.target.closest && e.target.closest('.op-row'); if (row) rowValue(row); });
+document.addEventListener('change', e => { const row = e.target.closest && e.target.closest('.op-row'); if (row) rowValue(row); });
+document.addEventListener('toggle', e => {
+  const row = e.target;
+  if (!(row instanceof HTMLDetailsElement) || !row.matches('.op-row') || !row.open) return;
+  for (const other of $$('.op-row[open]', row.parentElement)) if (other !== row) other.open = false;
+  const field = $('input[type="text"]', row);
+  if (field) field.focus();
+}, true);
+
+// Model picker, after T3 Code's: a provider rail, a search across every model, rows with the provider's mark and a
+// check on the chosen one. The hidden select keeps the value the form sends.
+const CHECK_SVG = '<svg class="ic sm" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+function liveModelSelect(picker) { return $$('select[name="model"]', picker).find(s => !s.disabled) || null; }
+function syncModel(picker) {
+  const select = liveModelSelect(picker), name = $('.mp-name', picker), trigger = $('.mp-trigger', picker);
+  if (trigger) trigger.hidden = !select;
+  if (select && name) name.textContent = (select.selectedOptions[0] || select.options[0] || {textContent: ''}).textContent.trim();
+}
+function closeModels(refocus) {
+  if (!modelPanel) return;
+  const {panel, trigger} = modelPanel;
+  modelPanel = null;
+  panel.remove();
+  trigger.setAttribute('aria-expanded', 'false');
+  if (refocus && trigger.isConnected) trigger.focus({preventScroll: true});
+}
+function markFor(picker, name) {
+  const tpl = $('.mp-marks', picker);
+  const mark = tpl && tpl.content.querySelector(`[data-mark="${name}"] svg`);
+  return mark ? mark.cloneNode(true) : document.createElement('span');
+}
+function openModels(trigger) {
+  const picker = trigger.closest('.model-picker');
+  const select = liveModelSelect(picker);
+  if (!select) return;
+  closeModels(false);
+  closeEffort(false);
+  const options = [...select.options];
+  const groups = [];
+  for (const o of options) {
+    const prov = o.dataset.prov || 'openai';
+    let g = groups.find(x => x.prov === prov);
+    if (!g) groups.push(g = {prov, label: o.parentElement.label || 'OpenAI', options: []});
+    g.options.push(o);
+  }
+  let prov = (select.selectedOptions[0] || options[0]).dataset.prov || groups[0].prov;
+  let highlight = 0;
+
+  const panel = document.createElement('div');
+  panel.className = 'mp-pop';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Choose a model');
+  const rail = document.createElement('div');
+  rail.className = 'mp-rail';
+  rail.setAttribute('role', 'toolbar');
+  rail.setAttribute('aria-orientation', 'vertical');
+  rail.setAttribute('aria-label', 'Providers');
+  rail.hidden = groups.length < 2;
+  const bar = document.createElement('span');
+  bar.className = 'mp-bar';
+  rail.append(bar);
+  for (const g of groups) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'mp-prov';
+    b.dataset.prov = g.prov;
+    b.title = g.label;
+    b.setAttribute('aria-label', g.label);
+    b.append(markFor(picker, g.prov === 'devin' ? 'cognition' : g.prov));
+    b.addEventListener('click', () => { prov = g.prov; query.value = ''; highlight = 0; render(); query.focus(); });
+    rail.append(b);
+  }
+  const main = document.createElement('div');
+  main.className = 'mp-main';
+  const query = document.createElement('input');
+  query.type = 'text';
+  query.className = 'mp-q';
+  query.placeholder = 'Search models…';
+  query.autocomplete = 'off';
+  query.spellcheck = false;
+  query.setAttribute('aria-label', 'Search models');
+  const list = document.createElement('div');
+  list.className = 'mp-list';
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-label', 'Models');
+  main.append(query, list);
+  panel.append(rail, main);
+
+  function shown() {
+    const term = query.value.trim().toLowerCase();
+    return term ? options.filter(o => o.textContent.toLowerCase().includes(term))
+                : options.filter(o => (o.dataset.prov || 'openai') === prov);
+  }
+  function choose(o) {
+    select.value = o.value;
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+    syncModel(picker);
+    closeModels(true);
+  }
+  function render() {
+    const rows = shown();
+    highlight = Math.max(0, Math.min(highlight, rows.length - 1));
+    list.replaceChildren(...rows.map((o, i) => {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'mp-row' + (i === highlight ? ' hi' : '');
+      row.dataset.prov = o.dataset.prov || 'openai';
+      row.setAttribute('role', 'option');
+      row.setAttribute('aria-selected', String(o.selected));
+      const name = document.createElement('span');
+      name.className = 'mp-n';
+      name.textContent = o.textContent.trim();
+      row.append(markFor(picker, row.dataset.prov), name);
+      if (o.selected) row.insertAdjacentHTML('beforeend', CHECK_SVG);
+      row.addEventListener('click', () => choose(o));
+      row.addEventListener('pointermove', () => {
+        if (highlight === i) return;
+        highlight = i;
+        for (const [n, r] of [...list.children].entries()) r.classList.toggle('hi', n === i);
+      });
+      return row;
+    }));
+    if (!rows.length) {
+      const empty = document.createElement('p');
+      empty.className = 'mp-empty';
+      empty.textContent = 'No models match';
+      list.append(empty);
+    }
+    const searching = query.value.trim() !== '';
+    for (const b of $$('button', rail)) b.setAttribute('aria-pressed', String(!searching && b.dataset.prov === prov));
+    const on = !searching && $(`button[data-prov="${prov}"]`, rail);
+    bar.hidden = !on;
+    if (on) bar.style.top = (on.offsetTop + on.offsetHeight / 2 - 10) + 'px';
+  }
+  query.addEventListener('input', () => { highlight = 0; render(); });
+  panel.addEventListener('keydown', e => {
+    const rows = shown();
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeModels(true); }
+    else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      highlight = (highlight + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % Math.max(rows.length, 1);
+      render();
+      const hi = $('.mp-row.hi', list);
+      if (hi) hi.scrollIntoView({block: 'nearest'});
+    } else if (e.key === 'Enter' && e.target === query && rows[highlight]) { e.preventDefault(); choose(rows[highlight]); }
+    else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && e.target === query && !query.value && groups.length > 1) {
+      e.preventDefault();
+      const at = groups.findIndex(g => g.prov === prov);
+      prov = groups[(at + (e.key === 'ArrowRight' ? 1 : -1) + groups.length) % groups.length].prov;
+      highlight = 0;
+      render();
+    }
+  });
+
+  // One height for every provider, so switching tabs never resizes the panel.
+  const tallest = Math.max(...groups.map(g => g.options.length));
+  panel.style.height = Math.min(346, 40 + 12 + tallest * 34 - 2 + 2) + 'px';
+  document.body.append(panel);
+  const r = trigger.getBoundingClientRect(), h = panel.offsetHeight, w = panel.offsetWidth;
+  panel.style.left = Math.max(8, Math.min(r.left - 4, innerWidth - w - 8)) + 'px';
+  if (innerHeight - r.bottom - 8 >= h + 6 || r.top < h + 14) panel.style.top = (r.bottom + 6) + 'px';
+  else panel.style.top = (r.top - h - 6) + 'px';
+  trigger.setAttribute('aria-expanded', 'true');
+  modelPanel = {panel, trigger};
+  render();
+  query.focus({preventScroll: true});
+}
+document.addEventListener('click', e => {
+  const trigger = e.target.closest && e.target.closest('.mp-trigger');
+  if (trigger) {
+    const same = modelPanel && modelPanel.trigger === trigger;
+    closeModels(false);
+    if (!same) openModels(trigger);
+    return;
+  }
+  if (modelPanel && !modelPanel.panel.contains(e.target)) closeModels(false);
+});
+addEventListener('resize', () => closeModels(false));
+document.addEventListener('scroll', e => { if (modelPanel && !modelPanel.panel.contains(e.target)) closeModels(false); }, true);
+document.addEventListener('rh:page', () => {
+  if (modelPanel && !modelPanel.trigger.isConnected) closeModels(false);
+  for (const picker of $$('.model-picker')) syncModel(picker);
+});
+for (const picker of $$('.model-picker')) syncModel(picker);
+
+// Reasoning effort, after Codex's power slider: one stop per level the chosen model's CLI knows; the stops the dated
+// policy does not allow stay visible but cannot be chosen. The hidden select keeps the value the form sends.
+function effortState(form) {
+  const select = $$('select[name="effort"]', form).find(s => !s.hidden) || null;
+  const model = $$('select[name="model"]', form).find(s => !s.disabled);
+  const option = model && model.selectedOptions[0];
+  const words = key => (option && option.dataset[key] ? option.dataset[key].split(' ') : []);
+  return {select, levels: words('levels'), allowed: words('efforts'), option};
+}
+function syncEffort(form) {
+  const picker = $('.effort-picker', form);
+  if (!picker) return;
+  const {select, allowed} = effortState(form);
+  const trigger = $('.ef-trigger', picker);
+  const off = !select || !allowed.length;
+  if (select) select.disabled = off;
+  if (trigger) trigger.hidden = off;
+  if (off) { if (effortPanel && effortPanel.form === form) closeEffort(false); return; }
+  if (!allowed.includes(select.value)) select.value = allowed[allowed.length - 1];
+  $('.ef-name', picker).textContent = EFFORT_WORDS[select.value] || select.value;
+}
+function closeEffort(refocus) {
+  if (!effortPanel) return;
+  const {panel, trigger} = effortPanel;
+  effortPanel = null;
+  panel.remove();
+  trigger.setAttribute('aria-expanded', 'false');
+  if (refocus && trigger.isConnected) trigger.focus({preventScroll: true});
+}
+function openEffort(trigger) {
+  const form = trigger.form || trigger.closest('form');
+  const {select, levels, allowed, option} = effortState(form);
+  if (!select || !allowed.length) return;
+  closeModels(false);
+  closeEffort(false);
+  const panel = document.createElement('div');
+  panel.className = 'ef-pop';
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Reasoning effort');
+  const head = document.createElement('div');
+  head.className = 'ef-head';
+  const title = document.createElement('span');
+  title.className = 'ef-title';
+  title.textContent = 'Reasoning effort';
+  const value = document.createElement('span');
+  value.className = 'ef-val';
+  head.append(title, value);
+  const slider = document.createElement('div');
+  slider.className = 'ef-slider';
+  slider.tabIndex = 0;
+  slider.setAttribute('role', 'slider');
+  slider.setAttribute('aria-label', 'Reasoning effort');
+  slider.setAttribute('aria-valuemin', '0');
+  slider.setAttribute('aria-valuemax', String(levels.length - 1));
+  const track = document.createElement('div');
+  track.className = 'ef-track';
+  track.dataset.locked = String(allowed.length === 1);
+  const range = document.createElement('div');
+  range.className = 'ef-range';
+  track.append(range);
+  const ticks = levels.map(key => {
+    const t = document.createElement('span');
+    t.className = 'ef-tick' + (allowed.includes(key) ? '' : ' locked');
+    t.title = EFFORT_WORDS[key] + (allowed.includes(key) ? '' : ' (not in the policy)');
+    track.append(t);
+    return t;
+  });
+  const thumb = document.createElement('span');
+  thumb.className = 'ef-thumb';
+  slider.append(track, thumb);
+  const ends = document.createElement('div');
+  ends.className = 'ef-ends';
+  const low = document.createElement('span'), high = document.createElement('span');
+  low.textContent = EFFORT_WORDS[levels[0]];
+  high.textContent = EFFORT_WORDS[levels[levels.length - 1]];
+  ends.append(low, high);
+  const note = document.createElement('p');
+  note.className = 'ef-note';
+  panel.append(head, slider, ends, note);
+
+  const at = i => 12 + i * (slider.clientWidth - 24) / Math.max(levels.length - 1, 1);
+  function paint() {
+    const i = Math.max(0, levels.indexOf(select.value));
+    value.textContent = EFFORT_WORDS[select.value];
+    slider.dataset.level = select.value;
+    slider.setAttribute('aria-valuenow', String(i));
+    slider.setAttribute('aria-valuetext', EFFORT_WORDS[select.value]);
+    thumb.style.left = at(i) + 'px';
+    range.style.width = (at(i) + 12) + 'px';
+    ticks.forEach((t, n) => { t.style.left = at(n) + 'px'; t.classList.toggle('on', n <= i); });
+    const provider = option.closest('optgroup') ? option.closest('optgroup').label : 'this model';
+    note.textContent = allowed.length < levels.length
+      ? `The policy allows ${allowed.map(k => EFFORT_WORDS[k]).join(', ')} for ${provider}.`
+      : (select.value === 'max' || select.value === 'ultra') ? 'Uses your limits faster.' : '';
+  }
+  function choose(key) {
+    if (!allowed.includes(key) || key === select.value) return;
+    select.value = key;
+    select.dispatchEvent(new Event('change', {bubbles: true}));
+    $('.ef-name', form).textContent = EFFORT_WORDS[key];
+    paint();
+  }
+  function nearest(x) {
+    const r = slider.getBoundingClientRect();
+    let best = null, gap = Infinity;
+    levels.forEach((key, n) => {
+      const d = Math.abs(r.left + at(n) - x);
+      if (allowed.includes(key) && d < gap) { gap = d; best = key; }
+    });
+    return best;
+  }
+  slider.addEventListener('pointerdown', e => {
+    e.preventDefault();
+    slider.focus({preventScroll: true});
+    slider.setPointerCapture(e.pointerId);
+    slider.classList.add('dragging');
+    choose(nearest(e.clientX));
+    const move = ev => choose(nearest(ev.clientX));
+    const stop = () => {
+      slider.classList.remove('dragging');
+      slider.removeEventListener('pointermove', move);
+      slider.removeEventListener('pointerup', stop);
+      slider.removeEventListener('pointercancel', stop);
+    };
+    slider.addEventListener('pointermove', move);
+    slider.addEventListener('pointerup', stop);
+    slider.addEventListener('pointercancel', stop);
+  });
+  panel.addEventListener('keydown', e => {
+    const i = allowed.indexOf(select.value);
+    if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); closeEffort(true); }
+    else if (e.key === 'ArrowRight' || e.key === 'ArrowUp') { e.preventDefault(); choose(allowed[Math.min(i + 1, allowed.length - 1)]); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') { e.preventDefault(); choose(allowed[Math.max(i - 1, 0)]); }
+    else if (e.key === 'Home') { e.preventDefault(); choose(allowed[0]); }
+    else if (e.key === 'End') { e.preventDefault(); choose(allowed[allowed.length - 1]); }
+  });
+
+  document.body.append(panel);
+  const r = trigger.getBoundingClientRect(), h = panel.offsetHeight, w = panel.offsetWidth;
+  panel.style.left = Math.max(8, Math.min(r.left - 4, innerWidth - w - 8)) + 'px';
+  panel.style.top = ((innerHeight - r.bottom - 8 >= h + 6 || r.top < h + 14) ? r.bottom + 6 : r.top - h - 6) + 'px';
+  trigger.setAttribute('aria-expanded', 'true');
+  effortPanel = {panel, trigger, form};
+  paint();
+  slider.focus({preventScroll: true});
+}
+document.addEventListener('click', e => {
+  const trigger = e.target.closest && e.target.closest('.ef-trigger');
+  if (trigger) {
+    const same = effortPanel && effortPanel.trigger === trigger;
+    closeEffort(false);
+    if (!same) openEffort(trigger);
+    return;
+  }
+  if (effortPanel && !effortPanel.panel.contains(e.target)) closeEffort(false);
+});
+document.addEventListener('change', e => {
+  if (!(e.target.matches && e.target.matches('select[name="model"]') && e.target.form)) return;
+  const models = e.target.closest('.model-picker');
+  if (models) syncModel(models);
+  syncEffort(e.target.form);
+});
+addEventListener('resize', () => closeEffort(false));
+document.addEventListener('scroll', e => { if (effortPanel && !effortPanel.panel.contains(e.target)) closeEffort(false); }, true);
+document.addEventListener('rh:page', () => {
+  if (effortPanel && !effortPanel.trigger.isConnected) closeEffort(false);
+  for (const picker of $$('.effort-picker')) if (picker.closest('form')) syncEffort(picker.closest('form'));
+});
+for (const picker of $$('.effort-picker')) if (picker.closest('form')) syncEffort(picker.closest('form'));
 })();
+

@@ -115,6 +115,9 @@ def normalize(raw):
     else:
         spec.setdefault("accept", "")
     spec.setdefault("timeout_min", 120)
+    # An agent's last message (answer.md) is shown as a message on the job page ("chat") or listed as a file ("file").
+    if spec.get("answer", "chat") not in ("chat", "file"):
+        raise ContractError("answer must be chat or file")
     if spec["kind"] == "local-shell":
         cmd = spec.get("command")
         if not cmd or not isinstance(cmd, list) or not all(isinstance(a, str) for a in cmd):

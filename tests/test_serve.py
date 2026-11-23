@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import socket
 import subprocess
 import tempfile
@@ -185,7 +186,9 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(code, 200)
         for group in ("Needs you", "Live", "Up next", "Ended today"):
             self.assertIn(f">{group}</h3>", page)
-        self.assertIn(">What should run?</h1>", page)
+        self.assertIn(">What are we building?</h1>", page)
+        self.assertIn('data-mode="coding"', page)
+        self.assertIn('data-mode="research"', page)
         self.assertIn('/actions?t=serve-test-key', page)
         self.assertIn('/new?t=serve-test-key', page)
         self.assertIn('<noscript><meta http-equiv="refresh" content="30"></noscript>', page)
@@ -194,7 +197,7 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(page.count("<nav"), 1)
 
     def test_every_response_carries_the_security_headers_and_app_js_needs_no_token(self):
-        csp = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src data:; "
+        csp = ("default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; font-src 'self'; img-src 'self' data:; "
                "connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
         replies = [self.request(), self.request(token=False), self.request("/not-found"), self.request("/tick", {}),
                    self.request("/app.js", token=False), self.request("/job/ghost")]
@@ -238,6 +241,45 @@ class ServeTest(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertIn(self.raw(path)[0], (403, 404))
         self.assertIn("SIL Open Font License", (dashboard._WEB / "fonts" / "OFL.txt").read_text())
+
+    def test_halftone_is_a_bundled_same_origin_image(self):
+        for path in ("/halftone.webp", "/clouds.webp"):
+            code, headers, body = self.raw(path)
+            self.assertEqual((code, headers["Content-Type"]), (200, "image/webp"))
+            self.assertEqual(body[8:12], b"WEBP")
+            self.assertEqual(self.raw(path, {"Host": "external.test"})[0], 403)
+
+    def test_appearance_changes_require_auth_and_persist(self):
+        self.assertIn('data-background="beam" data-tint="cobalt"', self.request()[2])
+        self.assertEqual(self.request("/appearance", {"background": "off"}, token=False)[0], 403)
+        self.assertEqual(self.request("/appearance", {"background": "not-a-preset"})[0], 400)
+        self.assertEqual(self.request("/appearance", {"tint": "pink"})[0], 400)
+        self.assertEqual(self.request("/appearance", {"tint": "teal"})[0], 204)
+        self.assertIn('data-tint="teal"', self.request("/new")[2])
+        for preset in ("quiet", "clouds", "off", "arc", "aurora", "dunes", "orbit", "beam"):
+            self.assertEqual(self.request("/appearance", {"background": preset})[0], 204)
+            self.assertIn(f'data-background="{preset}"', self.request("/new")[2])
+            self.assertEqual(config.load(self.home)["appearance"]["background"], preset)
+
+    def test_the_file_picker_lists_tracked_files_behind_the_token(self):
+        self.assertEqual(self.request("/files", token=False)[0], 403)
+        code, _, body = self.request("/files")
+        self.assertEqual(code, 200)
+        listed = json.loads(body)["files"]
+        self.assertIsInstance(listed, list)
+        self.assertTrue(all(isinstance(name, str) and not name.startswith("/") for name in listed))
+
+    def test_composer_uses_the_configured_workspace_name_and_branch(self):
+        named = self.base / "harness-visual-test"
+        self.repo.rename(named)
+        self.cfg["repo"]["path"] = str(named)
+        page = self.request("/new")[2]
+        self.assertRegex(page, r'<span class="where-chip" title="Repository"><svg[^>]*>.*?</svg>harness-visual-test</span>')
+        self.assertRegex(page, r'<span class="where-chip" title="Branch"><svg[^>]*>.*?</svg>main</span>')
+        self.assertNotIn('compose-trail', page)
+        self.cfg["repo"]["path"] = str(self.base / "missing")
+        page = self.request("/new")[2]
+        self.assertNotIn('where-chip"', page)
 
     def test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address(self):
         # An Inbox that opens on an older item, a hand launch opened from it without its prompt, or an item address
@@ -547,16 +589,16 @@ class ServeTest(unittest.TestCase):
         self.assertIn("last &lt;line&gt; \ufffd", page)  # the tail, escaped, with undecodable bytes replaced
         self.assertIn("line 399", page)
         self.assertNotIn("line 199\n", page)  # only the last 200 lines
-        self.assertIn('<span class="lines mono">last 200 lines</span>', page)  # and it says so
+        self.assertIn('<span class="worked-output">Output<span class="sep">·</span>last 200 lines</span>', page)
         # Under 200 lines and 64 KB the page has the whole log; past 64 KB it has the end, in fewer than 200 lines.
         self.local_job("short-local", log=b"one\ntwo\nthree\n")
         page = self.request("/job/short-local")[2]
-        self.assertIn('<span class="lines mono">3 lines</span>', page)
-        self.assertIn('<span class="pg-s">lines so far</span>', page)
+        self.assertIn('<span class="worked-output">Output<span class="sep">·</span>3 lines</span>', page)
+        self.assertIn('class="job-result"', page)
+        self.assertNotIn('<div class="jd-prog">', page)
         self.local_job("wide-local", log=b"".join(b"%04d " % i + b"x" * 995 + b"\n" for i in range(100)))
         page = self.request("/job/wide-local")[2]
-        self.assertRegex(page, r'<span class="lines mono">last (6\d) lines</span>')
-        self.assertIn('<span class="pg-s">last lines</span>', page)
+        self.assertRegex(page, r'<span class="worked-output">Output<span class="sep">·</span>last (6\d) lines</span>')
         self.assertIn(f"Added to run on {dashboard.HERE}", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)
@@ -568,7 +610,8 @@ class ServeTest(unittest.TestCase):
     def test_new_job_goes_through_job_add_and_opens_the_job(self):
         brief = 'Survey "the" papers \\ on <agents>.\r\nLine two with a tab\tand \x7f and é.'
         fields = {"id": "lit-scan-03", "kind": "codex-cloud", "brief": brief, "accept": "notes.md exists",
-                  "timeout_min": "45", "command": ""}
+                  "timeout_min": "45", "command": "", "model": "gpt-6.1-sol", "effort": "max",
+                  "input_path": "README.md"}
         raw = urlencode({**fields, "t": self.token}).encode() + b"&needs=net&needs=git"
         code, headers, _ = self.request("/job", raw=raw)
         self.assertEqual(code, 303)
@@ -577,6 +620,8 @@ class ServeTest(unittest.TestCase):
             job = led.job("lit-scan-03")
         self.assertEqual(job["spec"]["brief"], brief.replace("\r\n", "\n"))
         self.assertEqual(job["spec"]["needs"], ["net", "git"])
+        self.assertEqual(job["spec"]["model"], {"requested": "gpt-6.1-sol", "effort": "max"})
+        self.assertEqual(job["spec"]["inputs"], [{"path": "README.md"}])
         self.assertEqual((job["spec"]["timeout_min"], job["spec"]["accept"]), (45, "notes.md exists"))
         self.assertEqual(job["pinned_sha"], self.sha)
         self.assertEqual(len(list((self.home / "uploads").glob("lit-scan-03-*.toml"))), 1)
@@ -590,12 +635,66 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(self.request("/job", local)[0], 303)
         with self.ledger() as led:
             self.assertEqual(led.job("say-hi")["spec"]["command"], ["python3", "-c", "print('hi there')"])
+        # The composer needs only the brief: the name comes from its words, and on This Mac the brief is the command.
+        self.assertEqual(self.request("/job", {"id": "", "kind": "local-shell", "brief": "echo hi there"})[0], 303)
+        self.assertEqual(self.request("/job", {"id": "", "kind": "local-shell", "brief": "echo hi there"})[0], 303)
+        with self.ledger() as led:
+            self.assertEqual(led.job("echo-hi-there")["spec"]["command"], ["echo", "hi", "there"])
+            self.assertIsNotNone(led.job("echo-hi-there-2"))
+        # Codex on this Mac is a local job that runs rh/agent.py on a copy of the repository, never the repo itself.
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/codex"):
+            self.assertEqual(self.request("/job", {"id": "", "kind": "local-agent", "brief": "fix the typo"})[0], 303)
+        with self.ledger() as led:
+            spec = led.job("fix-the-typo")["spec"]
+        self.assertEqual(spec["kind"], "local-shell")
+        self.assertEqual(spec["command"][1:], [str(Path(dashboard.__file__).with_name("agent.py")), "codex",
+                                               "/usr/local/bin/codex", str(self.cfg["repo"]["path"]), "fix the typo",
+                                               "-c", 'service_tier="default"'])
+        # a Claude or Devin model picks that provider's CLI, with the model passed through
+        for model, provider in (("claude-sonnet-5-5", "claude"), ("swe-2-high", "devin")):
+            with patch("rh.serve.shutil.which", return_value=f"/usr/local/bin/{provider}"):
+                self.assertEqual(self.request("/job", {"id": f"try-{provider}", "kind": "local-agent",
+                                                       "brief": "fix it", "model": model})[0], 303)
+            with self.ledger() as led:
+                command = led.job(f"try-{provider}")["spec"]["command"]
+            self.assertEqual(command[2:4], [provider, f"/usr/local/bin/{provider}"])
+            self.assertEqual(command[-2:], ["--model", model])
+        # the effort reaches each CLI in its own words, and only at a level the policy allows
+        for model, effort, tail, binary in (("claude-opus-5-5", "extra-high", ["--effort", "xhigh"], "claude"),
+                                            ("gpt-6.1-sol", "max", ["-c", 'model_reasoning_effort="max"'], "codex")):
+            with patch("rh.serve.shutil.which", return_value=f"/usr/local/bin/{binary}"):
+                self.request("/job", {"id": f"effort-{binary}", "kind": "local-agent", "brief": "fix it",
+                                      "model": model, "effort": effort})
+            with self.ledger() as led:
+                self.assertEqual(led.job(f"effort-{binary}")["spec"]["command"][-2:], tail)
+        # Codex on this Mac takes any level, in its own words; a level no policy names is refused
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/codex"):
+            self.request("/job", {"id": "codex-light", "kind": "local-agent", "brief": "fix it",
+                                  "model": "gpt-6.1-sol", "effort": "light"})
+            self.request("/job", {"id": "codex-turbo", "kind": "local-agent", "brief": "fix it",
+                                  "model": "gpt-6.1-sol", "effort": "turbo"})
+        with self.ledger() as led:
+            self.assertEqual(led.job("codex-light")["spec"]["command"][-2:], ["-c", 'model_reasoning_effort="low"'])
+            self.assertIsNone(led.job("codex-turbo"))
+        # the answer goes to the chat unless the composer asks for the file; anything else is refused
+        for answer, expect in (("", "chat"), ("file", "file"), ("inbox", None)):
+            with patch("rh.serve.shutil.which", return_value="/usr/local/bin/claude"):
+                self.request("/job", {"id": f"answer-{answer or 'default'}", "kind": "local-agent", "brief": "fix it",
+                                      "model": "claude-haiku-5-5", "answer": answer})
+            with self.ledger() as led:
+                job = led.job(f"answer-{answer or 'default'}")
+                self.assertEqual(job and job["spec"]["answer"], expect)
+        # a model outside the dated policy is refused
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/codex"):
+            self.request("/job", {"id": "", "kind": "local-agent", "brief": "use a banned model", "model": "gpt-9"})
+        with self.ledger() as led:
+            self.assertIsNone(led.job("use-a-banned-model"))
 
     def test_refused_new_job_returns_to_the_form_with_the_draft(self):
         cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},
-                 {"id": "no-command", "kind": "local-shell", "brief": "x <b>", "command": ""},
                  {"id": "bad-quote", "kind": "local-shell", "brief": "x <b>", "command": "echo 'open"},
                  {"id": "bad-time", "kind": "codex-cloud", "brief": "x <b>", "timeout_min": "-5"},
+                 {"id": "bad-input", "kind": "codex-cloud", "brief": "x <b>", "input_path": "../notes.md"},
                  {"id": "bad-need", "kind": "codex-cloud", "brief": "x <b>", "needs": "teleport"})
         for fields in cases:
             with self.subTest(fields=fields):
@@ -765,8 +864,39 @@ class ServeTest(unittest.TestCase):
                                  server.checks.thread.is_alive()))
         self.assertEqual((self.home / "runs" / "say-hi" / "hi.txt").read_text(), "hi")
         page = self.request("/job/say-hi")[2]
-        self.assertIn('Files in <span class="mono">runs/say-hi/</span>', page)
-        self.assertIn('/job/say-hi/file?p=hi.txt', page)
+        transcript = page.split('<aside class="jd-side"', 1)[0]
+        self.assertIn('aria-label="Files produced"', transcript)
+        self.assertIn('/job/say-hi/file?p=hi.txt', transcript)
+
+    def test_a_local_job_started_in_the_composer_has_a_live_session_and_receipt(self):
+        # Keep the command alive until the test has viewed its actual running page.
+        release = self.base / "release"
+        code = ("from pathlib import Path; import time\n"
+                "print('Comparing the two sets.', flush=True)\n"
+                f"while not Path({str(release)!r}).exists(): time.sleep(.05)\n"
+                "Path('proof.txt').write_text('checked')")
+        with patch.object(self.serve, "_BUSY", .1), patch.object(self.serve, "_FAST", .1):
+            server, origin, _ = self.served()
+            self.assertTrue(until(lambda: server.checks.last is not None))
+            try:
+                result = self.request("/job", {"id": "compare", "kind": "local-shell", "brief": "Compare both sets.",
+                                               "command": shlex.join([sys.executable, "-c", code]),
+                                               "accept": "test -s proof.txt"}, origin=origin)
+                self.assertEqual(result[0], 303)
+                log = self.home / "jobs" / "compare" / "out.log"
+                self.assertTrue(until(lambda: log.exists() and "Comparing the two sets." in log.read_text()))
+                page = self.request("/job/compare", origin=origin)[2]
+                self.assertIn('<div class="user-message">Compare both sets.</div>', page)
+                self.assertIn('<details class="worked"', page)
+                self.assertIn("Comparing the two sets.", page)
+                self.assertIn('<details class="jd-inspector"><summary>', page)
+                self.assertNotIn('class="context-ring"', page)
+            finally:
+                release.touch()
+            with self.ledger() as led:
+                self.assertTrue(until(lambda: led.job("compare")["state"] == "done"))
+                self.assertEqual([check["exit"] for check in led.receipt("compare")["checks"]], [0, 0])
+        self.assertEqual((self.home / "runs" / "compare" / "proof.txt").read_text(), "checked")
 
     def test_closing_the_app_closes_its_loops_ledger(self):
         # On Windows an open ledger.db cannot be removed, so a loop that keeps it open past close must fail.
@@ -782,13 +912,16 @@ class ServeTest(unittest.TestCase):
         # A rerun that overwrites the old job, drops what changed, or lets an unfinished job run twice must fail.
         old = self.finished_local("count-words", "failed", "command exited 2")
         code, headers, _ = self.request("/again", {"job": "count-words", "changed": "also count blank lines",
+                                                   "input_path": "README.md",
                                                    "next": "/job/count-words"})
         self.assertEqual((code, headers["Location"]), (303, "/job/count-words-r2?t=" + self.token))
         with self.ledger() as led:
             new = led.job("count-words-r2")["spec"]
             self.assertEqual(led.job("count-words")["state"], "failed")
+            self.assertEqual(led.job("count-words")["spec"]["inputs"], [])
         self.assertEqual((new["revision"], new["prior"], new["changed"]), (2, "count-words", "also count blank lines"))
         self.assertEqual(new["brief"], "Count the words.\n\nFollow-up: also count blank lines")
+        self.assertEqual(new["inputs"], [{"path": "README.md"}])
         self.assertEqual((new["write_root"], new["command"]), ("runs/count-words-r2/", old["command"]))
         self.assertIn('data-say="Added count-words-r2, the next run of count-words."',
                       self.request("/job/count-words-r2")[2])
@@ -796,6 +929,10 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             third = led.job("count-words-r3")["spec"]
         self.assertEqual((third["changed"], third["brief"]), ("run again with no changes", "Count the words."))
+        self.request("/again", {"job": "count-words", "input_path": "../outside", "next": "/job/count-words"})
+        self.assertIn("an input must be a path relative to the repository", self.request("/job/count-words")[2])
+        with self.ledger() as led:
+            self.assertIsNone(led.job("count-words-r4"))
         self.local_job("busy-one", "running")
         code, headers, _ = self.request("/again", {"job": "busy-one", "changed": "", "next": "/job/busy-one"})
         self.assertEqual(headers["Location"], "/job/busy-one?t=" + self.token)

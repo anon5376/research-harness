@@ -229,6 +229,17 @@ class ListsTest(unittest.TestCase):
             head = re.search(r'data-region="j-head".*?</section>', dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
             self.assertIn(f'<h1 tabindex="-1" data-clear title="Same brief">{jid}</h1>', head)
 
+    def test_the_open_job_is_always_in_the_sidebar(self):
+        # A job opened from its address after it fell off the recent list must still have a row to light, or the
+        # page header names a job the sidebar does not.
+        view = opened(live_view(), "finished-job", kind="local-shell")
+        view["recent"] = [r for r in view["recent"] if r["id"] != "finished-job"]
+        view["meta"] = {k: v for k, v in view.get("meta", {}).items() if k != "finished-job"}
+        side = re.search(r'<aside class="side".*?</aside>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        row = re.search(r'<li class="row" data-key="job:finished-job".*?</li>', side, re.S)
+        self.assertIsNotNone(row)
+        self.assertIn("Write the notes", row.group(0))
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs, and the All tab is the list's count; one kind needs no tabs, so the heading
         # keeps the count. A count shown both beside the heading and on the All tab, or a lone tab, must fail.
@@ -696,6 +707,9 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string in tests/x.py`"),
                          "<code>test_<wbr>rejects_<wbr>an_<wbr>accept_<wbr>that_<wbr>is_<wbr>not_<wbr>a_<wbr>string "
                          "in tests/<wbr>x.<wbr>py</code>")
+        # a long identifier moves whole to the next line, breaking only if wider than the column
+        self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string`"),
+                         '<code class="tok">test_rejects_an_accept_that_is_not_a_string</code>')
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without

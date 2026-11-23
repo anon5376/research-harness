@@ -449,7 +449,10 @@ def _md_inline(text):
         out.append(escape(text[at:m.start()]))
         code, bold, em, label, href = m.groups()
         if code is not None:
+            # short code never wraps; a long identifier moves whole to the next line and wraps only when wider than
+            # the column; a long phrase or path wraps at its own seams
             out.append(f'<code class="nw">{escape(code)}</code>' if len(code) <= 40 else
+                       f'<code class="tok">{escape(code)}</code>' if not re.search(r"[\s/]", code) else
                        f"<code>{_breaks(escape(code))}</code>")
         elif bold is not None:
             out.append(f"<strong>{_md_inline(bold)}</strong>")
@@ -2486,6 +2489,18 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     rows = [(row, where) for where in ("live", "not_started", "recent") for row in view.get(where, [])]
     known = {row["id"] for row, _ in rows}
     meta = view.get("meta") if isinstance(view.get("meta"), dict) else {}
+    # the open job always has a row, however far back it ended, so the sidebar lights what the header names
+    shown = opened.get("job") if opened else None
+    if isinstance(shown, dict) and shown.get("id") and shown["id"] not in known:
+        spec = shown.get("spec") if isinstance(shown.get("spec"), dict) else {}
+        state = shown.get("state")
+        rows.append(({"id": shown["id"], "state": state, "paused": False, "detail": shown.get("detail", ""),
+                      "external_id": shown.get("external_id")},
+                     "live" if state in _LIVE else "not_started" if state in _PRE else "recent"))
+        known.add(shown["id"])
+        if shown["id"] not in meta:
+            meta = {**meta, shown["id"]: {"brief": spec.get("brief", ""), "kind": shown.get("kind") or spec.get("kind", ""),
+                                          "created": shown.get("created"), "updated": shown.get("updated")}}
     ready = bool(view.get("cloud_ready"))
     asks, setup, native = {}, None, None
     for item in inbox:

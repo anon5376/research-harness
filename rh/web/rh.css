@@ -1735,3 +1735,5 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .lane .row a.item { column-gap: 8px; }
 /* An answer's heading reads as one statement: tight leading and lines of even length. */
 .assistant-message.md .md-title { line-height: 26px; text-wrap: balance; }
+/* A long identifier keeps whole: it moves to the next line, and breaks only when it is wider than the column. */
+.assistant-message.md code.tok { overflow-wrap: anywhere; word-break: normal; }

@@ -1716,8 +1716,8 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
   .sea-page > .dock > .c-strip { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
   .sea-page > .dock > .c-strip > .compose-intro { flex: 1; align-content: center; }
 }
-/* The line may break after the separator, so the id moves down whole and the reason keeps its last word. */
-.ib-s:has(> .ib-why) > .sep::after { content: "\200B"; }
+/* The line may break before the separator, so "· id" moves down together and no dot hangs at a line's end. */
+.ib-s:has(> .ib-why) > .ib-why::after { content: "\200B"; }
 /* A palette row's second line leads with its state at one left edge, so states read down one column; what follows
    (the id, or the shared name) truncates. */
 .p-s { flex-wrap: nowrap; justify-content: flex-start; }

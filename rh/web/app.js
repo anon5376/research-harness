@@ -924,6 +924,27 @@ async function copy(b) {
   setTimeout(() => { b.textContent = was; }, 1600);
 }
 
+// A fenced block in an answer offers Copy at its corner. The button sits in a wrapper beside the pre, not in it,
+// so it stays at the corner while long lines scroll; it names the code's id, so what is copied is the code alone.
+let codeN = 0;
+function codeCopies() {
+  for (const pre of $$('.assistant-message.md pre')) {
+    const code = $('code', pre);
+    if (!code || pre.parentElement.classList.contains('code-wrap')) continue;
+    if (!code.id) code.id = 'md-code-' + (codeN += 1);
+    const wrap = document.createElement('div');
+    wrap.className = 'code-wrap';
+    pre.replaceWith(wrap);
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'code-copy'; b.textContent = 'Copy';
+    b.dataset.copy = code.id;
+    b.setAttribute('aria-label', 'Copy code');
+    wrap.append(pre, b);
+  }
+}
+document.addEventListener('rh:page', codeCopies);
+codeCopies();
+
 // ───────── ⌘K: Raycast's window ─────────
 const pal = () => $('#pal');
 const rowsOf = d => $$('.p-row', d).filter(r => !r.hidden);

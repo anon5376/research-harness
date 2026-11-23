@@ -1015,6 +1015,23 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string`"),
                          '<code class="tok">test_rejects_an_accept_that_is_not_a_string</code>')
 
+    def test_a_code_block_in_an_answer_offers_to_copy_it(self):
+        # A code block with no Copy button, a button that copies its own label with the code (so the id must
+        # name the code element, not the pre), or a button a touch screen can never reveal, must fail.
+        self.assertIn("className = 'code-copy'", dashboard.SCRIPT)
+        self.assertIn("'rh:page', codeCopies", dashboard.SCRIPT)
+        self.assertIn("b.dataset.copy = code.id", dashboard.SCRIPT)
+        # the button lives in a wrapper beside the scrolling pre, or it drifts over the code when a long line scrolls
+        self.assertIn("wrap.append(pre, b)", dashboard.SCRIPT)
+        self.assertNotIn("pre.appendChild(b)", dashboard.SCRIPT)
+        self.assertIn("position: relative",
+                      dashboard.STYLE.split(".assistant-message.md .code-wrap {", 1)[1].split("}", 1)[0])
+        rule = dashboard.STYLE.split(".code-copy {", 1)[1].split("}", 1)[0]
+        self.assertIn("position: absolute", rule)
+        self.assertIn(".code-wrap:hover .code-copy", dashboard.STYLE)
+        self.assertIn(".code-wrap:focus-within .code-copy", dashboard.STYLE)
+        self.assertIn("@media (pointer: coarse) { .code-copy", dashboard.STYLE)
+
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without
         # their section and cost, must fail.
@@ -1237,6 +1254,7 @@ class DashboardTest(unittest.TestCase):
         self.assertGreaterEqual(len(selected), 15)
         view = opened(live_view(), "live-job")
         view["open"]["log"] = "out"
+        view["open"]["answer"] = "Fixed it."  # a markdown answer, so .assistant-message.md renders
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
                  + dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN) + inbox(live_view()))
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())

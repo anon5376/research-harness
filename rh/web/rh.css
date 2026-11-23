@@ -1355,7 +1355,14 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
   border-radius: 5px; background: rgb(255 255 255 / .07); }
 .assistant-message.md pre { margin: 0; padding: 10px 12px; border-radius: 8px; overflow-x: auto;
   background: rgb(0 0 0 / .28); }
+.assistant-message.md .code-wrap { position: relative; }
+.assistant-message.md .code-wrap > pre { padding-right: 64px; }
 .assistant-message.md pre code { padding: 0; background: none; font-size: 13px; }
+/* A block's Copy waits quiet at its corner until the block is hovered or holds focus; on touch it stays. */
+.code-copy { position: absolute; inset: 6px 8px auto auto; padding: 3px 8px; border-radius: 6px;
+  font: 12px var(--ui); color: var(--faint); background: rgb(255 255 255 / .07); opacity: 0; transition: opacity .12s; }
+.code-wrap:hover .code-copy, .code-wrap:focus-within .code-copy { opacity: 1; }
+@media (pointer: coarse) { .code-copy { opacity: 1; padding: 8px 12px; inset: 4px 4px auto auto; } }
 .assistant-message.md a { color: inherit; text-decoration: underline; text-underline-offset: 3px;
   text-decoration-color: rgb(255 255 255 / .35); }
 .assistant-message.md .md-path { border-bottom: 1px dotted rgb(255 255 255 / .35); cursor: help; }

@@ -525,7 +525,8 @@ class ListsTest(unittest.TestCase):
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("gap: 12px", rule(".swarm-note"))
         hover = dashboard.STYLE.split("@media (hover: hover) {\n  .swarm-off {", 1)[1].split("}", 1)[0]
-        self.assertIn("opacity: 0", hover)
+        # at rest the x shows at 40%, so its slot reads as a control and the chip is not lopsided (critic r12 F4)
+        self.assertIn("opacity: .4", hover)
         self.assertIn(".swarm-chip:is(:hover, :focus-within) .swarm-off { opacity: 1", dashboard.STYLE)
         for spec in ("inset: -3px", 'content: ""'):
             self.assertIn(spec, rule(".swarm-off::after"))

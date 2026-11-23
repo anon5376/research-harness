@@ -2345,6 +2345,13 @@ console.log(JSON.stringify([
         self.assertIn("border: 1px solid rgb(255 99 99 / .12)", rule)
         self.assertIn("background: #1d1116", rule)
 
+    def test_the_reply_box_says_reply_once(self):
+        # 'Reply, or send empty to run again' beside a 'Run again' pill said the empty send twice in one box (critic
+        # r13 F4): the pill explains it, and the placeholder is a word.
+        page = dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN)
+        self.assertIn('placeholder="Reply…"', page)
+        self.assertNotIn("send empty to run again", page)
+
     def test_a_popover_sits_above_the_page(self):
         # The Cancel confirm, with no shadow and a fill near the brief bubble's, read as two panels colliding (critic
         # r12 F6): it casts the menus' shadow.

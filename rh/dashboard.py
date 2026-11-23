@@ -2454,7 +2454,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         again = state != "done" or spec.get("kind") != "codex-cloud"
         message = ('<label class="sr" for="changed">What should change?</label>'
                    '<textarea class="c-text" id="changed" name="changed" rows="1" '
-                   'placeholder="Reply, or send empty to run again"></textarea>')
+                   'placeholder="Reply…"></textarea>')
         agent = agent_of(spec.get("command"))
         # An agent's next run may use another model or effort: the reply box has the composer's pickers.
         picker = (_model_picker(view.get("job_policy") or {}, "local-agent", {"model": agent[1], "effort": agent[2]},

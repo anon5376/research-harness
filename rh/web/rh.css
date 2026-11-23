@@ -1916,3 +1916,10 @@ a.sw-run:hover { background: var(--surface); }
 /* Header actions are the app's pills, as Run again and Open job are; a phone draws them as glass squares. */
 @media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px; padding: 0 12px; } }
 .act > .pop .btn { border-radius: 999px; }
+/* A patch preview reads as a diff: added lines green, removed red, hunk heads in the accent, file headers quiet. */
+.peek .dl { display: block; padding: 0 6px 0 calc(6px + 1ch); margin-inline: -6px; text-indent: -1ch; white-space: pre-wrap; }
+.peek .dl:empty::before { content: "\200B"; }
+.peek .dl.add { background: rgb(74 222 128 / .10); color: #b8f0c8; }
+.peek .dl.del { background: rgb(248 113 113 / .10); color: #f6c1c1; }
+.peek .dl.hunk { color: #8fb0ff; }
+.peek .dl.meta { color: #7d8394; }

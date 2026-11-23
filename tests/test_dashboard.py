@@ -403,6 +403,23 @@ class ListsTest(unittest.TestCase):
         self.assertIn("@media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px;", dashboard.STYLE)
         self.assertIn(".act > .pop .btn { border-radius: 999px; }", dashboard.STYLE)  # and the confirm's own button
 
+    def test_a_patch_preview_reads_as_a_diff(self):
+        # A changes.patch previewed as plain text, where an added line looks like a removed one, must fail: added,
+        # removed, hunk and file-header lines each carry their own mark; other files stay plain text.
+        patch = ("diff --git a/x.py b/x.py\nindex 1..2 100644\n--- a/x.py\n+++ b/x.py\n@@ -1,2 +1,2 @@ def f():\n"
+                 " keep\n-old <line>\n+new <line>\n")
+        diff = dashboard._peek_html("changes.patch", patch)
+        self.assertIn('<span class="dl meta">diff --git a/x.py b/x.py</span>', diff)
+        self.assertIn('<span class="dl meta">--- a/x.py</span>', diff)
+        self.assertIn('<span class="dl meta">+++ b/x.py</span>', diff)
+        self.assertIn('<span class="dl hunk">@@ -1,2 +1,2 @@ def f():</span>', diff)
+        self.assertIn('<span class="dl del">-old &lt;line&gt;</span>', diff)
+        self.assertIn('<span class="dl add">+new &lt;line&gt;</span>', diff)
+        self.assertIn('<span class="dl"> keep</span>', diff)
+        self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")
+        for mark in ("add", "del", "hunk"):
+            self.assertIn(f".peek .dl.{mark} {{", dashboard.STYLE)
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

@@ -225,6 +225,19 @@ def _ln(line):
     return f'<span class="ln{tone}">{_text(line)}</span>'
 
 
+def _peek_html(path, text):
+    """A file's preview, escaped. A patch reads as a diff: each line its own block, marked added, removed, a hunk's
+    head or a file header, so a change shows at a glance as it does in a review."""
+    if not path.endswith((".patch", ".diff")):
+        return _text(text)
+
+    def mark(line):
+        if line.startswith(("diff --git", "index ", "--- ", "+++ ", "new file", "deleted file", "similarity", "rename ")):
+            return " meta"
+        return " hunk" if line.startswith("@@") else " add" if line.startswith("+") else " del" if line.startswith("-") else ""
+    return "".join(f'<span class="dl{mark(line)}">{_text(line)}</span>' for line in text.splitlines())
+
+
 def _sig(*fields):
     return format(zlib.crc32(repr(fields).encode()), "08x")
 
@@ -2257,7 +2270,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             if preview and preview.get("path") == path:
                 more = "\n…" if preview.get("more") else ""
                 details = (f'<details class="file-preview"><summary>Preview</summary>'
-                           f'<pre class="peek" tabindex="0">{_text(preview.get("text", ""))}{more}</pre></details>')
+                           f'<pre class="peek" tabindex="0">{_peek_html(path, str(preview.get("text", "")))}{more}</pre>'
+                           '</details>')
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'
                              f'<span class="session-file-size">{_text(_size(file.get("size")))}</span></span>'
                              f'{details}</li>')

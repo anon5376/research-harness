@@ -385,6 +385,12 @@ class ListsTest(unittest.TestCase):
         # right-aligns against it
         self.assertIn("grid-template-columns: 22px 16px minmax(0, 1fr) auto 48px 12px", phone)
         self.assertIn(".sw-run .sw-s { grid-column: 4; grid-row: 1; justify-self: end; }", phone)
+        # the desktop follows the same rule: time right-aligned against a fixed Kept column, after the answer line,
+        # so '51 s' and '4 min 49 s' share a tail (critic r14 F4)
+        desk = dashboard.STYLE.split("/* desktop swarm rows */", 1)[1].split("\n}", 1)[0]
+        self.assertIn("grid-template-columns: 22px 16px 112px minmax(0, 1fr) 148px 48px 12px", desk)
+        self.assertIn(".sw-run .sw-s { grid-column: 5; grid-row: 1; justify-self: end; }", desk)
+        self.assertIn(".sw-run .sw-a { grid-column: 4; grid-row: 1; }", desk)
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 

@@ -1649,9 +1649,9 @@ def _devin_tags(key):
     if key.startswith("fusion-"):
         lead = key.removeprefix("fusion-").split("-sidekick-")
         row = " + ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part) for part in lead)  # lead + sidekick
-        return (f' data-group="Fusion" data-group-tip="{_DEVIN_FUSION} Lead + sidekick." data-row="{_text(row)}" data-cost="API" '
-                'data-cost-tip="Billed at API pricing: the lead per token, the SWE-2 sidekick free"')
-    # every SWE-2 model is free, so the section says it once and the one row that costs (Fusion's API) stands out
+        return (f' data-group="Fusion · API" data-group-tip="{_DEVIN_FUSION} Lead + sidekick. Billed at API pricing: the '
+                f'lead per token, the SWE-2 sidekick free." data-row="{_text(row)}"')
+    # each section says its cost once in its head, 'Fusion · API' and 'SWE-2 · Free', and no row carries a chip
     return ' data-group="SWE-2 · Free" data-group-tip="SWE-2 models use no quota"'
 
 
@@ -1762,7 +1762,7 @@ def _swarm_rows(swarm, form=""):
         groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
     def row(prov, m):
         return (f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
-                + ('<span class="swarm-cost">API</span>' if m.startswith("fusion-") else "") +
+                +
                 f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}{owner} '
                 f'data-name="{_text(_names([m]))}"><span class="swarm-x" aria-hidden="true"></span></label>')
     parts = []
@@ -1773,7 +1773,7 @@ def _swarm_rows(swarm, form=""):
             continue
         # Devin's models under the picker's heads and in its order, peers of the Claude head (each row wears the
         # Devin glyph): Fusion, which costs and says so, then the free SWE-2 models
-        for head, picked in (("Fusion", [m for m in models if m.startswith("fusion-")]),
+        for head, picked in (("Fusion · API", [m for m in models if m.startswith("fusion-")]),
                              ("SWE-2 · Free", [m for m in models if m.startswith("swe-2")]),
                              ("Devin", [m for m in models if not m.startswith(("fusion-", "swe-2"))])):
             if picked:

@@ -1708,19 +1708,7 @@ function openModels(trigger) {
       name.textContent = o.dataset.row || o.textContent.trim();
       row.title = o.textContent.trim();  // the full name, when the row cuts it short
       row.append(markFor(picker, row.dataset.prov), name);
-      if (o.dataset.cost) {
-        if (o.selected) {
-          const now = document.createElement('span');
-          now.className = 'mp-cur';
-          now.textContent = 'Current';
-          row.append(now);
-        }
-        const cost = document.createElement('span');
-        cost.className = 'mp-cost';
-        cost.textContent = o.dataset.cost;
-        if (o.dataset.costTip) cost.title = o.dataset.costTip;
-        row.append(cost);
-      } else if (o.selected) row.insertAdjacentHTML('beforeend', CHECK_SVG);
+      if (o.selected) row.insertAdjacentHTML('beforeend', CHECK_SVG);
       row.addEventListener('click', () => choose(o));
       row.addEventListener('pointermove', () => {
         if (highlight === i) return;

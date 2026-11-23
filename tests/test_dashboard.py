@@ -819,13 +819,17 @@ class ListsTest(unittest.TestCase):
 
     def test_settings_names_the_fusion_pair_and_its_cost_as_the_picker_does(self):
         # A settings row that says only 'Fusion', hiding which pair and which paid API a swarm would run, must fail.
+        # r21 F9: cost is said once, by the group's head ('Fusion · API' as 'SWE-2 · Free'), not by a chip on a row.
         fusion = "fusion-claude-fable-5-2-medium-sidekick-swe-2-high"
         self.assertEqual(dashboard._names([fusion]), "Fable 5.2 Medium + SWE-2 High")
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
                                                           "choices": ["swe-2-max", fusion]}}, NOW, token=TOKEN)
         row = re.search(r'<label class="swarm-m">(?:(?!</label>).)*?value="' + fusion + '".*?</label>', page, re.S).group(0)
         self.assertIn("Fable 5.2 Medium + SWE-2 High", text(row))
-        self.assertIn('<span class="swarm-cost">API</span>', row)
+        self.assertNotIn("swarm-cost", page)
+        self.assertIn('<p class="swarm-g">Fusion · API</p>', page)
+        for gone in (".swarm-cost", ".mp-cost", ".mp-cur"):
+            self.assertNotIn(gone, dashboard.STYLE)
 
     def test_the_swarm_ticks_list_devin_as_the_picker_does(self):
         # r19 F6: the picker lists Devin's Fusion first, under its own head with its API tag, then 'SWE-2 · Free';
@@ -839,13 +843,13 @@ class ListsTest(unittest.TestCase):
         # Devin's families are heads of their own, peers of Claude's (a 'Devin' head over bolder sub-heads read upside
         # down); every Devin row keeps the Devin glyph
         heads = re.findall(r'<p class="swarm-g">([^<]*)</p>', boxes)
-        self.assertEqual(heads, ["Fusion", "SWE-2 · Free", "Claude"])
+        self.assertEqual(heads, ["Fusion · API", "SWE-2 · Free", "Claude"])
         order = re.findall(r'name="models" value="([^"]+)"', boxes)
         self.assertEqual(order, [fusion, "swe-2-high", "swe-2-max", "swe-2-flash-high", "claude-opus-5-5"])
         # with no Fusion offered, the free models still say so
         only = dashboard._swarm_rows({**swarm, "choices": ["swe-2-max", "swe-2-high"]})[0]
         self.assertIn('<p class="swarm-g">SWE-2 · Free</p>', only)
-        self.assertNotIn(">Fusion<", only)
+        self.assertNotIn(">Fusion", only)
 
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
@@ -2020,8 +2024,12 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('<option value="swe-2-high" data-prov="devin"', reply)
         self.assertIn('data-group="SWE-2 · Free"', reply)  # said once in the section, not as a chip on each row
         self.assertNotIn('data-cost="Free"', reply)
-        self.assertIn('data-group="Fusion"', reply)
-        self.assertIn('data-row="Fable 5.2 Medium + SWE-2 High" data-cost="API"', reply)
+        # r21 F9: Fusion's cost is its section's head, as SWE-2's is, and no row carries a chip; its tip keeps the billing
+        self.assertIn('data-group="Fusion · API" data-group-tip="', reply)
+        self.assertIn("Billed at API pricing: the lead per token, the SWE-2 sidekick free.", reply)
+        self.assertIn('data-row="Fable 5.2 Medium + SWE-2 High"', reply)
+        self.assertNotIn("data-cost", reply)
+        self.assertNotIn("dataset.cost", dashboard.SCRIPT)
         self.assertRegex(reply, r'<option value="swe-2-high"[^>]* selected>')
 
     def test_job_page_shows_the_work_left_and_its_record_right(self):

@@ -1393,10 +1393,6 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 .mp-sec { margin: 6px 10px 2px; color: var(--faint); font-size: 11px; font-weight: 600; letter-spacing: .02em;
   cursor: default; }
 .mp-sec:first-child { margin-top: 2px; }
-.mp-row .mp-cur { margin-left: auto; color: var(--muted); font-size: 11px; }
-.mp-row .mp-cost { margin-left: auto; padding: 1px 7px; border-radius: 6px; font-size: 11px; color: var(--muted);
-  background: rgb(255 255 255 / .06); font-variant-numeric: tabular-nums; }
-.mp-row .mp-cur + .mp-cost { margin-left: 8px; }
 /* An answer reads as formatted text: paragraphs, lists, code, links; earlier runs sit above as one chat. */
 .assistant-message.md { white-space: normal; }
 .assistant-message.md > * { margin: 0; }
@@ -1732,7 +1728,7 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 /* The worker filter's chevron sits on its label's centre line. */
 select[data-job-filter]::picker-icon { margin: 4px 3px 0 6px; }
 /* Small secondary words on popovers stay readable. */
-.ef-ends, .ef-note, .mp-row .mp-cost { color: #a3a7b0; }
+.ef-ends, .ef-note { color: #a3a7b0; }
 /* The reply row never pushes its send button out: the model name gives way first, and a phone drops the worker note. */
 .c-row .compose-tools { flex: none; }
 .c-row .model-picker { min-width: 0; flex: 0 1 auto; }
@@ -2190,9 +2186,6 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
   -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
 .q-head .q-title.user-message + .ask-more { position: static; display: block; width: fit-content; height: auto;
   margin: 6px max(0px, calc(100% - 600px)) 0 auto; padding: 0; color: var(--faint); }
-/* The one swarm model that costs says so, with the picker's API tag. */
-.swarm-m .swarm-cost { flex: none; padding: 1px 6px; border-radius: 5px; background: rgb(255 255 255 / .06);
-  color: var(--muted); font: 11px var(--ui); }
 /* Header actions are the app's pills, as Run again and Open job are; a phone draws them as glass squares. */
 @media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px; padding: 0 12px; } }
 .act > .pop .btn { border-radius: 999px; }

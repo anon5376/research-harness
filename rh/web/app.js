@@ -1051,7 +1051,7 @@ document.addEventListener('click', e => {
   const m = e.target.closest && e.target.closest('[data-more]');
   if (m) { more(m); return; }
   if (e.target.closest && e.target.closest('[data-pal]')) { openPal(); return; }
-  if (e.target.closest && e.target.closest('[data-settings]')) { $('#settings').showModal(); return; }
+  if (e.target.closest && e.target.closest('[data-settings]')) { $('#settings').showModal(); sheetEdges($('#settings .settings-body')); return; }
   const addInput = e.target.closest && e.target.closest('[data-add-input]');
   if (addInput) { openFiles(addInput); return; }
   const clearInput = e.target.closest && e.target.closest('[data-clear-input]');
@@ -1982,8 +1982,14 @@ document.addEventListener('scroll', e => {
   if (t.classList.contains('user-message')) fadeLong(t);
   else if (t.matches('pre.log[data-follow]')) fadeTop(t);
   else if (t.classList.contains('jd-scroll')) t.classList.toggle('scrolled', t.scrollTop > 2);
-  else if (t.classList.contains('settings-body')) t.classList.toggle('scrolled', t.scrollTop > 2);
+  else if (t.classList.contains('settings-body')) sheetEdges(t);
 }, true);
+// the settings sheet's body fades under its head once scrolled, and at its foot while more lies below
+function sheetEdges(t) {
+  if (!t) return;
+  t.classList.toggle('scrolled', t.scrollTop > 2);
+  t.classList.toggle('more', t.scrollTop + t.clientHeight < t.scrollHeight - 2);
+}
 document.addEventListener('click', e => {
   const more = e.target.closest && e.target.closest('.ask-more');
   if (!more) return;

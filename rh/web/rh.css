@@ -918,13 +918,18 @@ body[data-background="quiet"] .jd-main::before { opacity: .07; }
 dialog.settings[open] { display: flex; flex-direction: column; overflow: hidden; }
 .settings header { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: none;
   height: 48px; margin-bottom: 0; padding-bottom: 16px; }
-.settings-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -24px; padding: 0 24px; }
+.settings-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; margin: 0 -24px; padding: 0 24px 24px; }
+/* while more lies below, the body's foot fades, so a list cut at the sheet's edge reads as going on */
+.settings-body.more { -webkit-mask-image: linear-gradient(to top, transparent, #000 32px);
+  mask-image: linear-gradient(to top, transparent, #000 32px); }
+.settings-body.scrolled.more { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 48px, #000 calc(100% - 32px), transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 48px, #000 calc(100% - 32px), transparent); }
 .settings-body.scrolled { -webkit-mask-image: linear-gradient(to bottom, transparent, #000 48px);
   mask-image: linear-gradient(to bottom, transparent, #000 48px); }
 dialog.settings header { position: relative; }
 dialog.settings:has(.settings-body.scrolled) header::after {
   content: ""; position: absolute; left: -24px; right: -24px; bottom: 0; height: 1px; background: rgb(255 255 255 / .10); }
-.settings h2 { font-size: 15px; font-weight: 600; }
+.settings h2 { font-size: 17px; font-weight: 600; }
 .settings legend { margin-bottom: 8px; }
 .settings footer { margin-top: 16px; }
 .background-choices { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px 10px; }
@@ -1840,6 +1845,11 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .ib-s .mono { color: var(--muted); white-space: nowrap; }
 /* A failure's reason is its exit code and last printed line: one line, cut at its end. */
 .ib-s:has(> .ib-why.ib-exit) { -webkit-line-clamp: 1; }
+/* what the job printed reads in the code face, as in the card it summarises */
+.ib-why.ib-exit > .ib-out { font-family: var(--mono); font-size: 12px; color: #b8bcc6; }
+@media (max-width: 600px) { .ib-why.ib-exit > .ib-out { font-size: 13px; } }
+/* the swarm's judge is chosen above its ticks */
+.swarm-opts:has(+ .swarm-models) { margin-bottom: 12px; }
 /* Your turns read as messages, a step under the answer (15 on 22 against 16 on 26), wrapped greedily so a bubble
    is never much wider than its text. A long brief folds to three lines; Show all opens it. */
 .user-message { font-size: 15px; line-height: 22px; text-wrap: wrap; }

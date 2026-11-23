@@ -2417,7 +2417,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     step = _progress(opened.get("log")) if state in ("running", "stalled") else None
     if step:
         done_n, total = step
-        status_line.append(f'<span class="num">{done_n}/{total}</span>')
+        status_line.append(f'<span class="num">{done_n:,} / {total:,}</span>')  # as finished logs write 2,400
         spent = now - started_at if _number(started_at) else 0
         if spent > 30 and done_n < total:
             status_line.append(_text(_left(spent * (total - done_n) / done_n)))
@@ -2633,7 +2633,8 @@ def _exit_why(jid, view):
     if not (isinstance(check, list) and len(check) == 3):
         return ""
     lines = [l.strip() for l in str(((view or {}).get("tails") or {}).get(jid) or "").splitlines() if l.strip()]
-    return f'<span class="ib-why ib-exit">Exit {_text(check[1])}{_SEP_HTML}{_text(lines[-1] if lines else check[0])}</span>'
+    return (f'<span class="ib-why ib-exit">Exit {_text(check[1])}{_SEP_HTML}'
+            f'<span class="ib-out">{_text(lines[-1] if lines else check[0])}</span></span>')
 
 
 def _ib_row(ctx, entry, picked, view=None):
@@ -2968,9 +2969,8 @@ def _swarm_settings(ctx):
     return ('<form action="/settings/swarm" method="post" data-swarm-form>'
             f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
             '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
-            f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
-            '<div class="swarm-opts">'
-            f'{judge_row}'
+            f'The judge then keeps the best work.</p><div class="swarm-opts">{judge_row}</div>'
+            f'<div class="swarm-models">{boxes}</div><div class="swarm-opts">'
             '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
             f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
             f'value="{_text(swarm.get("check") or "")}"></label></div>'

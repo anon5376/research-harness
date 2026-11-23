@@ -762,17 +762,32 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn(">Fusion<", only)
 
     def test_the_swarm_options_form_one_grouped_list(self):
+        rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # Judge and Check each run as two loose rows under the model ticks, and a hint that starts at the label's
         # edge instead of under the field it explains, must fail: they sit in a second panel like the models',
         # one 44px row each with a hairline between, and the hint drops 8px under the panel, indented to the
         # rows' text: panel 1px border + 4px padding + the rows' 10px, the edge the model rows' group labels use.
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
                                                           "choices": ["swe-2-max", "swe-2-high"]}}, NOW, token=TOKEN)
+        # r20 F1: under a long tick list the Judge sat below the modal's fold, so the swarm's second choice was not
+        # seen. The Judge is its own one-row panel under the description, above the ticks; the check stays under
+        # them with its hint.
         groups = re.findall(r'<div class="swarm-opts">(.*?)</div>', page, re.S)
-        self.assertEqual(len(groups), 1)
-        self.assertEqual(groups[0].count('class="swarm-judge"'), 2)
-        for name in ('name="judge"', 'name="check"'):
-            self.assertIn(name, groups[0])
+        self.assertEqual(len(groups), 2)
+        self.assertIn('name="judge"', groups[0])
+        self.assertNotIn('name="check"', groups[0])
+        self.assertIn('name="check"', groups[1])
+        form = re.search(r'<form action="/settings/swarm".*?</form>', page, re.S).group(0)
+        self.assertLess(form.index('name="judge"'), form.index('class="swarm-models"'))
+        self.assertLess(form.index('class="swarm-models"'), form.index('name="check"'))
+        self.assertIn("margin-bottom: 12px", rule0(".swarm-opts:has(+ .swarm-models)"))
+        # the sheet's body ends 24px under its last row and fades at its foot while more lies below
+        self.assertIn("padding: 0 24px 24px", rule0(".settings-body"))
+        self.assertIn("transparent", rule0(".settings-body.more"))
+        self.assertIn("t.classList.toggle('more', t.scrollTop + t.clientHeight < t.scrollHeight - 2)", dashboard.SCRIPT)
+        self.assertIn("$('#settings').showModal(); sheetEdges($('#settings .settings-body'));", dashboard.SCRIPT)
+        # r20 F6: the sheet's title is a level above its 13px section heads, sized as the Inbox detail title
+        self.assertIn("font-size: 17px", rule0(".settings h2"))
         self.assertIn('</div><p class="set-hint">The harness runs it', page)
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         panel = rule(".swarm-opts")
@@ -1067,10 +1082,16 @@ class ListsTest(unittest.TestCase):
         view["fails"] = {jid: ["make test", 1, ""] for jid in bad}
         view["tails"] = {bad[0]: "counting\nls: drafts/: No such file or directory\n\n"}
         page = inbox(view)
+        # r20 F2: what the job printed is set in the code face, as in the card it summarises ('ls' read 'Is')
         self.assertIn('<span class="ib-why ib-exit">Exit 1<span class="sep">·</span>'
-                      'ls: drafts/: No such file or directory</span>', page)
+                      '<span class="ib-out">ls: drafts/: No such file or directory</span></span>', page)
+        out = dashboard.STYLE.split(".ib-why.ib-exit > .ib-out {", 1)[1].split("}", 1)[0]
+        for spec in ("font-family: var(--mono)", "font-size: 12px", "color: #b8bcc6"):
+            self.assertIn(spec, out)
+        self.assertIn(".ib-why.ib-exit > .ib-out { font-size: 13px; }", dashboard.STYLE)  # on a phone
         if len(bad) > 1:
-            self.assertIn('<span class="ib-why ib-exit">Exit 1<span class="sep">·</span>make test</span>', page)
+            self.assertIn('<span class="ib-why ib-exit">Exit 1<span class="sep">·</span>'
+                          '<span class="ib-out">make test</span></span>', page)
         rows = re.search(r'<section class="s-ib-wait".*?</section>', page, re.S).group(0)
         self.assertNotIn("Failed: the command exited", rows)
         self.assertIn("-webkit-line-clamp: 1", dashboard.STYLE.split(".ib-s:has(> .ib-why.ib-exit) {", 1)[1].split("}", 1)[0])
@@ -1086,7 +1107,8 @@ class ListsTest(unittest.TestCase):
         view["open"]["job"]["started"] = NOW - 600
         view["open"]["job"]["state"] = "running"
         status = re.search(r'data-region="job-result".*?</p>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
-        self.assertIn("600/2400", status)
+        self.assertIn("600 / 2,400", status)  # r20 F5: as finished logs write '2,400'
+        self.assertNotIn("600/2400", status)
         self.assertIn("~30 min left", status)
         self.assertIn('<progress class="run-progress" max="2400" value="600"', status)
 
@@ -1144,7 +1166,7 @@ class ListsTest(unittest.TestCase):
         status = re.search(r'<span class="job-result-status sl">(.*?)</span><progress', page, re.S).group(1)
         parts = status.split("<wbr>")
         self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
-                         ["Past its 2 h limit", "·600/2400", "·~3 h left"])  # no vague 'still being checked' (r12 F7)
+                         ["Past its 2 h limit", "·600 / 2,400", "·~3 h left"])  # no vague 'still being checked' (r12 F7)
         self.assertRegex(parts[0], r'^<span class="nowrap">[^<]*</span>$')
         for part in parts[1:]:
             self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')

@@ -399,6 +399,19 @@ class ListsTest(unittest.TestCase):
         row = re.search(r'data-key="job:fix.best".*?</a>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn("Renamed the Options label to Run", text(row))
 
+    def test_an_answers_attachments_open_from_one_side(self):
+        # Under an answer the file row opened from a trailing 'Preview ›' and the folded Output below it from a
+        # leading '›', 24px apart, so they read as unrelated (critic r10 F6). Folded, Output is a row like the file's,
+        # 'Output 7 lines … Show ›'; open, it keeps its card header. A file row and Output sit 8px apart.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("display: none", rule("details.worked:not([open]) > summary::before"))
+        trail = rule("details.worked:not([open]) > summary::after")
+        for spec in ('content: "Show ›"', "margin-left: auto"):
+            self.assertIn(spec, trail)
+        self.assertIn("width: auto", rule("details.worked:not([open]) > summary"))
+        self.assertIn("margin-left: 0", rule("details.worked:not([open]) > summary .lines"))
+        self.assertIn("margin-top: -16px", rule(".jd-body .session-file-list + .worked"))
+
     def test_provider_marks_wear_no_brand_colour(self):
         # The Claude mark was coral in the picker and on answers but grey in Settings: drift, and a second accent
         # beside the app's one blue (critic r10 F8). Every provider mark takes its row's ink.

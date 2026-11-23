@@ -630,8 +630,15 @@ class ListsTest(unittest.TestCase):
         following = ".worked:has(> .worked-content > pre.log[data-follow])"
         self.assertIn("content: none", rule(following + " > summary::before"))
         self.assertIn("pointer-events: none", rule(following + " > summary"))
-        # r16 F3: the sidebar draws a failure as an outlined ring; the Inbox, palette and banner keep the disc
-        self.assertIn("fill: none", rule('.side svg.st[data-s="failed"] circle'))
+        # r16 F3: the sidebar draws a failure as an outlined ring. r20 F3: one job then wore two glyphs, a ring in the
+        # sidebar and a disc in the Inbox and palette; every list now draws the ring, and only a failure banner,
+        # where the failure is the page's subject, keeps the disc
+        ring = 'svg.st[data-s="failed"]:not(:is(.fail-k, .q-fail-k) > svg)'
+        self.assertIn("fill: none", rule(ring + " circle"))
+        self.assertIn("stroke: currentColor", rule(ring + " .k"))
+        self.assertNotIn('.side svg.st[data-s="failed"] circle', dashboard.STYLE)
+        page = inbox(live_view())
+        self.assertRegex(page, r'<span class="ib-ic"><svg class="st [^"]*" data-s="failed"')  # a list row: the ring
         # r16 F2: a swarm's kept run says the header's words too
         # r18 F3 reverses that: a kept run's grey answer cell is no heading, so the swarm page keeps its title
         self.assertNotIn(".sw-run.kept .sw-a", dashboard.SCRIPT.split("function echoTitle()", 1)[1].split("\n}", 1)[0])

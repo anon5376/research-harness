@@ -1778,10 +1778,10 @@ dialog::backdrop { background: rgb(3 5 12 / .72); -webkit-backdrop-filter: blur(
 /* Cancelled is not done: a dashed ring, and its name steps back. */
 svg.st[data-s="cancelled"] circle { stroke-dasharray: 2.2 1.6; }
 .side .rows a.item:has(> svg.st[data-s="cancelled"]) .name { color: var(--faint); }
-/* In the sidebar a failure is an outlined ring: red still means failed, a weight lighter than in the Inbox, the
-   palette and the banner, where the failure is the subject */
-.side svg.st[data-s="failed"] circle { fill: none; stroke: currentColor; stroke-width: 1.5; r: 5.6; }
-.side svg.st[data-s="failed"] .k { stroke: currentColor; stroke-width: 1.5; }
+/* In every list (sidebar, Inbox, palette, swarm rows) a failure is the same outlined ring, so one job wears one
+   glyph wherever it is listed; only a failure banner, where the failure is the subject, keeps the filled disc */
+svg.st[data-s="failed"]:not(:is(.fail-k, .q-fail-k) > svg) circle { fill: none; stroke: currentColor; stroke-width: 1.5; r: 5.6; }
+svg.st[data-s="failed"]:not(:is(.fail-k, .q-fail-k) > svg) .k { stroke: currentColor; stroke-width: 1.5; }
 /* The palette's list fades under its footer instead of slicing a row. */
 .p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
   padding-bottom: 20px; }

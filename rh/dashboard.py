@@ -2275,10 +2275,11 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
-        output_status = (f'{"All output" if card and not last else "Output"}{_SEP_HTML}{_text(line_count)}' if log
-                         else "No output received yet")
+        output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
+        # the count sits right, as every log card's does
+        count = f'<span class="lines mono">{_text(line_count)}</span>' if log else ""
         work_summary = (f'<summary class="worked-summary">'
-                        f'<span class="worked-output">{output_status}</span>{tag}</summary>')
+                        f'<span class="worked-output">{output_status}</span>{tag}{count}</summary>')
         output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
                        '<p class="soft">The worker has not produced output yet.</p>')
         worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'

@@ -433,7 +433,7 @@ input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
 .out .head h2 { font-size: 13px; color: var(--text); }
 .livetag { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--ui); color: var(--accent); }
 .out .head .lines { margin-left: auto; color: var(--faint); }
-pre.log, pre.peek { margin: 0; padding: 12px 14px; font-size: 12.5px; line-height: 21px; color: var(--muted);
+pre.log, pre.peek { margin: 0; padding: 12px 14px; font-size: 13px; line-height: 20px; color: var(--muted);
   white-space: pre-wrap; overflow: auto; max-height: 420px; outline: none; }
 pre.log.ended { max-height: 220px; }
 pre.peek { max-height: 260px; border-top: 1px solid var(--rule); color: var(--text); }
@@ -810,7 +810,6 @@ body[data-background="off"] { --art: none; }
 :is(.worked, .file-preview) > summary:hover { color: var(--text); }
 .worked-output { color: var(--faint); }
 .worked-content .log { padding: 8px 0; }
-.jd-body :is(.log, .peek) { font-size: 12px; }
 .jd-body :is(.log, .peek):focus-visible { outline: 2px solid var(--focus-ring); outline-offset: -2px; }
 .detail .jd-side { display: block; width: clamp(240px, 25vw, 314px); min-width: 0; padding: 12px 16px 20px;
   background: var(--surface); font-size: 13px; }
@@ -1417,7 +1416,7 @@ html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 .assistant-message.md > :is(p, ul, ol) { max-width: 600px; }
 .assistant-message.md :not(pre) > code { padding: 1px 4px; background: rgb(255 255 255 / .06); }
 /* A running job's output is open and follows its newest line (framed below). */
-.worked pre.log[data-follow] { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
+.worked pre.log[data-follow] { color: var(--muted); }
 /* Where it runs, the repository and the branch: one row that gives way by ellipsis, on a phone too. */
 .where-bar { right: 4px; min-width: 0; }
 .where-bar .worker-picker { flex: none; max-width: none; }
@@ -1689,7 +1688,7 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
   border-bottom: 1px solid var(--rule); }
 .worked:has(> .worked-content > pre.log[data-follow]) > summary .worked-output { color: var(--text); font-size: 13px; }
 .worked-content:has(> pre.log[data-follow]) { margin-top: 0; border: 0; border-radius: 0; background: none; }
-.worked pre.log[data-follow] { line-height: 21px; max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
+.worked pre.log[data-follow] { max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
 @media (max-width: 600px) { .worked pre.log[data-follow] { max-height: max(240px, calc(100dvh - 300px)); } }
 /* Settings opens with focus on itself, so its close button wears no ring until the keyboard reaches it. */
 .settings :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
@@ -1751,7 +1750,6 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .ib-ic { grid-row: 1 / 4; }
 /* A wrapped line in a stopped log hangs its continuation under the line's own start, two spaces in. */
 pre.log.ended .ln { display:block; padding-left:2ch; text-indent:-2ch; white-space:pre-wrap; }
-pre.log.ended .ln + .ln { margin-top:4px; }
 pre.log.ended .ln:empty::before { content: "\200B"; }  /* a blank line keeps its row */
 /* The line that says what went wrong is bright with a red rule; routine INFO chatter steps back. */
 pre.log.ended .ln.loud { color: #e6e4e1; border-left: 2px solid rgb(248 113 113 / .7); margin-left: -10px;
@@ -1890,3 +1888,5 @@ a.sw-run:hover { background: var(--surface); }
 .ibx[data-view="empty"] > .ib-detail { display: grid; place-content: start center; padding: 22vh 24px 0; text-align: center; }
 .ibx[data-view="empty"] > .ib-detail .soft { max-width: 44ch; margin-inline: auto; }
 .pane:has(.ibx[data-view="empty"]) .top-meta { display: none; }
+/* Every log card names its line count the same way: right-aligned, small and quiet. */
+:is(.out .head, .worked-summary) .lines { margin-left: auto; font-size: 12px; color: #7d8394; }

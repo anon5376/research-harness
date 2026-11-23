@@ -1711,9 +1711,11 @@ console.log(JSON.stringify([
         self.assertIn("last 12 lines", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
-        self.assertIn("All output<span class=\"sep\">·</span>30 lines", body)
+        self.assertIn('<span class="worked-output">All output</span>', body)
+        self.assertIn('<span class="lines mono">30 lines</span>', body)
         done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
-        self.assertIn("Output<span class=\"sep\">·</span>last 30 lines", pane(dashboard.render(done, NOW, token=TOKEN)))
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>',
+                      pane(dashboard.render(done, NOW, token=TOKEN)))
         done["open"]["log_cut"] = False
         done["open"]["log"] = "one\ntwo"
         body = pane(dashboard.render(done, NOW, token=TOKEN))
@@ -2074,6 +2076,20 @@ console.log(JSON.stringify([
         self.assertIn('class="ib-list"', busy)
         self.assertNotIn('data-view="empty"', busy)
 
+    def test_every_log_reads_at_one_size_and_pitch(self):
+        # A running log at one pitch and an ended one at another, a page that shrinks its logs, or a running card whose
+        # line count sits inline while the others sit right, must fail.
+        rule = dashboard.STYLE.split("pre.log, pre.peek {", 1)[1].split("}", 1)[0]
+        self.assertIn("font-size: 13px", rule)
+        self.assertIn("line-height: 20px", rule)
+        self.assertNotIn(".jd-body :is(.log, .peek) { font-size", dashboard.STYLE)
+        later = re.findall(r"pre\.log[^{,)]*\{([^}]*)\}", dashboard.STYLE.split("pre.log, pre.peek {", 1)[1])
+        self.assertFalse([r for r in later if re.search(r"font-size|line-height", r)])
+        self.assertNotIn("pre.log.ended .ln + .ln { margin-top", dashboard.STYLE)
+        count = dashboard.STYLE.split(":is(.out .head, .worked-summary) .lines {", 1)[1].split("}", 1)[0]
+        for spec in ("margin-left: auto", "font-size: 12px", "color: #7d8394"):
+            self.assertIn(spec, count)
+
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
         # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
         # room for only one button while Pause and Cancel both show, must fail.
@@ -2108,10 +2124,10 @@ console.log(JSON.stringify([
         view = opened(live_view(), "live-job", kind="local-shell")
         view["open"]["log"] = "\n".join(f"line {n}" for n in range(200))
         page = pane(dashboard.render(view, NOW, token=TOKEN))
-        self.assertIn('<span class="worked-output">Output<span class="sep">·</span>200 lines</span>', page)
+        self.assertIn('<span class="lines mono">200 lines</span>', page)
         view["open"]["log_cut"] = True
         page = pane(dashboard.render(view, NOW, token=TOKEN))
-        self.assertIn('<span class="worked-output">Output<span class="sep">·</span>last 200 lines</span>', page)
+        self.assertIn('<span class="lines mono">last 200 lines</span>', page)
         self.assertNotIn('<div class="jd-dock">', page)
 
     def test_a_job_keeps_its_full_request_and_searchable_title(self):

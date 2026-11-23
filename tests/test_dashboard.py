@@ -2053,6 +2053,12 @@ console.log(JSON.stringify([
         self.assertIn("border-left: 2px solid", rule)
         self.assertIn("pre.log.ended .ln.quiet {", dashboard.STYLE)
 
+    def test_on_a_phone_the_new_jobs_question_sits_on_its_composer(self):
+        # A question centred mid-screen, a hand's width of empty navy above the composer it labels, must fail.
+        rule = dashboard.STYLE.split(".sea-page > .dock > .c-strip > .compose-intro {", 1)[1].split("}", 1)[0]
+        self.assertIn("align-content: end", rule)
+        self.assertNotIn("center", rule)
+
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
         # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
         # room for only one button while Pause and Cancel both show, must fail.

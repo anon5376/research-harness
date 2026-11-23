@@ -1718,13 +1718,13 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 /* A card's header keeps one inset on both sides. */
 .out .head { padding-right: 14px; }
 /* On a phone the new-job composer sits where every reply box sits, at the foot of the screen under the thumb, with
-   its where-row below it; the question centres in the room above. */
+   its where-row below it; the question sits on it, and the room above is the beam's. */
 @media (max-width: 600px) {
   .sea-page:has(> .dock > .c-strip) { place-items: stretch center; }
   .sea-page > .dock:has(> .c-strip) { display: flex; flex-direction: column; margin: 0;
     padding: 72px 0 calc(80px + env(safe-area-inset-bottom)); }
   .sea-page > .dock > .c-strip { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
-  .sea-page > .dock > .c-strip > .compose-intro { flex: 1; align-content: center; }
+  .sea-page > .dock > .c-strip > .compose-intro { flex: 1; align-content: end; }
 }
 /* The line may break before the separator, so "· id" moves down together and no dot hangs at a line's end. */
 .ib-s:has(> .ib-why) > .ib-why::after { content: "\200B"; }

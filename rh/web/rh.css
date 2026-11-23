@@ -1549,13 +1549,22 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 .p-row .p-a:has([data-w="mac"]) { visibility: hidden; }
 /* Previews bright enough to tell apart at thumbnail size. */
 .background-preview:not([data-preview="off"]) { filter: brightness(1.8); }
-/* On a phone: Pause is a 44px icon, and the job's name may take two lines. */
+/* On a phone: Pause and Cancel are 44px icons, and the job's name may take two lines. */
 @media (max-width: 600px) {
   .job-actions .act > summary[data-k="s"] { width: 44px; height: 44px; padding: 0; justify-content: center; font-size: 0;
     border: 0; }
   .job-actions .act > summary[data-k="s"]::before { content: ""; width: 10px; height: 12px; box-sizing: border-box;
     border-inline: 3px solid currentColor; }
+  .job-actions .act > summary[data-k="c"] { width: 44px; height: 44px; padding: 0; justify-content: center; font-size: 0;
+    border: 0; }
+  .job-actions .act > summary[data-k="c"]::before { content: ""; width: 18px; height: 18px;
+    background:
+      linear-gradient(45deg, transparent calc(50% - .75px), currentColor calc(50% - .75px),
+        currentColor calc(50% + .75px), transparent calc(50% + .75px)),
+      linear-gradient(-45deg, transparent calc(50% - .75px), currentColor calc(50% - .75px),
+        currentColor calc(50% + .75px), transparent calc(50% + .75px)); }
   .detail:has(.job-actions .act) .jd-head-in { padding-right: 96px; }
+  .detail:has(.job-actions .act + .act) .jd-head-in { padding-right: 145px; }
   .detail .jd-head h1 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal;
     font-size: 15px; line-height: 20px; }
 }
@@ -1611,11 +1620,12 @@ select[data-job-filter]::picker-icon { margin: 4px 3px 0 6px; }
 @media (max-width: 600px) {
   .has-sidebar-toggle .app .sidebar-toggle, html.side-hidden[data-live-app] .app .sidebar-toggle { top: 10px; left: 16px; }
   .has-sidebar-toggle .app .sidebar-toggle, html.side-hidden[data-live-app] .app .sidebar-toggle,
-  .job-actions .act > summary[data-k="s"], .jd-inspector > summary {
+  .job-actions .act > summary[data-k="s"], .job-actions .act > summary[data-k="c"], .jd-inspector > summary {
     width: 36px; height: 36px; border-radius: 10px; color: var(--text); background: rgb(255 255 255 / .08);
     border: 1px solid rgb(255 255 255 / .10); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  .job-actions .act > summary[data-k="c"]::before { width: 12px; height: 12px; }
   .detail .jd-side:has(.jd-inspector:not([open])) { top: 10px; right: 12px; }
-  .job-actions { top: 10px; right: 56px; }
+  .job-actions { top: 10px; right: 56px; gap: 8px; }
   .has-sidebar-toggle .detail .jd-head-in, html.side-hidden[data-live-app] .detail .jd-head-in { padding-left: 64px; }
   .detail .jd-head-in { padding-right: 60px; }
   .detail:has(.job-actions .act) .jd-head-in { padding-right: 104px; }

@@ -2035,6 +2035,34 @@ console.log(JSON.stringify([
         self.assertIn("Pause Codex cloud…", labels)
         self.assertNotIn("Pause", labels)
 
+    def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
+        # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
+        # room for only one button while Pause and Cancel both show, must fail.
+        blocks = re.findall(r"@media \(max-width: 600px\) \{(.*?)\n\}", dashboard.STYLE, re.S)
+        block = next(b for b in blocks if 'summary[data-k="c"]' in b)
+        rule = lambda sel: block.split(sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for spec in ("width: 44px", "height: 44px", "padding: 0", "justify-content: center", "font-size: 0",
+                     "border: 0"):
+            self.assertIn(spec, rule('.job-actions .act > summary[data-k="c"]'))
+        cross = rule('.job-actions .act > summary[data-k="c"]::before')
+        for spec in ("width: 18px", "height: 18px"):
+            self.assertIn(spec, cross)
+        self.assertEqual(cross.count("linear-gradient"), 2)  # the x's two strokes
+        self.assertIn("currentColor", cross)
+        one = int(re.search(r"padding-right: (\d+)px",
+                            rule(".detail:has(.job-actions .act) .jd-head-in")).group(1))
+        two = int(re.search(r"padding-right: (\d+)px",
+                            rule(".detail:has(.job-actions .act + .act) .jd-head-in")).group(1))
+        self.assertGreaterEqual(two, one + 44)
+        # and it wears the header's one button spec, the same glass square as Pause beside it
+        spec = dashboard.STYLE.split("one button spec", 1)[1].split("\n}", 1)[0]
+        shared = next(r for r in spec.split("}") if "width: 36px; height: 36px" in r).split("{")[-2]
+        self.assertIn('summary[data-k="s"]', shared)
+        self.assertIn('summary[data-k="c"]', shared)
+        page = dashboard.render(opened(live_view(), "queued-job"), NOW, token=TOKEN)
+        self.assertRegex(page, r'<summary class="[^"]*" data-k="s">Pause job…</summary>')
+        self.assertRegex(page, r'<summary class="[^"]*" data-k="c">Cancel job…</summary>')
+
     def test_a_running_jobs_cut_log_says_last_lines(self):
         # A running job whose page holds only the end of its log, shown as if it were all of it, or a whole log
         # called the last lines, must fail.

@@ -1438,7 +1438,6 @@ html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 /* An answer reads as a title over prose of about 75 characters a line. */
 .assistant-message.md .md-title { font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
 .assistant-message.md > :is(p, ul, ol) { max-width: 600px; }
-.assistant-message.md :not(pre) > code { padding: 1px 4px; background: rgb(255 255 255 / .06); }
 /* A running job's output is open and follows its newest line (framed below). */
 .worked pre.log[data-follow] { color: var(--muted); }
 /* Where it runs, the repository and the branch: one row that gives way by ellipsis, on a phone too. */
@@ -1515,11 +1514,12 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .run-progress::-webkit-progress-bar { background: rgb(255 255 255 / .08); border-radius: 1px; }
 .run-progress::-webkit-progress-value { background: var(--ef-accent); border-radius: 1px; transition: width .2s cubic-bezier(.16, 1, .3, 1); }
 .run-progress::-moz-progress-bar { background: var(--ef-accent); }
-/* Short code stays one token on one line. */
-.assistant-message.md code.nw { white-space: nowrap; font-size: .875em; padding: 0 4px; border-radius: 4px;
+/* Every inline code in an answer is one light chip a step under the prose, so a run of it reads as words, not a
+   striped block; long code wraps at its own seams and each wrapped piece keeps its chip's padding and corners. */
+.assistant-message.md :not(pre) > code { font-size: .875em; padding: 0 4px; border-radius: 4px;
   background: rgb(255 255 255 / .06); -webkit-box-decoration-break: clone; box-decoration-break: clone; }
-/* Code over 40 characters drops the chip and reads as mono text in its sentence: stacked chips outweighed the prose. */
-.assistant-message.md code:not(.nw) { background: none; padding: 0; color: #d6dbe6; }
+/* Short code stays one token on one line. */
+.assistant-message.md code.nw { white-space: nowrap; }
 /* Touch: every composer and header control is a 44px target, whatever it draws. */
 @media (pointer: coarse) {
   .compose .c-row :is(.add-input, .mp-trigger, .ef-trigger, .send), .compose .opts > summary, .sidebar-toggle,
@@ -1695,8 +1695,6 @@ svg.st[data-s="cancelled"] circle { stroke-dasharray: 2.2 1.6; }
 /* The Inbox's actions are the composer's pills. */
 .q-acts .btn { border-radius: 999px; height: 30px; padding: 0 14px; }
 .assistant-message.md > .md-title { max-width: 36em; }
-/* Long code wraps at its own seams, and each wrapped piece keeps its chip's padding and corners. */
-.assistant-message.md :not(pre) > code { -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 /* Every page's top bar is the job page's: 56px, its title centred on the sidebar button and clear of it. */
 .top { min-height: 56px; }
 @media (max-width: 900px) { .has-sidebar-toggle :is(.pane, .detail) > .top { padding-left: 64px; } }
@@ -1721,8 +1719,6 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 /* A failure banner reads in body colour; red marks only its icon, its border and its exit code. */
 .fail-k { color: var(--text); }
 .fail-k > :first-child { color: var(--red); }
-/* Inline code sits a step under the prose, so a run of it reads as words, not a striped block. */
-.assistant-message.md :not(pre) > code { font-size: .875em; padding: .1em .3em; border-radius: 4px; }
 /* A card holds at most twelve lines of output: all of them show, with no scroll inside the card. */
 .out > pre.log.ended { max-height: none; }
 /* A running log is the page: it fills the height left under its status, newest lines pinned at the bottom, and

@@ -380,6 +380,16 @@ class ListsTest(unittest.TestCase):
         rule = dashboard.STYLE.split("\n.swarm-x {", 1)[1].split("}", 1)[0]
         self.assertIn("border: 1.5px solid #6e7383", rule)
 
+    def test_settings_names_the_fusion_pair_and_its_cost_as_the_picker_does(self):
+        # A settings row that says only 'Fusion', hiding which pair and which paid API a swarm would run, must fail.
+        fusion = "fusion-claude-fable-5-2-medium-sidekick-swe-2-high"
+        self.assertEqual(dashboard._names([fusion]), "Fable 5.2 Medium + SWE-2 High")
+        page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
+                                                          "choices": ["swe-2-max", fusion]}}, NOW, token=TOKEN)
+        row = re.search(r'<label class="swarm-m">(?:(?!</label>).)*?value="' + fusion + '".*?</label>', page, re.S).group(0)
+        self.assertIn("Fable 5.2 Medium + SWE-2 High", text(row))
+        self.assertIn('<span class="swarm-cost">API</span>', row)
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

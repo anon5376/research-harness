@@ -1577,8 +1577,10 @@ def _model_picker(policy, kind, draft, only=False):
 
 def _names(models):
     """Model names in words: "SWE-2 Max", "SWE-2 Max and SWE-2 Flash", "A, B and C"."""
-    names = ["Fusion" if m.startswith("fusion-") else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, m))
-             for m in models]
+    # a Fusion model is named by its pair, as the picker names it: which lead and which sidekick run
+    names = [" + ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part)
+                        for part in m.removeprefix("fusion-").split("-sidekick-")) if m.startswith("fusion-")
+             else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, m)) for m in models]
     return " and ".join(names) if len(names) < 3 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
@@ -2661,6 +2663,7 @@ def _swarm_settings(ctx):
     boxes = "".join(
         f'<p class="swarm-g">{_AGENT_WHO.get(prov, (prov.capitalize(),))[0]}</p>' + "".join(
             f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
+            + ('<span class="swarm-cost">API</span>' if m.startswith("fusion-") else "") +
             f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}>'
             '<span class="swarm-x" aria-hidden="true"></span></label>' for m in models)
         for prov, models in groups.items())

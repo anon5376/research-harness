@@ -1908,3 +1908,6 @@ a.sw-run:hover { background: var(--surface); }
   padding: 0; border-bottom: 0; }
 .q-head .q-title.user-message + .ask-more { position: static; height: auto; margin: 6px 0 0; padding: 0;
   color: var(--faint); }
+/* The one swarm model that costs says so, with the picker's API tag. */
+.swarm-m .swarm-cost { flex: none; padding: 1px 6px; border-radius: 5px; background: rgb(255 255 255 / .06);
+  color: var(--muted); font: 11px var(--ui); }

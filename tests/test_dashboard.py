@@ -349,6 +349,10 @@ class ListsTest(unittest.TestCase):
         self.assertRegex(card, r'<a class="sw-run lost"[^>]*>.*?<span class="sw-id mono">w2</span>')
         # marked once, in words: a coloured left rule beside the tag doubled it (critic r9 F12)
         self.assertNotIn(".sw-run.kept::before", dashboard.STYLE)
+        # a passed-over run steps back, but its id stays readable: the judge's answer names runs by it (r10 F7)
+        self.assertNotIn(".sw-run.lost { opacity", dashboard.STYLE)
+        self.assertIn(".sw-run.lost > :not(.sw-id) { opacity: .6; }", dashboard.STYLE)
+        self.assertIn("font-variant-numeric: tabular-nums", dashboard.STYLE.split(".sw-id {", 1)[1].split("}", 1)[0])
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 
@@ -442,6 +446,11 @@ class ListsTest(unittest.TestCase):
         # (on a phone they are the header's glass squares instead).
         self.assertIn("@media (min-width: 601px) { .job-actions .act > summary { border-radius: 999px;", dashboard.STYLE)
         self.assertIn(".act > .pop .btn { border-radius: 999px; }", dashboard.STYLE)  # and the confirm's own button
+        # a popover's destructive confirm is the outlined pill in the app's red, not a one-off salmon fill (r10 F9)
+        confirm = dashboard.STYLE.split("\nform.pop .btn.danger.fill {", 1)[1].split("}", 1)[0]
+        for spec in ("height: 28px", "color: var(--red)", "border-color: rgb(255 146 155 / .5)",
+                     "background: rgb(255 146 155 / .08)"):
+            self.assertIn(spec, confirm)
 
     def test_a_patch_preview_reads_as_a_diff(self):
         # A changes.patch previewed as plain text, where an added line looks like a removed one, must fail: added,

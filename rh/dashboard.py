@@ -146,8 +146,9 @@ _ICONS = {
     "step": '<path d="M4 6.5h16M4 12h16M4 17.5h9"/>',
     "again": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
     "resume": '<path d="M8 5.5v13l10-6.5z"/>',
-    "swarm": '<circle cx="6" cy="6.5" r="2.25"/><circle cx="18" cy="6.5" r="2.25"/><circle cx="12" cy="18" r="2.25"/>'
-             '<path d="M7.3 8.5l3.6 7.3M16.7 8.5l-3.6 7.3"/>',
+    # many into one: three runs in a row over the one the judge keeps (a Y of joined nodes read as git's fork)
+    "swarm": ''.join(f'<circle cx="{x}" cy="{y}" r="{r}" fill="currentColor" stroke="none"/>'
+                     for x, y, r in ((5, 7.5, 2.25), (12, 7.5, 2.25), (19, 7.5, 2.25), (12, 17, 3))),
     "chat": '<path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/>',
     "jobs": '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
     "inspector": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M14 5v14"/>',

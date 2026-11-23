@@ -842,6 +842,21 @@ class ListsTest(unittest.TestCase):
         (["Opus"], "Opus", "Opus · Opus judges"),
     ]
 
+    def test_the_swarm_glyph_is_many_into_one_not_a_fork(self):
+        # r22 F5: three nodes joined in a Y read as git's fork, drawn just under the branch control. A swarm's mark
+        # is many into one: three dots in a row over one, filled, with no strokes joining them.
+        glyph = dashboard._ICONS["swarm"]
+        self.assertNotIn("<path", glyph)
+        dots = re.findall(r'<circle cx="([\d.]+)" cy="([\d.]+)" r="([\d.]+)"([^>]*)/>', glyph)
+        self.assertEqual(len(dots), 4)
+        top, low = dots[:3], dots[3]
+        self.assertEqual(len({cy for _, cy, _, _ in top}), 1)
+        self.assertGreater(float(low[1]), float(top[0][1]))
+        self.assertEqual(float(low[0]), 12)
+        for *_, attrs in dots:
+            self.assertIn('fill="currentColor"', attrs)
+            self.assertIn('stroke="none"', attrs)
+
     def test_the_swarm_line_names_a_shared_family_once(self):
         # 'SWE-2 Max, SWE-2 Flash · SWE-2 Max judges' printed SWE-2 three times in the composer's one line
         for names, judge, line in self.SWARM_LINES:

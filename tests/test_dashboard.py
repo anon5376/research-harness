@@ -3016,6 +3016,32 @@ console.log(JSON.stringify([
         self.assertIn('<button type="button" class="p-x" data-pal-close>Cancel</button>', pal)
         self.assertIn("[data-pal-close]", dashboard.SCRIPT)
 
+    def test_on_a_phone_the_palette_stays_above_the_keyboard(self):
+        # Anchored 104px down with no height cap, a phone's keyboard covered the sheet's last rows and its footer
+        # once the search field took focus. On a phone the sheet anchors at the top edge and its cap is --vvh, the
+        # visible viewport's height kept on the root by the script while the sheet is open; the field and footer
+        # hold their ends and the list alone scrolls. The desktop sheet keeps its 104px anchor and no cap.
+        blocks = re.findall(r"@media \(max-width: 600px\) \{(.*?)\n\}", dashboard.STYLE, re.S)
+        block = next(b for b in blocks if re.search(r"\.pal \{[^}]*--vvh", b))
+        rule = lambda sel: block.split(sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        sheet = rule(".pal")
+        self.assertIn("top: calc(env(safe-area-inset-top", sheet)
+        self.assertIn("max-height: calc(var(--vvh, 100dvh) - 24px)", sheet)
+        # the column holds only while the sheet is open, or the closed dialog would out-rule its display: none
+        lay = rule(".pal[open]")
+        self.assertIn("display: flex", lay)
+        self.assertIn("flex-direction: column", lay)
+        self.assertIn("flex: none", rule(".p-in, .p-foot"))
+        rows = rule(".p-list")
+        self.assertIn("min-height: 0", rows)
+        self.assertIn("overflow-y: auto", rows)
+        desk = dashboard.STYLE.split("\n.pal {", 1)[1].split("}", 1)[0]
+        self.assertIn("top: 104px", desk)
+        self.assertNotIn("--vvh", desk)
+        self.assertIn("visualViewport.height", dashboard.SCRIPT)
+        self.assertRegex(dashboard.SCRIPT, r"visualViewport\.addEventListener\('resize'")
+        self.assertIn("--vvh", dashboard.SCRIPT)
+
     def test_a_done_job_with_no_answer_shows_what_it_printed_last(self):
         # A finished shell job's result is its output: hidden behind a fold the page looks empty. Its last lines show
         # open in a card; the rest folds below only when there is more. A job that answered keeps the fold alone.

@@ -996,17 +996,30 @@ function find(text) {
   const none = $('.p-none', d); if (none) none.hidden = !!first;
   pick(first);
 }
+// A phone's keyboard shrinks the visible viewport, not the layout one: while the sheet is open --vvh tracks it,
+// so the phone rule's cap follows and the last rows and the footer stay above the keys.
+const setVvh = () => document.documentElement.style.setProperty('--vvh', window.visualViewport.height + 'px');
 function openPal() {
   const d = pal();
   if (!d || d.open) return;
   for (const x of $$('details.act[open]')) x.open = false;
   d.showModal();
+  if (window.visualViewport) {
+    setVvh();
+    visualViewport.addEventListener('resize', setVvh);
+  }
   const q = $('.p-q', d);
   q.value = '';
   find('');
   q.focus();
 }
 function closePal() { const d = pal(); if (d && d.open) d.close(); }
+// close does not bubble, so like toggle it is caught on the way down.
+document.addEventListener('close', e => {
+  if (e.target !== pal() || !window.visualViewport) return;
+  visualViewport.removeEventListener('resize', setVvh);
+  document.documentElement.style.removeProperty('--vvh');
+}, true);
 function press(k) {
   const c = $('.pane [data-k="' + k + '"]') || $('[data-k="' + k + '"]');
   if (!c) return;

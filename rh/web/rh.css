@@ -647,6 +647,15 @@ dialog::backdrop { background: var(--backdrop); }
   color: var(--muted); font-size: 13px; background: var(--pal-foot); }
 .p-f-r { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--text); }
 .p-f-r .bar { width: 1px; height: 16px; background: var(--control); margin: 0 6px; }
+/* On a phone the keyboard covers the sheet's foot: it hugs the top edge and its cap is the visible viewport in
+   --vvh, which the script keeps on the root while the sheet is open. The field and footer hold their ends and
+   the list alone scrolls; display: flex waits for [open], or the closed sheet would out-rule its display: none. */
+@media (max-width: 600px) {
+  .pal { top: calc(env(safe-area-inset-top, 0px) + 12px); max-height: calc(var(--vvh, 100dvh) - 24px); }
+  .pal[open] { display: flex; flex-direction: column; }
+  .p-in, .p-foot { flex: none; }
+  .p-list { min-height: 0; overflow-y: auto; }
+}
 
 /* the keyboard sheet */
 #keys { width: 420px; max-width: calc(100vw - 24px); padding: 18px 20px; background: var(--pal); border: 1px solid var(--pal-line);

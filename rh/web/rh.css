@@ -1435,7 +1435,6 @@ html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 32px;
   pointer-events: none; background: linear-gradient(transparent, var(--tint-ground)); }
 .out .head h2 { flex: none; }
-.out:has(.log.err) .head .lines { flex: none; color: var(--red); }
 /* The Inbox opens on the newest job that waits on you: what went wrong, said once, and the way to its page. */
 .q-fail, .q-wait { padding: 12px 14px; border: 1px solid var(--red-line); border-radius: 10px; background: var(--red-bg); }
 .q-wait { border-color: rgb(239 189 115 / .3); background: var(--amber-bg); }
@@ -1569,3 +1568,43 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 .q-acts form.act .btn, .q-acts form.act .btn.gbtn.fail { background: #fff; border-color: #fff; color: #0b0b0c; }
 .q-acts form.act .btn:hover, .q-acts form.act .btn.gbtn.fail:hover { background: #e3e3e7; }
 .q-acts form.act .btn .ic { color: inherit; }
+/* The status row keeps its mark beside its words: the words wrap, never the mark. */
+.job-result-status { flex: 1 1 0; min-width: 0; }
+@media (max-width: 600px) { .jd[data-state="running"] .job-result-status { font-size: 14px; } }
+/* On a phone the head's name is one line again; the brief below says it whole. */
+@media (max-width: 600px) {
+  .detail .jd-head h1 { display: block; -webkit-line-clamp: unset; white-space: nowrap; }
+  .job-actions .act > summary[data-k="s"], .jd-inspector > summary { width: 32px; height: 32px; border-radius: 8px;
+    background: rgb(255 255 255 / .08); }
+  .job-actions .act > summary[data-k="s"]::before { width: 9px; height: 11px; border-inline-width: 2px; }
+}
+/* Run again with an empty box is a quiet pill: the answer above stays the loudest thing; typing makes it Send. */
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] {
+  background: rgb(255 255 255 / .10); border: 1px solid rgb(255 255 255 / .14); color: #e6e6ea; }
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]:hover { background: rgb(255 255 255 / .16); color: #fff; }
+/* A scrolled page's head is frosted and edged, so nothing reads as cut beneath it. */
+.jd-main:has(.jd-scroll.scrolled) .jd-head { background: rgb(5 8 22 / .72); -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(16px); border-bottom: 1px solid rgb(255 255 255 / .06); }
+.jd-scroll.scrolled { -webkit-mask-image: linear-gradient(transparent 4px, #000 36px); mask-image: linear-gradient(transparent 4px, #000 36px); }
+/* The phone drawer is wide enough to tell runs apart, with a strip of page left to tap it shut. */
+@media (max-width: 900px) {
+  html[data-live-app].has-sidebar-toggle .side { width: min(320px, calc(100vw - 70px)); }
+  .side .rows .time { font-size: 12px; }
+}
+/* On a phone the repository and branch get their own line under where the job runs. */
+@media (max-width: 480px) {
+  .where-bar { flex-wrap: wrap; row-gap: 0; }
+  .where-bar .worker-picker { flex-basis: 100%; }
+  .where-bar .worker-picker select.ghost { max-width: none; }
+}
+/* No key hints where there are no keys. */
+@media (pointer: coarse) { .pal kbd, .pal .p-f-r { display: none; } }
+/* The worker filter's chevron sits on its label's centre line. */
+select[data-job-filter]::picker-icon { margin: 4px 3px 0 6px; }
+/* Small secondary words on popovers stay readable. */
+.ef-ends, .ef-note, .mp-row .mp-cost { color: #a3a7b0; }
+/* The reply row never pushes its send button out: the model name gives way first, and a phone drops the worker note. */
+.c-row .compose-tools { flex: none; }
+.c-row .model-picker { min-width: 0; flex: 0 1 auto; }
+.c-row .model-picker .mp-trigger { max-width: 100%; }
+@media (max-width: 600px) { .jd-compose .c-row:has(.model-picker) .compose-tools .model-note { display: none; } }

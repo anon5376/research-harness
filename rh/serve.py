@@ -516,6 +516,20 @@ def _files(root, skip=()):
     return found, peek
 
 
+def _tail(cfg, jid, most=5):
+    """The last lines a local job printed (its out.log under $RH_HOME), or "" when it printed none."""
+    log = Path(cfg["home"]) / "jobs" / str(jid) / "out.log"
+    try:
+        if log.is_symlink() or not log.is_file():
+            return ""
+        with log.open("rb") as f:
+            f.seek(max(0, log.stat().st_size - 4096))
+            text = f.read().decode("utf-8", errors="replace")
+    except OSError:
+        return ""
+    return "\n".join(text.rstrip("\n").splitlines()[-most:])
+
+
 _HEADS = {}  # answer.md path -> (mtime_ns, first line): the list asks for every done job's on each page
 
 
@@ -851,6 +865,9 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                         view["workspace"]["branch"] = ref.stdout.strip()
                     elif gitx.git(repo, "rev-parse", "--verify", "HEAD", check=False).returncode == 0:
                         view["workspace"]["branch"] = "Detached HEAD"
+            if view.get("box"):  # the Inbox shows where each failed local job stopped, as its page does
+                view["tails"] = {r["id"]: _tail(cfg, r["id"]) for r in view.get("recent", [])
+                                 if isinstance(r, dict) and r.get("state") in dashboard._FAILED}
             if view.get("box") and view.get("pick") is None:
                 # The Inbox opens on its newest waiting item, as the page lists it.
                 waiting = sorted((i for i in items.values() if not i.get("resolved")),

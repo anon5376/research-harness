@@ -2074,19 +2074,21 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         work.append(_region("session-files", '<ul class="session-files">' + "".join(file_rows) + '</ul>',
                             "section", "session-file-list", ' aria-label="Files produced"'))
     if failed and log:
-        tail = "\n".join(lines[-_TAIL:])
-        code = next((c for p, _, c in _checks_of(opened, spec, True) if p is False), None)
+        tail = lines[-_TAIL:]
+        # the failed check and its exit code lead the page; the card adds only what the run printed last
         body = (f'<div class="head"><h2>Where it stopped</h2><span class="lines mono">'
-                f'{"exit " + _text(code) if code is not None else "last lines"}</span></div>'
-                f'<pre class="log ended err" tabindex="0">{_text(tail)}</pre>')
+                f'{"last " if len(lines) > len(tail) else ""}{len(tail)} {"line" if len(tail) == 1 else "lines"}</span></div>'
+                f'<pre class="log ended err" tabindex="0">{_text(chr(10).join(tail))}</pre>')
         work.append(_region("j-error", body, "section", "out", ' aria-label="Where it stopped"'))
-    if not finished or log:
+    # a failed run whose whole output fits in the card above has nothing more to unfold
+    if (not finished or log) and not (failed and len(lines) <= _TAIL):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
         line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
-        output_status = (f'Output{_SEP_HTML}{_text(line_count)}' if log else "No output received yet")
+        output_status = (f'{"Full output" if failed else "Output"}{_SEP_HTML}{_text(line_count)}' if log
+                         else "No output received yet")
         work_summary = (f'<summary class="worked-summary">'
                         f'<span class="worked-output">{output_status}</span>{tag}</summary>')
         output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
@@ -2181,7 +2183,7 @@ def _settled_row(ctx, item, picked):
     return _row(f"settled:{item['id']}", link, "ib-li settled")
 
 
-def _ib_job(ctx, entry):
+def _ib_job(ctx, entry, view):
     """A job that waits on you with nothing to answer here, as the Inbox shows it when it leads the list: what it was,
     what went wrong, and the way to its page, where it is retried or followed up."""
     job, runs = entry["job"], len(entry.get("runs", [])) or 1
@@ -2192,11 +2194,16 @@ def _ib_job(ctx, entry):
     open_it = (f'<a class="btn{"" if again else " primary"}" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
                else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
     bad = job.state in _FAILED
+    tail = str((view.get("tails") or {}).get(job.id) or "")
+    n = len(tail.splitlines())
+    stopped = (f'<section class="out"><div class="head"><h2>Where it stopped</h2><span class="lines mono">last {n} '
+               f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">{_text(tail)}</pre></section>'
+               if tail else "")
     said = (f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
             f'<span>{job.headline_html(runs)}</span></p>')
     body = (f'<div class="q-head"><div class="q-head-in"><p class="q-who" data-clear>{_SEP_HTML.join(who)}</p>'
             f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2></div></div>'
-            f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>'
+            f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>{stopped}'
             f'<div class="q-acts">{again}{open_it}</div></div>')
     return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')
 
@@ -2204,7 +2211,7 @@ def _ib_job(ctx, entry):
 def _ib_detail(ctx, entry, settled, view, missing, lead=None):
     """The item the Inbox shows: who asks and about what, over a patch of water, then the form that settles it."""
     if lead is not None:
-        return _ib_job(ctx, lead)
+        return _ib_job(ctx, lead, view)
     if missing is not None:
         body = (f'<div class="q-body"><h2 class="q-title" id="q-h">No inbox item {_text(missing)}</h2>'
                 '<p class="soft">It may have been settled long ago, or the address has a typo.</p></div>')

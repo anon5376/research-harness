@@ -1515,7 +1515,8 @@ console.log(JSON.stringify([
         self.assertEqual(order, ["j-error", "j-output"])
         self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
-        self.assertIn("exit 2", error)
+        self.assertIn("last 12 lines", error)  # the exit code leads the page, not this card
+        self.assertNotIn("exit 2", error)
         self.assertIn("line 30", error)
         self.assertNotIn("line 18\n", error)  # only where it stopped: the last lines
         # A failed job's page leads with the check that failed, its command and its exit code, before its brief; a
@@ -1543,8 +1544,10 @@ console.log(JSON.stringify([
         short = opened(live_view(), "broke-job", kind="local-shell")
         short["open"]["log"] = "ls: docs/: No such file or directory"
         body = pane(dashboard.render(short, NOW, token=TOKEN))
-        self.assertIn('data-region="j-output"', body)
-        self.assertIn("ls: docs/: No such file or directory", body)
+        # a failed log that fits in "Where it stopped" is shown there once, with no second fold repeating it
+        self.assertIn('data-region="j-error"', body)
+        self.assertNotIn('data-region="j-output"', body)
+        self.assertEqual(body.count("ls: docs/: No such file or directory"), 1)
         self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
 
     def test_session_numbers_use_ui_type_and_the_machine_has_one_name(self):

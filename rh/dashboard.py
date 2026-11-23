@@ -2344,8 +2344,8 @@ def _inbox_pane(view, ctx, feedback):
     tabbed = ctx["live"] and len(tabs) > 2
     tabbar = f'<div class="tabs" role="tablist" aria-label="Filter">{"".join(tabs)}</div>' if tabbed else ""
     top = _top('<h1 tabindex="-1">Inbox</h1>'
-                    f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>{_SEP_HTML}'
-                    f'<span class="num">{len(settled)}</span> settled today</span>')
+                    f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>'
+                    f'<span class="settled">{_SEP_HTML}<span class="num">{len(settled)}</span> settled today</span></span>')
     lists = (_section("ib-wait", "Needs you", _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
                       ("" if tabbed else f'<span class="n num">{len(waiting)}</span>')
                       + f'<span class="ib-gh-r mono">newest first</span>{tabbar}')
@@ -2441,7 +2441,7 @@ def _settings(ctx, preset, tint="cobalt"):
                     f'{" checked" if name == tint else ""} aria-label="{name.capitalize()}">'
                     f'<span class="tint-dot" data-tint="{name}"></span></label>' for name in TINTS)
     return ('<dialog class="settings" id="settings" aria-labelledby="settings-title"><header>'
-            '<h2 id="settings-title">Settings</h2><form method="dialog"><button class="icon-btn" aria-label="Close settings">'
+            '<h2 id="settings-title" tabindex="-1" autofocus>Settings</h2><form method="dialog"><button class="icon-btn" aria-label="Close settings">'
             '×</button></form></header><form action="/appearance" method="post" data-appearance>'
             f'{_hidden(ctx, [])}<fieldset><legend>Background</legend><div class="background-choices">{choices}</div>'
             f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form><footer><button type="button" data-keys class="btn quiet small" hidden>'

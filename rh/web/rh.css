@@ -1673,3 +1673,26 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .assistant-message.md :not(pre) > code { font-size: .875em; padding: .1em .3em; border-radius: 4px; }
 /* A card holds at most twelve lines of output: all of them show, with no scroll inside the card. */
 .out > pre.log.ended { max-height: none; }
+/* A running log is the page: it fills the height left under its status, newest lines pinned at the bottom, and
+   wears the same card as Last output and Where it stopped (header row inside, 12.5px on 21px). */
+.worked:has(> .worked-content > pre.log[data-follow]) { border: 1px solid var(--border); border-radius: var(--r-card);
+  background: rgb(255 255 255 / .025); overflow: hidden; }
+.worked:has(> .worked-content > pre.log[data-follow]) > summary { width: auto; height: 38px; padding: 0 14px 0 10px;
+  border-bottom: 1px solid var(--rule); }
+.worked:has(> .worked-content > pre.log[data-follow]) > summary .worked-output { color: var(--text); font-size: 13px; }
+.worked-content:has(> pre.log[data-follow]) { margin-top: 0; border: 0; border-radius: 0; background: none; }
+.worked pre.log[data-follow] { line-height: 21px; max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
+@media (max-width: 600px) { .worked pre.log[data-follow] { max-height: max(240px, calc(100dvh - 300px)); } }
+/* Settings opens with focus on itself, so its close button wears no ring until the keyboard reaches it. */
+.settings :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
+.settings header .icon-btn { width: 32px; height: 32px; font-size: 20px; line-height: 1; color: var(--muted); }
+.settings header .icon-btn:hover { color: var(--text); background: rgb(255 255 255 / .08); }
+/* On a phone the composer types at 16px, so focusing it never zooms the page. */
+@media (max-width: 600px) { .composer textarea.c-text, :is(.dock, .session-dock) .compose textarea.c-text { font-size: 16px; } }
+/* Short headings and bubbles break evenly rather than leaving one word on the last line. */
+:is(.user-message, .ib-t, .q-title, .md-title) { text-wrap: pretty; }
+/* The phone Inbox keeps its one count of what needs you after the title; the settled count stays on desktop. */
+@media (max-width: 600px) {
+  .top-meta:has(> [data-need]) { display: inline; }
+  .top-meta:has(> [data-need]) > :not([data-need]) { display: none; }
+}

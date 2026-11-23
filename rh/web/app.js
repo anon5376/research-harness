@@ -1327,7 +1327,7 @@ document.addEventListener('keydown', e => {
     if (f && f.getClientRects().length) f.focus(); else go($('[data-k="n"]').href, true);
   }
   else if (e.key === 't' && $('[data-k="t"]')) $('[data-k="t"]').focus();
-  else if (/^[rahusclxy]$/.test(e.key) && act(e.key)) {
+  else if (/^[rahusclxyw]$/.test(e.key) && act(e.key)) {
     const c = act(e.key);
     if (c.matches('a[data-nav]')) go(c.href, true);
     else if (c.hasAttribute('data-copy')) c.click();  // a Copy runs on its key; the rest only point at their control

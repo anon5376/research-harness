@@ -108,14 +108,15 @@ _KEYS = (("⌘K / Ctrl K", "Jump to a job, a page or an action"), ("j / ↓", "N
          ("Enter", "Open it"), ("n", "New job"), ("i", "Open the Inbox"), ("r", "Answer or mark done"),
          ("a", "Link a Codex task"), ("h", "Paste a patch"), ("u", "Resume"), ("s", "Pause"),
          ("c", "Cancel a job that has not started"), ("l", "Save a result to a branch"), ("y", "Copy the answer"),
-         ("t", "Check now"), ("⌘ / Ctrl Enter", "Send the form you are typing in"), ("Esc", "Close or leave a field"),
-         ("?", "This sheet"))
+         ("w", "Swarm again"), ("t", "Check now"), ("⌘ / Ctrl Enter", "Send the form you are typing in"),
+         ("Esc", "Close or leave a field"), ("?", "This sheet"))
 # What the palette can press on a page, by the key that already does it there.
 _PRESS = (("t", "Check now", "the harness, once"), ("u", "Resume", "lift the app's pause"),
           ("s", "Pause this job", "nothing new starts for it"), ("c", "Cancel this job", "before it starts"),
           ("a", "Link the Codex task", "paste the task link"), ("h", "Paste the patch", "from the Codex web view"),
           ("r", "Answer or mark done", "what this page asks"), ("l", "Save to a branch", "the finished result"),
-          ("y", "Copy the answer", "its Markdown, as written"), ("x", "Dismiss", "close the item without doing it"))
+          ("y", "Copy the answer", "its Markdown, as written"), ("w", "Swarm again", "the same brief, every model"),
+          ("x", "Dismiss", "close the item without doing it"))
 _ENV = re.compile(r"in environment (\S+?),")
 _DAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 _MONTHS = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
@@ -2236,7 +2237,8 @@ def _swarm_again(ctx, runs):
         fields.append(("timeout_min", str(int(limit))))
     return (f'<form method="post" action="/job" data-act data-label="Swarm again">'
             f'{_hidden(ctx, fields)}'
-            f'<button class="sw-again">{_ic("again", True)}<span>Swarm again</span></button></form>')
+            f'<button class="sw-again" data-k="w" aria-keyshortcuts="w">{_ic("again", True)}'
+            '<span>Swarm again</span></button></form>')
 
 
 def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):

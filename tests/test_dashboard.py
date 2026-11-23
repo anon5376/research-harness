@@ -562,8 +562,16 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(fields["timeout_min"], "90")
         self.assertEqual(fields["t"], TOKEN)
         self.assertEqual(fields["next"], "/job/fix.best")
-        self.assertIn('<button class="sw-again">', card(page))
+        self.assertIn('<button class="sw-again" data-k="w" aria-keyshortcuts="w">', card(page))
         self.assertIn("Swarm again", text(card(page)))
+        # the page's w key presses it, once: no other control on the page may carry the key
+        self.assertEqual(page.count('data-k="w"'), 1)
+        self.assertEqual(page.count('aria-keyshortcuts="w"'), 1)
+        # the sheet lists it, and the palette offers it on this page because a [data-k="w"] control exists
+        self.assertIn("<dt><kbd>w</kbd></dt><dd>Swarm again</dd>", page)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        self.assertIn('data-press="w"', pal)
+        self.assertIn("Swarm again", pal)
         # 'Combined', when the judge merged the runs' work, keeps its place in the head ahead of the control
         done["open"]["swarm_kept"] = "combined"
         page = dashboard.render(done, NOW, token=TOKEN)
@@ -574,10 +582,14 @@ class ListsTest(unittest.TestCase):
         page = dashboard.render(done, NOW, token=TOKEN)
         self.assertIn("1 of 2 finished", text(card(page)))
         self.assertFalse(Forms(card(page)).forms)
+        self.assertNotIn('data-k="w"', page)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        self.assertNotIn('data-press="w"', pal)
         view["meta"]["fix.w2"]["state"] = "done"
         page = dashboard.render(done, NOW)
         self.assertFalse(Forms(card(page)).forms)
         self.assertNotIn("sw-again", card(page))
+        self.assertNotIn('data-k="w"', page)
 
     def test_an_answers_attachments_open_from_one_side(self):
         # Under an answer the file row opened from a trailing 'Preview ›' and the folded Output below it from a
@@ -1842,6 +1854,24 @@ class DashboardTest(unittest.TestCase):
         self.assertIn(("y", "Copy the answer", "its Markdown, as written"), dashboard._PRESS)
         keys = [k for k, _ in dashboard._KEYS]
         self.assertEqual(keys[keys.index("l") + 1], "y")
+
+    def test_w_runs_the_swarm_again_from_the_keyboard(self):
+        # 'w' missing from the single-key regex, _KEYS/_PRESS missing what the sheet and palette list, or either
+        # entry sitting anywhere but right after y's, must fail.
+        single = re.search(r"/\^\[([a-z]+)\]\$/\.test\(e\.key\)", dashboard.SCRIPT)
+        self.assertIsNotNone(single)
+        self.assertIn("w", single.group(1))
+        self.assertIn(("w", "Swarm again"), dashboard._KEYS)
+        self.assertIn(("w", "Swarm again", "the same brief, every model"), dashboard._PRESS)
+        keys = [k for k, _ in dashboard._KEYS]
+        self.assertEqual(keys[keys.index("y") + 1], "w")
+        press = [k for k, _, _ in dashboard._PRESS]
+        self.assertEqual(press[press.index("y") + 1], "w")
+        # a job page with no swarm has no [data-k="w"] control, so the palette never offers the press
+        page = dashboard.render(opened(live_view(), "finished-job", kind="local-shell"), NOW, token=TOKEN)
+        self.assertNotIn('data-k="w"', page)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        self.assertNotIn('data-press="w"', pal)
 
     def test_a_composer_keeps_its_draft_across_pages(self):
         # A reply typed on one job and left for another came back empty, since the page swap renders a new form

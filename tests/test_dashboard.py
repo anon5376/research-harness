@@ -842,6 +842,29 @@ class ListsTest(unittest.TestCase):
         (["Opus"], "Opus", "Opus · Opus judges"),
     ]
 
+    def test_settings_shows_every_swarm_group_when_it_opens(self):
+        # r23 F3: a fourth tick group still started at the sheet's foot, and the ticks sat in a filled, bordered box
+        # inside the sheet. In Settings the ticks sit on the sheet (no box), rows are 28px, group heads 24px, and the
+        # Colour swatches share their label's row. The composer's popover keeps its own box.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        box = rule(".settings .swarm-models")
+        for spec in ("padding: 0", "border: 0", "background: none"):
+            self.assertIn(spec, box)
+        row = rule(".settings .swarm-m")
+        self.assertIn("min-height: 28px", row)
+        self.assertIn("margin: 0 -8px", row)  # the hover fill keeps an inset; the text sits on the sheet's edge
+        self.assertIn("line-height: 16px", rule(".settings .swarm-g"))
+        self.assertIn("padding: 6px 0 2px", rule(".settings .swarm-g"))
+        # the check row under the ticks is plain too, as the Judge row above them is: the section has no inner boxes
+        check = rule(".settings .swarm-opts")
+        for spec in ("padding: 0", "border: 0", "background: none"):
+            self.assertIn(spec, check)
+        self.assertIn("padding: 0", rule(".settings .swarm-opts > .swarm-judge"))
+        self.assertIn("padding-left: 0", rule(".settings .swarm-opts + .set-hint"))
+        legend = rule(".settings fieldset:has(.tint-choices) > legend")
+        for spec in ("float: left", "line-height: 24px"):
+            self.assertIn(spec, legend)
+
     def test_settled_inbox_rows_step_back(self):
         # r23 F1: settled rows wore the white 15px title, row height and id line of the rows that need you; only the
         # icon told them apart, so the list read as eight equal rows. A settled row's title is the meta grey at 400,

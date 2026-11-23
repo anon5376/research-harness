@@ -949,7 +949,14 @@ class ListsTest(unittest.TestCase):
         # thumbnail rows (10px across), and a 48px head that never scrolls over a body that does, which fades its
         # top 16px only once scrolled. A sticky head over the translucent glass let the thumbnails show through.
         grid = dashboard.STYLE.split("\n.background-choices {", 1)[1].split("}", 1)[0]
-        self.assertIn("gap: 24px 10px", grid)
+        # r22 F1: two rows of wallpaper took the sheet's top half and pushed Swarm below the fold of a sheet that
+        # filled the window. On a desktop the eight thumbnails are one row (8px apart, 11px names) and the sheet
+        # stops 64px from the window's top and bottom; a phone keeps its two rows of four, 24px apart.
+        self.assertIn("grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 8px;", grid)
+        self.assertIn("@media (max-width: 600px) { .background-choices { grid-template-columns: repeat(4, minmax(0, 1fr)); "
+                      "gap: 24px 10px; } .background-choices label { font-size: 12px; } }", dashboard.STYLE)
+        self.assertIn("font-size: 11px", dashboard.STYLE.split("\n.background-choices label {", 1)[1].split("}", 1)[0])
+        self.assertIn("@media (min-width: 601px) { dialog.settings { max-height: calc(100vh - 128px); } }", dashboard.STYLE)
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         for spec in ("display: flex", "flex-direction: column", "overflow: hidden"):
             self.assertIn(spec, rule("dialog.settings[open]"))

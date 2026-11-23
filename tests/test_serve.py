@@ -15,6 +15,7 @@ import tempfile
 import sys
 import threading
 import time
+import tomllib
 import unittest
 from unittest.mock import patch
 from urllib.error import HTTPError
@@ -774,6 +775,47 @@ class ServeTest(unittest.TestCase):
             self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Do more"})
         with self.ledger() as led:
             self.assertIsNone(led.job("do-more.best"))
+
+    def test_the_swarm_again_form_posts_a_goal_add(self):
+        # The ended Swarm card's 'Swarm again' form posts the fields its page renders: the composer's /job post
+        # with '/swarm ' back in front of the runs' brief. Through _action they must send `rh goal add` of the
+        # swarm's goal file — a 'job add' of one plain job, or a page with no form to post, must fail.
+        for jid, after, after_any in (("swarm-fix.w1", [], False), ("swarm-fix.w2", [], False),
+                                      ("swarm-fix.best", ["swarm-fix.w1", "swarm-fix.w2"], True)):
+            spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Fix the typo.",
+                                       "command": ["true"], "after": after, "after_any": after_any,
+                                       "timeout_min": 90})
+            with self.ledger() as led:
+                led.add_job(spec)
+                for step in ("ready", "launching", "running"):
+                    led.set_state(jid, step)
+                led.finish(jid, "done", {"route": "local-shell", "checks": [], "model_requested": None,
+                                         "model_served": None, "ended": time.time(), "detail": "ok"})
+        code, _, page = self.request("/job/swarm-fix.best")
+        self.assertEqual(code, 200)
+        card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
+        self.assertIn("/job", Forms(card).forms)  # the ended card's one form posts to /job
+        attrs, posted = Forms(card).forms["/job"]
+        self.assertEqual(attrs["method"], "post")
+        self.assertEqual(posted["brief"]["value"], "/swarm Fix the typo.")
+        fields = {name: a.get("value", "") for name, a in posted.items() if name != "t"}
+        config.set_value("swarm.models", "swe-2-max,claude-haiku-5-5", self.cfg["home"])
+        config.set_value("swarm.judge", "swe-2-high", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"), \
+                patch("rh.serve._call", return_value=(0, "")) as call:
+            code, headers, _ = self.request("/job", fields)
+        self.assertEqual(code, 303)
+        argv = call.call_args.args[1]
+        self.assertEqual(argv[:3], ["goal", "add", "--"])
+        self.assertTrue(str(argv[3]).endswith(".toml"))
+        self.assertEqual(headers["Location"], "/job/fix-the-typo.best?t=" + self.token)
+        goal = tomllib.loads(Path(argv[3]).read_text(encoding="utf-8"))
+        self.assertEqual(goal["id"], "fix-the-typo")
+        self.assertEqual([job["id"] for job in goal["jobs"]], ["w1", "w2", "best"])
+        self.assertEqual([job["brief"] for job in goal["jobs"]], ["Fix the typo."] * 3)  # the marker stays out
+        self.assertEqual(goal["jobs"][0]["timeout_min"], 90)
+        self.assertEqual((goal["jobs"][2]["after"], goal["jobs"][2]["after_any"]), (["w1", "w2"], True))
 
     def test_a_swarms_judge_page_shows_each_runs_diff_size(self):
         # The Swarm card compares runs: each run's changes.patch in its own folder under $RH_HOME counts as

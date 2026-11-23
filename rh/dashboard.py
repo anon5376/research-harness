@@ -2221,6 +2221,24 @@ def _fail_banner(state, spec, bad):
             f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
 
 
+def _swarm_again(ctx, runs):
+    """An ended swarm's way to run the whole swarm again on the same brief: the composer's /job post with '/swarm '
+    back in front of the first run's brief — the brief before any judging text — as the submit listener writes it,
+    with the runs' time limit."""
+    m = ctx["meta"].get(runs[0]) if runs else None
+    m = m if isinstance(m, dict) else {}
+    brief = str(m.get("brief") or "")
+    if not brief.strip():
+        return ""
+    fields = [("brief", "/swarm " + brief)]
+    limit = m.get("timeout_min")
+    if _number(limit) and limit > 0:
+        fields.append(("timeout_min", str(int(limit))))
+    return (f'<form method="post" action="/job" data-act data-label="Swarm again">'
+            f'{_hidden(ctx, fields)}'
+            f'<button class="sw-again">{_ic("again", True)}<span>Swarm again</span></button></form>')
+
+
 def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
     """A swarm's runs on its judge's page: each run's model, state, time, diff size, check verdict and first
     answer line, linked to its page."""
@@ -2260,12 +2278,14 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
                      else f'<li><div class="{cls}">{inner}</div></li>')
     n = len(runs)
     ended = sum((ctx["states"].get(r) or "waiting") not in (*_LIVE, *_PRE) for r in runs)
+    again = ""
     if ended < n:  # while a run still works, the head says how far along the swarm is, and draws it
         side = (f'{ended} of {n} finished<span class="sw-bar" role="progressbar" aria-label="Runs finished" aria-valuemin="0" '
                 f'aria-valuemax="{n}" aria-valuenow="{ended}" style="--p:{ended / n:.0%}"></span>')
     else:  # ended: the rows below show how many; the head says only that the judge combined them, when it did
         side = "Combined" if kept == "combined" else ""
-    body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{side}</span></div>'
+        again = _swarm_again(ctx, runs) if ctx["live"] else ""
+    body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{side}</span>{again}</div>'
             f'<ul class="sw-runs">{"".join(items)}</ul>')
     return _region("j-swarm", body, "section", "out s-j-swarm", ' aria-label="Swarm runs"')
 

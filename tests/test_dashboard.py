@@ -533,6 +533,52 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("finished", text(head))
         self.assertNotIn("progressbar", head)
 
+    def test_an_ended_swarms_card_sends_the_same_brief_as_a_new_swarm(self):
+        # 'Judge again' re-runs only the judge on the runs' work; the whole swarm again on the same brief is the
+        # composer's /job post with '/swarm ' back in front of the brief, which the server reads from the brief
+        # itself. The card offers it once every run has ended, on the live page only.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix", "timeout_min": 90}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                            "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "fix.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"]["swarm_kept"] = "fix.w1"
+        card = lambda page: re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)  # noqa: E731
+        page = dashboard.render(done, NOW, token=TOKEN)
+        forms = Forms(card(page)).forms
+        self.assertEqual(len(forms), 1)  # the card's one form, in its head before the run rows
+        form = forms[0]
+        self.assertEqual((form["action"], form["method"]), ("/job", "post"))
+        self.assertLess(card(page).index('action="/job"'), card(page).index('class="sw-runs"'))
+        self.assertRegex(card(page), r'<form method="post" action="/job" data-act data-label="Swarm again">')
+        fields = form["fields"]
+        self.assertEqual(fields["brief"], "/swarm Fix the typo")  # the marker, then the runs' brief as written
+        self.assertEqual(fields["timeout_min"], "90")
+        self.assertEqual(fields["t"], TOKEN)
+        self.assertEqual(fields["next"], "/job/fix.best")
+        self.assertIn('<button class="sw-again">', card(page))
+        self.assertIn("Swarm again", text(card(page)))
+        # 'Combined', when the judge merged the runs' work, keeps its place in the head ahead of the control
+        done["open"]["swarm_kept"] = "combined"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertLess(card(page).index("Combined"), card(page).index("Swarm again"))
+        done["open"]["swarm_kept"] = "fix.w1"
+        # while a run still works the head counts progress instead, and the static page has no controls at all
+        view["meta"]["fix.w2"]["state"] = "running"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn("1 of 2 finished", text(card(page)))
+        self.assertFalse(Forms(card(page)).forms)
+        view["meta"]["fix.w2"]["state"] = "done"
+        page = dashboard.render(done, NOW)
+        self.assertFalse(Forms(card(page)).forms)
+        self.assertNotIn("sw-again", card(page))
+
     def test_an_answers_attachments_open_from_one_side(self):
         # Under an answer the file row opened from a trailing 'Preview ›' and the folded Output below it from a
         # leading '›', 24px apart, so they read as unrelated (critic r10 F6). Folded, Output is a row like the file's,

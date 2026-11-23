@@ -314,5 +314,24 @@ class CliTest(unittest.TestCase):
         self.assertNotIn("STOP", self.rh("status").stdout)
 
 
+class RecentTest(unittest.TestCase):
+    def test_a_failure_that_still_needs_you_outlives_the_ten_newest_ends(self):
+        # A failure inside its day dropped because ten newer jobs ended (a swarm alone ends three), an old failure
+        # kept past its day, or the ten newest ends cut short, must fail.
+        from rh import cli
+        now = 1_000_000.0
+        jobs = [{"id": "broke", "state": "failed", "updated": now - 6 * 3600},
+                {"id": "stale", "state": "failed", "updated": now - 30 * 3600},
+                {"id": "old-ok", "state": "done", "updated": now - 7 * 3600},
+                *({"id": f"run-{n}", "state": "done", "updated": now - n * 60} for n in range(12)),
+                {"id": "live", "state": "running", "updated": now}]
+        ids = [j["id"] for j in cli._recent(jobs, now)]
+        self.assertEqual(ids[:10], [f"run-{n}" for n in range(10)])
+        self.assertIn("broke", ids)
+        self.assertNotIn("stale", ids)
+        self.assertNotIn("old-ok", ids)
+        self.assertNotIn("live", ids)
+
+
 if __name__ == "__main__":
     unittest.main()

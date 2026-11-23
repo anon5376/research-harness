@@ -227,6 +227,14 @@ def cmd_chat(args, cfg):
     return 0
 
 
+def _recent(jobs, now):
+    """The ten newest ended jobs, plus any failure from the last day: it still waits on a person, so newer ends
+    (a swarm alone ends three) must not push it out of the status view and off the app's Needs you."""
+    ended = sorted((j for j in jobs if j["state"] in TERMINAL), key=lambda j: -j["updated"])
+    return [j for n, j in enumerate(ended) if n < 10 or (j["state"] not in ("done", "cancelled")
+                                                         and now - j["updated"] < 86400)]
+
+
 def cmd_status(args, cfg):
     led = _ledger(cfg)
     now = time.time()
@@ -241,7 +249,7 @@ def cmd_status(args, cfg):
         "not_started": [_row(led, j) for j in jobs if j["state"] in ("draft", "ready", "waiting", "held")],
         "inbox": led.inbox(),
         "last_24h": _counts(j for j in jobs if j["state"] in TERMINAL and now - j["updated"] < 86400),
-        "recent": [_row(led, j) for j in sorted(jobs, key=lambda j: -j["updated"]) if j["state"] in TERMINAL][:10],
+        "recent": [_row(led, j) for j in _recent(jobs, now)],
     }
     if args.html:
         page = _optional("dashboard", "M6a").render(view, now)

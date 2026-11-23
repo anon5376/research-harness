@@ -213,6 +213,13 @@ class ListsTest(unittest.TestCase):
         row = re.search(r'<li class="row" data-key="job:finished-job".*?</li>', dashboard.render(view, NOW, token=TOKEN),
                         re.S).group(0)
         self.assertIn('<span class="name">Fixed the typo</span>', row)
+        # two listed runs of one brief are told apart by their ids
+        view["meta"].update({"live-job": {"kind": "local-shell", "brief": "Same brief."},
+                             "web-job": {"kind": "local-shell", "brief": "Same brief."}})
+        page = dashboard.render(view, NOW, token=TOKEN)
+        for jid in ("live-job", "web-job"):
+            row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
+            self.assertIn(f'<span class="name"><span class="nm" title="Same brief">{jid}</span></span>', row)
 
     def test_the_inbox_opens_on_the_newest_job_that_waits_when_nothing_asks(self):
         page = inbox({**live_view(), "inbox": []})

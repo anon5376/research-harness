@@ -1412,7 +1412,7 @@ html[data-live-app] body[data-tint="ember"] { --tint-ground: #140703; }
 html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 /* One sans voice for headings: no serif anywhere. */
 .q-title, .jd-head h1 { font-family: var(--ui); font-weight: 600; letter-spacing: -0.01em; }
-.q-title { font-size: 22px; line-height: 28px; }
+.q-title { font-size: 20px; line-height: 26px; }
 .p-in .p-q { font: 17px/24px var(--ui); }
 /* An answer reads as a title over prose of about 75 characters a line. */
 .assistant-message.md .md-title { font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
@@ -1507,17 +1507,65 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
     translate: -50% -50%; }
   .q-acts .btn { min-height: 44px; }
 }
-/* Groups stand apart; a run that shares its name shows its id. */
+/* Groups stand apart; a run that shares its name with another is named by its id. */
 .side .group + .group { margin-top: 16px; }
-.name:has(> .slug) { display: flex; min-width: 0; gap: 6px; }
-.name > .nm { flex: 0 1 auto; min-width: 3ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.name > .slug { flex: 0 1 auto; min-width: 0; max-width: 62%; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--faint); font-size: 12px; }
 /* A clamped ask ends on a whole line: no padding for the next line to show through. */
 .user-message:has(+ .ask-more):not(.whole) { padding-bottom: 0; max-height: calc(10lh + 8px); }
 @media (max-width: 600px) { .user-message:has(+ .ask-more):not(.whole) { max-height: calc(6lh + 8px); } }
 /* The settings close button rings only for the keyboard. */
 .settings .icon-btn:focus:not(:focus-visible) { outline: none; box-shadow: none; }
 /* Palette: the status words share one column, so the ids share one edge. */
+.p-s { flex-wrap: nowrap; }
 .p-s > span:last-child { flex: none; width: 84px; text-align: left; }
 @media (max-width: 900px) { .ibx[data-view="list"] .ib[aria-current]:not(:hover) { background: transparent; } }
+@media (min-width: 601px) { .p-row { grid-template-columns: 20px minmax(0, 1fr) 290px auto; } }
+/* On a phone a palette row is two lines: the name, then its id and state; the name never gives way to them. */
+@media (max-width: 600px) {
+  .p-row { grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto auto; height: auto; min-height: 52px;
+    padding: 6px 12px; row-gap: 1px; }
+  .p-row .p-ic { grid-row: 1 / span 2; }
+  .p-row .p-s { grid-column: 2; justify-content: flex-start; }
+  .p-row .p-a { display: none; }
+}
+/* Text scrolled up out of a job's thread dissolves under its head instead of being cut through its letters. */
+.jd-scroll.scrolled { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
+/* An empty reply box runs the job again, which can cost hours: its button says so instead of looking like send. */
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] { width: auto; padding: 0 12px;
+  border-radius: 14px; font: 500 12.5px var(--ui); }
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] .ic { display: none; }
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]::before { content: "Run again"; }
+/* How far a run has got is the page's headline while it runs. */
+.jd[data-state="running"] .job-result-status { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.run-progress { height: 4px; border-radius: 2px; }
+.run-progress::-webkit-progress-bar, .run-progress::-webkit-progress-value { border-radius: 2px; }
+.worked pre.log[data-follow] { max-height: min(460px, max(240px, calc(100dvh - 300px))); }
+/* The fold's chevron sits in the 14px icon slot, so its words line up with the status rows'. */
+:is(.worked, .file-preview) > summary::before { width: 14px; text-align: center; }
+/* live is the running blue, breathing */
+.livetag { color: var(--muted); }
+.livetag .dot { background: var(--ef-accent); animation: rh-breathe 1.6s ease-in-out infinite; }
+@keyframes rh-breathe { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .livetag .dot { animation: none; } }
+/* The page you are on is lit in the sidebar, the composer's page too. */
+body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
+/* The palette names where a job runs only when it is not this Mac. */
+.p-row .p-a:has([data-w="mac"]) { visibility: hidden; }
+/* Previews bright enough to tell apart at thumbnail size. */
+.background-preview:not([data-preview="off"]) { filter: brightness(1.8); }
+/* On a phone: Pause is a 44px icon, and the job's name may take two lines. */
+@media (max-width: 600px) {
+  .job-actions .act > summary[data-k="s"] { width: 44px; height: 44px; padding: 0; justify-content: center; font-size: 0;
+    border: 0; }
+  .job-actions .act > summary[data-k="s"]::before { content: ""; width: 10px; height: 12px; box-sizing: border-box;
+    border-inline: 3px solid currentColor; }
+  .detail:has(.job-actions .act) .jd-head-in { padding-right: 96px; }
+  .detail .jd-head h1 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal;
+    font-size: 15px; line-height: 20px; }
+}
+.jd[data-state="running"] .job-result-status * { font-size: inherit; }
+/* The Inbox's two ways forward are one height; running it again leads. */
+.q-acts { align-items: center; }
+.q-acts .btn { height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+.q-acts form.act .btn, .q-acts form.act .btn.gbtn.fail { background: #fff; border-color: #fff; color: #0b0b0c; }
+.q-acts form.act .btn:hover, .q-acts form.act .btn.gbtn.fail:hover { background: #e3e3e7; }
+.q-acts form.act .btn .ic { color: inherit; }

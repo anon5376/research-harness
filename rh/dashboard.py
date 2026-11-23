@@ -299,7 +299,7 @@ def _where(kind):
     """Where a job runs, as the tabs' icon, named for a screen reader."""
     name, icon = (HERE, "mac") if kind == "local-shell" else ("Codex cloud", "cloud") if kind == "codex-cloud" else (
         "GPT Pro", "chat") if kind == "gpt-chat" else (_platform(kind), "")
-    return (f'<span class="where" role="img" aria-label="{_text(name)}">{_ic(icon, True)}</span>' if icon
+    return (f'<span class="where" role="img" aria-label="{_text(name)}" data-w="{icon}">{_ic(icon, True)}</span>' if icon
             else f'<span class="where mono">{_text(str(kind)[:6])}</span>')
 
 
@@ -838,10 +838,11 @@ class _Job:
         return ""
 
     def name_html(self):
-        """The job's name in a list, with its id after it when another listed job shares the name."""
+        """The job's name in a list; when another listed job shares it, its id (named for the job when it was added)
+        tells the two apart, with the name on hover."""
         if not self.dup:
             return _text(self.label)
-        return f'<span class="nm">{_text(self.label)}</span><span class="slug mono">{_text(self.id)}</span>'
+        return f'<span class="nm" title="{_text(self.label)}">{_text(self.id)}</span>'
 
     def item(self, runs=1):
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
@@ -2083,16 +2084,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
         line_count = f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
-        if _number(started_at):
-            elapsed = (_duration(ended_at - started_at) if finished and _number(ended_at)
-                       else _when(started_at, now, "j:worked", short=True))
-        else:
-            elapsed = "duration unavailable"
+        # The status line above keeps the run's time, so the fold names only its output; while the job runs it
+        # starts open: watching the output is what the page is for until the job ends.
         output_status = (f'Output{_SEP_HTML}{_text(line_count)}' if log else "No output received yet")
-        # While it runs the status line above already keeps time, so the fold names only its output, and it starts
-        # open: watching the output is what the page is for until the job ends.
-        worked = "" if not finished else f'<span>Worked {elapsed}</span>{_SEP_HTML}'
-        work_summary = (f'<summary class="worked-summary">{worked}'
+        work_summary = (f'<summary class="worked-summary">'
                         f'<span class="worked-output">{output_status}</span>{tag}</summary>')
         output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
                        '<p class="soft">The worker has not produced output yet.</p>')
@@ -2193,10 +2188,8 @@ def _ib_job(ctx, entry):
     who = [f'<span class="mono">{_text(job.id)}</span>', f'<span>{_text(_platform(job.kind))}</span>']
     if _number(entry.get("created")):
         who.append(f'<span>since <span class="mono num">{_clock(entry["created"], ctx["now"])}</span></span>')
-    more = len(ctx["needs"]) - 1
-    rest = (f'<p class="soft q-more">{more} more {"needs" if more == 1 else "need"} you in the list.</p>'
-            if more > 0 else "")
-    open_it = (f'<a class="btn primary" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
+    again = job.act()  # Run again leads when the row offers it; the job's page is the quieter way
+    open_it = (f'<a class="btn{"" if again else " primary"}" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
                else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
     bad = job.state in _FAILED
     said = (f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
@@ -2204,7 +2197,7 @@ def _ib_job(ctx, entry):
     body = (f'<div class="q-head"><div class="q-head-in"><p class="q-who" data-clear>{_SEP_HTML.join(who)}</p>'
             f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2></div></div>'
             f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>'
-            f'<div class="q-acts">{open_it}</div>{rest}</div>')
+            f'<div class="q-acts">{again}{open_it}</div></div>')
     return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')
 
 

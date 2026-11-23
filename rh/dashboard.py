@@ -681,7 +681,11 @@ def answer_head(text):
         # boilerplate never names a run: a status word alone ("Done."), a leading one ("Done. Rounded the ETA"), or a
         # lead-in that ends in a colon ("Summary of the diff:") gives way to the next line
         x = re.sub(r"^#+\s*|^[-*]\s+", "", raw.strip()).replace("**", "").replace("`", "").replace("__", "")
-        x = _STATUS_LEAD.sub("", x).strip()
+        bare = _STATUS_LEAD.sub("", x).strip()
+        if bare != x:  # what a status word leaves starts as a sentence: no stray mark, a capital
+            bare = bare.lstrip("—–-:·•, ")
+            bare = bare[:1].upper() + bare[1:]
+        x = bare
         if x and not x.endswith(":"):
             line = x
             break

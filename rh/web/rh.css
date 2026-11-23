@@ -1932,7 +1932,10 @@ a.sw-run:hover { background: var(--surface); }
 .c-strip.has-repo .compose-title { letter-spacing: -.01em; }
 /* One quiet line under the composer names the keys it answers to; while the brief holds text it steps aside but
    keeps its room, so the page does not jump. */
-.compose-hint { margin: 16px 0 0; font: 12px var(--ui); color: #6e7383; text-align: center; }
+.compose-hint { margin: 16px 0 0; font: 12px var(--ui); color: #6e7383; text-align: center;
+  transition: opacity .12s cubic-bezier(.16, 1, .3, 1); }
+/* The hint steps aside while a composer menu is open, so no half of it shows beside or through the menu. */
+body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:not([hidden])) .compose-hint { opacity: 0; }
 .compose-hint kbd { display: inline-block; vertical-align: 1px; height: 18px; padding: 0 5px; margin-right: 6px; border-radius: 4px; background: #1a1f2c;
   font: 11px/18px var(--mono); }
 .c-strip:has(.c-text:not(:placeholder-shown)) .compose-hint { visibility: hidden; }

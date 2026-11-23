@@ -215,7 +215,10 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(dashboard.answer_head("Done. Rounded the ETA to whole hours."), "Rounded the ETA to whole hours")
         self.assertEqual(dashboard.answer_head("OK"), "")
         # a status word's dash goes with it: '— renamed the label' named a swarm run (critic r9 F13)
-        self.assertEqual(dashboard.answer_head("Done — renamed the label to Run"), "renamed the label to Run")
+        # and what is left starts as a sentence does (critic r10 F3)
+        self.assertEqual(dashboard.answer_head("Done — renamed the label to Run"), "Renamed the label to Run")
+        self.assertEqual(dashboard.answer_head("Done. · fixed it"), "Fixed it")
+        self.assertEqual(dashboard.answer_head("rh/serve.py — x"), "x")  # no status word stripped: left as written
         # a label is cut by the list's ellipsis, which would cut a line number to a false ':1…': the number goes whole
         self.assertEqual(dashboard.answer_head("The label is renamed at rh/dashboard.py:1623"),
                          "The label is renamed at rh/dashboard.py")
@@ -2407,6 +2410,13 @@ console.log(JSON.stringify([
                       dashboard.STYLE)
         blocks = re.findall(r"@media \(max-width: 600px\) \{(.*?)\n\}", dashboard.STYLE, re.S)
         self.assertTrue(any(re.search(r"\.compose-hint \{[^}]*display: none", b) for b in blocks))
+        # it steps aside while a composer menu is open: half of it showed beside the model picker and through the
+        # options menu (critic r10 F2). The picker and effort panels live on <body> while open; the rest in the strip.
+        hide = re.search(r"\n([^{}]*)\{ opacity: 0; \}", dashboard.STYLE.split("/* The hint steps aside", 1)[1]).group(1)
+        for sel in ("body:has(> .mp-pop, > .ef-pop) .compose-hint", ".c-strip:has(.opts[open], .slash:not([hidden]))"):
+            self.assertIn(sel, hide)
+        self.assertIn("transition: opacity .12s cubic-bezier(.16, 1, .3, 1)",
+                      dashboard.STYLE.split(".compose-hint {", 1)[1].split("}", 1)[0])
         # its key caps are boxes (an inline kbd ignores height), 18px tall
         caps = dashboard.STYLE.split(".compose-hint kbd {", 1)[1].split("}", 1)[0]
         self.assertIn("display: inline-block", caps)

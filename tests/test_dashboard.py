@@ -388,8 +388,12 @@ class ListsTest(unittest.TestCase):
         # the desktop follows the same rule: time right-aligned against a fixed Kept column, after the answer line,
         # so '51 s' and '4 min 49 s' share a tail (critic r14 F4)
         desk = dashboard.STYLE.split("/* desktop swarm rows */", 1)[1].split("\n}", 1)[0]
-        self.assertIn("grid-template-columns: 22px 16px 112px minmax(0, 1fr) 148px 48px 12px", desk)
-        self.assertIn(".sw-run .sw-s { grid-column: 5; grid-row: 1; justify-self: end; }", desk)
+        # one grid for all runs (subgrid): the time column is as wide as the longest time, so an answer line is not
+        # cut 98px short of it (critic r15 F4)
+        self.assertIn(".sw-runs { display: grid; grid-template-columns: 32px 16px 112px minmax(0, 1fr) auto 48px 22px;",
+                      desk)
+        self.assertIn("grid-template-columns: subgrid", desk)
+        self.assertIn(".sw-run .sw-s { grid-column: 5; grid-row: 1; justify-self: end; margin-left: 6px; }", desk)
         self.assertIn(".sw-run .sw-a { grid-column: 4; grid-row: 1; }", desk)
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
@@ -1681,6 +1685,15 @@ class DashboardTest(unittest.TestCase):
                 self.assertEqual(len(primaries(right)), 1)
         broke = pane(dashboard.render(opened(live_view(), "broke-job"), NOW, token=TOKEN))
         self.assertIn('aria-label="Run again" title="Run again" data-followup>', broke)
+        # the quiet pill carries the Inbox Run again button's glyph before its word (critic r15 F6)
+        pill = broke.split('data-followup>', 1)[1].split("</button>", 1)[0]
+        self.assertIn('<svg class="ic sm again"', pill)
+        self.assertIn(dashboard._ICONS["again"], pill)
+        self.assertIn("order: -1; width: 12px; height: 12px;", dashboard.STYLE)
+        # an added line's code keeps its ink; a 2px edge carries the green (critic r15 F8)
+        diff = dashboard.STYLE.split("\n.peek .dl.add {", 1)[1].split("}", 1)[0]
+        self.assertIn("color: var(--text)", diff)
+        self.assertIn("box-shadow: inset 2px 0 #3fb950", diff)
         pages = dashboard.render(live_view(), NOW, token=TOKEN) + "".join(
             dashboard.render(opened(live_view(), jid), NOW, token=TOKEN) for jid in ("live-job", "queued-job"))
         openers = re.findall(r'<summary class="([^"]+)" data-k="[sc]"', pages)

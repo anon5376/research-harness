@@ -1612,11 +1612,13 @@ def _composer_form(ctx, action, label, message, *, job=None, worker="", options=
             f'{_ic("coord", True)}</summary>'
             f'<div class="opts-body">{options}</div></details>') if options else ""
     send = ' data-followup' if followup else ''
+    again = _ic("again", True).replace('class="ic sm"', 'class="ic sm again"') if followup else ""
     cls = _cls("primary send" if primary else "send")
     return (f'<form class="compose composer{(" " + variant) if variant else ""}" method="post" action="{action}" '
             f'data-act data-label="{label}">{_hidden(ctx, [("job", job)] if job else [])}{message}'
             f'<div class="c-row">{add}{worker}<div class="compose-tools">{controls}{opts}'
-            f'<button class="{cls}" aria-label="{label}" title="{label}"{send}>{_ic("up")}</button></div></div>{where}</form>')
+            f'<button class="{cls}" aria-label="{label}" title="{label}"{send}>{_ic("up")}{again}</button></div></div>'
+            f'{where}</form>')
 
 
 _MODEL_NAMES = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6.1-terra": "GPT-6.1 Terra",

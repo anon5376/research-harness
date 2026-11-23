@@ -1574,6 +1574,12 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] { width: auto; padding: 0 12px;
   border-radius: 14px; font: 500 12.5px var(--ui); }
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] .ic { display: none; }
+/* its glyph is the Inbox's Run again one, before the word, so the action reads as one thing everywhere */
+.compose-tools .send[data-followup] .ic.again { display: none; }
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] {
+  display: inline-flex; align-items: center; gap: 6px; }
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] .ic.again {
+  display: block; order: -1; width: 12px; height: 12px; }
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]::before { content: "Run again"; }
 /* How far a run has got is the page's headline while it runs. */
 .jd[data-state="running"] .job-result-status { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
@@ -1921,10 +1927,12 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
   /* desktop swarm rows */
   /* id, ring, model, first answer line, then the time right-aligned against a fixed Kept column, as on a phone,
      so durations compare by their tails */
-  .sw-run { grid-template-columns: 22px 16px 112px minmax(0, 1fr) 148px 48px 12px; }
-  .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 22px 16px 112px minmax(0, 1fr) 236px 48px 12px; }
+  /* the runs share one grid, so the time column is as wide as the longest time and each answer runs up to it */
+  .sw-runs { display: grid; grid-template-columns: 32px 16px 112px minmax(0, 1fr) auto 48px 22px; column-gap: 10px; }  /* edge tracks hold the rows' 10px padding */
+  .sw-runs > li { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; }
+  .sw-run, .sw-runs:has(.sw-c) .sw-run { grid-column: 1 / -1; grid-template-columns: subgrid; }
   .sw-run .sw-a { grid-column: 4; grid-row: 1; }
-  .sw-run .sw-s { grid-column: 5; grid-row: 1; justify-self: end; }
+  .sw-run .sw-s { grid-column: 5; grid-row: 1; justify-self: end; margin-left: 6px; }
   .sw-k { grid-column: 6; grid-row: 1; justify-self: end; }
   .sw-go { grid-column: 7; grid-row: 1; }
 }
@@ -2062,8 +2070,9 @@ form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-col
 /* A patch preview reads as a diff: added lines green, removed red, hunk heads in the accent, file headers quiet. */
 .peek .dl { display: block; padding: 0 6px 0 calc(6px + 1ch); margin-inline: -6px; text-indent: -1ch; white-space: pre-wrap; }
 .peek .dl:empty::before { content: "\200B"; }
-.peek .dl.add { background: rgb(74 222 128 / .10); color: #b8f0c8; }
-.peek .dl.del { background: rgb(248 113 113 / .10); color: #f6c1c1; }
+/* an added or removed line keeps the code's ink on its tint; a 2px edge carries the hue, so the text stays readable */
+.peek .dl.add { background: rgb(74 222 128 / .10); color: var(--text); box-shadow: inset 2px 0 #3fb950; }
+.peek .dl.del { background: rgb(248 113 113 / .10); color: var(--text); box-shadow: inset 2px 0 #f85149; }
 .peek .dl.hunk { color: #8fb0ff; }
 .peek .dl.file { color: var(--text); font-weight: 500; }
 /* A previewed file sits in the app's card, as Output does; a patch's card is headed by the file it changes and its

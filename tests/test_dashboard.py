@@ -504,8 +504,15 @@ class ListsTest(unittest.TestCase):
         self.assertIn("more.className = 'ask-more'; more.textContent = 'Show all';", dashboard.SCRIPT)
         # it folds like the job page's brief but stays the item's title: no chat bubble, the title's face and edge
         face = dashboard.STYLE.split(".q-head .q-title.user-message {", 1)[1].split("}", 1)[0]
-        for spec in ("background: none", "padding: 0", "margin: 10px 0 0", "font: 600 20px/26px var(--ui)"):
+        for spec in ("background: none", "padding: 0", "margin: 10px 0 0"):
             self.assertIn(spec, face)
+        # and it reads below the failure and Run again, not over them (critic r9 F4): body weight, a step dimmer
+        self.assertIn("font: 500 16px/1.5 var(--ui)", face)
+        self.assertIn("color: #d9dce3", face)
+        # folded, its last line fades out instead of taking the clamp's "…", which after a full stop read "...."
+        fold = dashboard.STYLE.split(".q-head .q-title.user-message:has(+ .ask-more):not(.whole) {", 1)[1].split("}", 1)[0]
+        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 3lh", "overflow: hidden", "mask-image:"):
+            self.assertIn(spec, fold)
         short = re.search(r'data-region="ib-detail".*?</section>',
                           inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
         self.assertIn('<h2 class="q-title" id="q-h" data-clear>Fix the flaky test</h2>', short)

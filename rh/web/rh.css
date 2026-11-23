@@ -1924,9 +1924,16 @@ a.sw-run:hover { background: var(--surface); }
 /* In the Inbox a long brief is the item's title, not a message: it folds like the job page's brief, but keeps the
    title's face and left edge with no bubble, and Show all sits under it. */
 .q-head .q-title.user-message { margin: 10px 0 0; width: auto; max-width: 640px; padding: 0; border: 0; border-radius: 0;
-  background: none; white-space: pre-line; font: 600 20px/26px var(--ui); letter-spacing: -0.01em; }
-.q-head .q-title.user-message:has(+ .ask-more), .q-head .q-title.user-message:has(+ .ask-more):not(.whole) {
-  padding: 0; border-bottom: 0; }
+  background: none; white-space: pre-line; font: 500 16px/1.5 var(--ui); letter-spacing: 0; color: #d9dce3; }
+.q-head .q-title.user-message:has(+ .ask-more) { padding: 0; border-bottom: 0; }
+/* Folded, its third line fades out at the end rather than taking the clamp's "…" (which after a full stop reads "....") */
+.q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;
+  -webkit-line-clamp: unset; max-height: 3lh; overflow: hidden;
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 55%, transparent);
+  mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 55%, transparent);
+  -webkit-mask-size: 100% calc(100% - 1lh), 100% 1lh; mask-size: 100% calc(100% - 1lh), 100% 1lh;
+  -webkit-mask-position: top, bottom; mask-position: top, bottom;
+  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
 .q-head .q-title.user-message + .ask-more { position: static; height: auto; margin: 6px 0 0; padding: 0;
   color: var(--faint); }
 /* The one swarm model that costs says so, with the picker's API tag. */

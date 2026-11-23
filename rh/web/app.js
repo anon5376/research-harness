@@ -837,7 +837,7 @@ function toast(say, ok, out) {
   }
   box.append(t);
   while (box.children.length > 3) box.firstElementChild.remove();
-  if (ok) setTimeout(() => drop(t), 5000);
+  if (ok) setTimeout(() => drop(t), 4000);
 }
 function drop(t) {
   if (!t.isConnected || t.classList.contains('leaving')) return;

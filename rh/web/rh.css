@@ -583,7 +583,7 @@ a.ib:hover { background: var(--surface); }
 /* a folded brief's Show all sits on the meta line, at the brief's right edge, not on a row of its own; on a desktop
    the run id leaves that line to the selected row beside it */
 .q-head-in:has(> .ask-more) { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 16px;
-  align-items: baseline; max-width: 680px; }
+  align-items: baseline; }  /* Show all ends on the content edge the banner and card below end on */
 .q-head-in:has(> .ask-more) > .q-title { grid-column: 1 / -1; }
 .q-head-in:has(> .ask-more) > .q-sub { grid-column: 1; grid-row: 2; }
 .q-head .q-head-in > .q-title.user-message + .ask-more { grid-column: 2; grid-row: 2; margin: 8px 0 0; }
@@ -662,6 +662,8 @@ dialog::backdrop { background: var(--backdrop); }
   background: var(--raised); border: 1px solid var(--control); border-radius: var(--r-card); font-size: 13px; line-height: 18px;
   animation: rise .2s var(--ease); }
 .toast.no { border-color: var(--red-line); background: var(--red-bg); }
+/* on a phone the stack spans the screen inside the page's 16px gutters, centred like the cards under it */
+@media (max-width: 600px) { .toasts { left: 16px; right: 16px; width: auto; max-width: none; } }
 .toast.leaving { opacity: 0; transform: translateY(4px); transition: opacity .2s, transform .2s; }
 .toast .x { width: 22px; height: 22px; border-radius: 6px; color: var(--muted); }
 .toast .x:hover { background: var(--active); color: var(--text); }
@@ -770,6 +772,7 @@ body[data-background="off"] { --art: none; }
   white-space: nowrap; transition: background .12s; }
 .ghost:hover, .opts[open] > .ghost { background: rgb(255 255 255 / .10); }
 .add-input, .opts-btn { flex: none; width: 28px; padding: 0; }
+.opts[open] > .opts-btn { border-radius: 8px; }  /* pressed reads as the model pill does, not as the send disc */
 .model-note, .model-note:hover { cursor: default; background: transparent; }
 /* One quiet row: + · worker · repo · branch on the left; model, effort, options and send on the right. */
 .worker-picker { position: relative; max-width: 49%; border: 0; padding: 0; gap: 0; border-radius: 14px; transition: background .12s; }
@@ -1420,6 +1423,12 @@ html.lg-on[data-live-app] :is(.dock .opts-body, .session-dock .opts-body), .dock
 /* on touch the Copy is its glyph alone, as the phone patch head's, in a 44px hit area */
 @media (hover: none) {
   .msg-acts { margin-left: -7px; }
+  /* the answer's glyph rests at the right end of its meta line, so it takes no row and the patch hugs the answer;
+     a brief needs none on touch (a long press selects and copies its text) */
+  .msg.ai { position: relative; }
+  .msg.ai > .who { padding-right: 32px; }
+  .msg.ai .msg-acts { position: absolute; top: -4px; right: -7px; margin: 0; }
+  .msg-acts.me { display: none; }
   .msg-copy { position: relative; width: 28px; padding: 0; justify-content: center; }
   .msg-copy .pc-t { display: none; }
   .msg-copy::after { content: ""; position: absolute; inset: -8px; }
@@ -2141,6 +2150,10 @@ form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-col
 .session-file:has(> .file-preview[open]) > .session-file-main { min-height: 40px; padding: 0 108px 0 14px;
   border-bottom: 1px solid var(--rule); }
 .session-file > .file-preview[open] > summary { top: 8px; right: 14px; }
+/* open, the patch's toggle says Hide as Output's does; the turned chevron stays where it was */
+.session-file > .file-preview[open] > summary { font-size: 0; }
+.session-file > .file-preview[open] > summary::before { font-size: 15px; }
+.session-file > .file-preview[open] > summary::after { content: "Hide"; font-size: 12px; }
 .session-file > .file-preview[open] .peek-card { margin-top: 0; border: 0; border-radius: 0; background: none; }
 .peek-copy { display: inline-flex; align-items: center; gap: 6px; flex: none; margin-left: auto; height: 28px; padding: 0 10px;
   border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 12px; cursor: pointer;
@@ -2176,7 +2189,7 @@ pre.peek.diff { padding: 8px 0; tab-size: 4; overflow: hidden; }
 pre.peek.diff.more:not(.whole) { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent); }
 pre.peek.diff.whole { max-height: none; }
-pre.peek.diff + .ask-more { width: 100%; height: 32px; margin: 0; padding: 0 14px; text-align: left;
+pre.peek.diff + .ask-more { width: 100%; height: 32px; margin: 0; padding: 0 14px; text-align: right;
   border-top: 1px solid var(--rule); }
 /* A failure toast's output folds behind the app's chevron, not the browser's triangle. */
 .toast summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }

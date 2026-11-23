@@ -2309,7 +2309,9 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word)]
     elif swarming:
         pass  # how many runs have finished is said once, by the Swarm card's head beside its bar
-    elif check_rows:
+    elif check_rows and not all(value is True for value in check_values) or len(check_values) < len(check_rows):
+        # every check passed: the done ring says so, and the details panel lists each; a count shows only when
+        # one failed or has not run
         if len(check_values) == len(check_rows):
             checks_text = f'{sum(value is True for value in check_values)}/{len(check_rows)} checks'
         elif check_values:

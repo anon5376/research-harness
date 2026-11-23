@@ -1582,6 +1582,26 @@ class DashboardTest(unittest.TestCase):
         view["open"]["peek"] = {"path": "notes.md", "text": "# Notes <draft>", "more": True}
         page = dashboard.render(view, NOW, token=TOKEN)
         right = text(pane(page))
+        # r17 F3: when every check passed the line drops its count (the ring says done, the panel lists each)
+        passed = copy.deepcopy(view)
+        passed["open"]["receipt"]["checks"] = [{"cmd": "test -s notes.md", "exit": 0}]
+        line = re.search(r'<span class="job-result-status sl">.*?</span></span>',
+                         dashboard.render(passed, NOW, token=TOKEN), re.S).group(0)
+        self.assertNotIn("checks", text(line))
+        self.assertIn("Done", text(line))
+        # r17 F1, F2: the phone toast sits inside the 16px gutters and a success leaves after 4 s; on touch the
+        # answer's Copy rests on its meta line and a brief offers none
+        self.assertIn("@media (max-width: 600px) { .toasts { left: 16px; right: 16px; width: auto;", dashboard.STYLE)
+        self.assertIn("setTimeout(() => drop(t), 4000)", dashboard.SCRIPT)
+        touch = dashboard.STYLE.split("@media (hover: none) {\n  .msg-acts", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".msg.ai .msg-acts { position: absolute; top: -4px; right: -7px; margin: 0; }", touch)
+        self.assertIn(".msg-acts.me { display: none; }", touch)
+        # r17 F5-F7: the Inbox Show all ends on the content edge; an open patch says Hide and its Show all sits
+        # right; an open Options is a pressed rounded square, not the send disc's shape
+        self.assertNotIn("max-width: 680px", dashboard.STYLE.split(".q-head-in:has(> .ask-more) {", 1)[1].split("}", 1)[0])
+        self.assertIn('.session-file > .file-preview[open] > summary::after { content: "Hide";', dashboard.STYLE)
+        self.assertIn("text-align: right", dashboard.STYLE.split("\npre.peek.diff + .ask-more {", 1)[1].split("}", 1)[0])
+        self.assertIn(".opts[open] > .opts-btn { border-radius: 8px; }", dashboard.STYLE)
         for value in ("Write the notes", "Done", "2/3 checks", "1 min 20 s", "finished-job", dashboard.HERE,
                       "exit 0", "test -s notes.md", "exit 1", "Last output", "<tail> & end", "Cite each source.",
                       "notes.md exists", "runs/finished-job/", "120 min", "Timeline", "Added to run in Codex cloud", "Worker output",

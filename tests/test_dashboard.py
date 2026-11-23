@@ -415,6 +415,39 @@ class ListsTest(unittest.TestCase):
         self.assertIn('class="page ibx" data-view="list"', page)
         self.assertIn('class="page ibx" data-view="item"', inbox(live_view(), live_view()["inbox"][0]["id"]))
 
+    def test_a_failed_jobs_title_folds_a_long_brief(self):
+        # The detail title is the job's brief: one its name in the lists cannot say whole folds to three
+        # lines with a Show all, the fold the job's own page gives the ask; one it can say keeps the bare
+        # title. A title still cut with an ellipsis and no way to read the rest, the rest of the brief
+        # nowhere readable, or a toggle on a short brief, must fail.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}  # a failed job leads
+        meta = lambda b: {"broke-job": {"kind": "local-shell", "brief": b, "updated": NOW - 10}}
+        brief = ("Read every nightly log from the last ninety days, list each test that timed out with "
+                 "its slowest run, and flag any that timed out more than twice.\n\nWrite the list to "
+                 "runs/timeouts.md with one line per test.")
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox({**view, "meta": meta(brief)}),
+                           re.S).group(0)
+        title = re.search(r'<h2[^>]*id="q-h".*?</h2>', detail, re.S).group(0)
+        self.assertIn('class="q-title user-message"', title)
+        self.assertNotIn("…", title)
+        self.assertIn("Write the list to runs/timeouts.md with one line per test.", title)
+        # the toggle is the ask-more button the page's script offers once an ask runs past its lines
+        self.assertIn('</h2><button type="button" class="ask-more" aria-expanded="false">Show all</button>',
+                      detail)
+        self.assertIn(".user-message:has(+ .ask-more):not(.whole)", dashboard.STYLE)
+        self.assertIn("-webkit-line-clamp: 3", dashboard.STYLE)
+        self.assertIn("font: 12px var(--ui)", dashboard.STYLE)
+        self.assertIn("more.className = 'ask-more'; more.textContent = 'Show all';", dashboard.SCRIPT)
+        # it folds like the job page's brief but stays the item's title: no chat bubble, the title's face and edge
+        face = dashboard.STYLE.split(".q-head .q-title.user-message {", 1)[1].split("}", 1)[0]
+        for spec in ("background: none", "padding: 0", "margin: 10px 0 0", "font: 600 20px/26px var(--ui)"):
+            self.assertIn(spec, face)
+        short = re.search(r'data-region="ib-detail".*?</section>',
+                          inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
+        self.assertIn('<h2 class="q-title" id="q-h" data-clear>Fix the flaky test</h2>', short)
+        self.assertNotIn("user-message", short)
+        self.assertNotIn("Show all", short)
+
     def test_a_running_job_says_how_far_along_its_log_says_it_is(self):
         self.assertEqual(dashboard._progress("start\nstep 357: window 357 of 2400\n"), (357, 2400))
         self.assertIsNone(dashboard._progress("1 of 1 done"))

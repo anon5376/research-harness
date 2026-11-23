@@ -1905,3 +1905,11 @@ a.sw-run:hover { background: var(--surface); }
   .c-strip .compose:has(.mp-trigger[aria-expanded="true"], .ef-trigger[aria-expanded="true"], details.opts[open]) .where-bar {
     visibility: visible; }
 }
+/* In the Inbox a long brief is the item's title, not a message: it folds like the job page's brief, but keeps the
+   title's face and left edge with no bubble, and Show all sits under it. */
+.q-head .q-title.user-message { margin: 10px 0 0; width: auto; max-width: 640px; padding: 0; border: 0; border-radius: 0;
+  background: none; white-space: pre-line; font: 600 20px/26px var(--ui); letter-spacing: -0.01em; }
+.q-head .q-title.user-message:has(+ .ask-more), .q-head .q-title.user-message:has(+ .ask-more):not(.whole) {
+  padding: 0; border-bottom: 0; }
+.q-head .q-title.user-message + .ask-more { position: static; height: auto; margin: 6px 0 0; padding: 0;
+  color: var(--faint); }

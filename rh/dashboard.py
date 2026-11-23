@@ -2403,8 +2403,16 @@ def _ib_job(ctx, entry, view):
             if bad and isinstance(check, list) and len(check) == 3 else
             f'<p class="q-fail-k">{_ring(job.state, "red" if bad else "amber", job.kind)}'
             f'<span>{job.headline_html(runs)}</span></p>')
+    # The title is the brief whole when the job's name in the lists cannot say it all: it folds at three
+    # lines with a Show all in its foot, the fold the job's own page gives the ask. A brief the name
+    # already says keeps the bare title.
+    head, rest = _lead(job.meta)
+    title = (f'<h2 class="q-title user-message" id="q-h" data-clear>{_text(_reflow(job.brief))}</h2>'
+             '<button type="button" class="ask-more" aria-expanded="false">Show all</button>'
+             if job.brief and (rest or head != job.title) else
+             f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2>')
     body = (f'<div class="q-head"><div class="q-head-in"><p class="q-who" data-clear>{_SEP_HTML.join(who)}</p>'
-            f'<h2 class="q-title" id="q-h" data-clear>{_text(job.title)}</h2></div></div>'
+            f'{title}</div></div>'
             f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>{stopped}'
             f'<div class="q-acts">{again}{open_it}</div></div>')
     return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')

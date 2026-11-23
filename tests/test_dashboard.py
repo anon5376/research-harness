@@ -733,6 +733,7 @@ class ListsTest(unittest.TestCase):
         self.assertIn("t.form && t.form.matches('[data-swarm-form]')", save)
         self.assertIn("swarmSays(form)", save)
         self.assertIn("function swarmSays(form)", dashboard.SCRIPT)
+        self.assertIn("swarmLine(names, judge.selectedOptions[0].text)", dashboard.SCRIPT)
         self.assertIn("details.swarm-pick[open]", dashboard.SCRIPT)
         # drawn as the model picker's trigger: a 28px ghost button with a chevron that fills on hover
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
@@ -753,7 +754,7 @@ class ListsTest(unittest.TestCase):
         says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span></p>', page).group(1)
         # 'A + B' names one Fusion model everywhere else, so the runs are listed with commas and the judge is a verb
         # (critic r11 F1)
-        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, SWE-2 Flash · SWE-2 Max judges".split())
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max + Flash · Max judges".split())  # r22 F2
         # the chip's × shows on hover or focus where there is a pointer, always on touch, with a 24px hit area
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("gap: 12px", rule(".swarm-note"))
@@ -830,6 +831,33 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<p class="swarm-g">Fusion · API</p>', page)
         for gone in (".swarm-cost", ".mp-cost", ".mp-cur"):
             self.assertNotIn(gone, dashboard.STYLE)
+
+    SWARM_LINES = [  # r22 F2: a shared family is printed once; a Fusion pair's own '+' keeps mixed lists comma-joined
+        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max + Flash · Max judges"),
+        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · Max judges"),
+        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max + Flash · Claude Opus 5.5 judges"),
+        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · SWE-2 Max judges"),
+        (["Fable 5.2 Medium + SWE-2 High", "SWE-2 Max"], "SWE-2 Max",
+         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · SWE-2 Max judges"),
+        (["Opus"], "Opus", "Opus · Opus judges"),
+    ]
+
+    def test_the_swarm_line_names_a_shared_family_once(self):
+        # 'SWE-2 Max, SWE-2 Flash · SWE-2 Max judges' printed SWE-2 three times in the composer's one line
+        for names, judge, line in self.SWARM_LINES:
+            self.assertEqual(dashboard._swarm_line(names, judge), line)
+        page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
+                                                          "judge": "swe-2-max"}}, NOW, token=TOKEN)
+        self.assertIn(f'SWE-2 Max + Flash{dashboard._SEP_HTML}Max judges', page)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_script_writes_the_swarm_line_as_the_page_does(self):
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("function swarmLine("):]
+        code = code[:code.index("\n}\n") + 3]
+        cases = json.dumps([[n, j] for n, j, _ in self.SWARM_LINES])
+        out = subprocess.run(["node", "-e", code + f"console.log(JSON.stringify({cases}.map(([n, j]) => swarmLine(n, j))))"],
+                             capture_output=True, text=True, timeout=30, check=True).stdout
+        self.assertEqual(json.loads(out), [line for _, _, line in self.SWARM_LINES])
 
     def test_the_swarm_ticks_list_devin_as_the_picker_does(self):
         # r19 F6: the picker lists Devin's Fusion first, under its own head with its API tag, then 'SWE-2 · Free';

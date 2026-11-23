@@ -2143,13 +2143,25 @@ document.addEventListener('change', e => {
   }).catch(() => toast('The swarm settings could not be saved.', false, ''));
 });
 // the composer's swarm line names what was just saved: the ticked models, then the judge
+// as the page writes it (dashboard._swarm_line): a family every model shares is named once
+function swarmLine(names, judge) {
+  const heads = new Set(names.map(n => n.split(' ')[0]));
+  const fam = heads.size === 1 && names.every(n => n.includes(' ') && !n.includes('+')) ? [...heads][0] : '';
+  let models = names.join(', ');
+  if (fam) {
+    models = fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(' + ');
+    if (judge.startsWith(fam + ' ') && !judge.includes('+')) judge = judge.slice(fam.length + 1);
+  }
+  return `${models} · ${judge} judges`;
+}
 function swarmSays(form) {
   const says = form.id && document.querySelector(`[data-swarm-says="${form.id}"]`);
   const judge = form.elements.namedItem('judge');
   if (!says || !judge) return;
   const sep = Object.assign(document.createElement('span'), { className: 'sep', textContent: '·' });
   const names = [...form.elements].filter(i => i.name === 'models' && i.checked).map(i => i.dataset.name);
-  says.replaceChildren(names.join(', '), sep, `${judge.selectedOptions[0].text} judges`);
+  const line = swarmLine(names, judge.selectedOptions[0].text), cut = line.lastIndexOf(' · ');
+  says.replaceChildren(line.slice(0, cut), sep, line.slice(cut + 3));
 }
 // An identifier moves whole to the next line; only one wider than its column breaks, and then at its own seams
 // (after _ and .), never mid-word as "strin / g".

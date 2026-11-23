@@ -1801,7 +1801,8 @@ def _swarm_note(ctx):
     chip = (f'<span class="swarm-chip">{_ic("swarm", True)}Swarm'
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
             '×</button></span>')
-    says = f'{_text(", ".join(_names([m]) for m in models))}{_SEP_HTML}{_text(_names([judge]))} judges'  # 'A + B' is Fusion
+    ran, judged = _swarm_line([_names([m]) for m in models], _names([judge])).rsplit(" · ", 1)
+    says = f'{_text(ran)}{_SEP_HTML}{_text(judged)}'
     if ctx["live"] and swarm.get("choices"):
         boxes, judge_row = _swarm_rows(swarm, _SWARM_PICK)
         return (f'<div class="swarm-note" data-swarm-note hidden>{chip}<details class="swarm-pick">'
@@ -2230,6 +2231,20 @@ def _fail_banner(state, spec, bad):
                 else f"{what} failed: {found}")
     return (f'<p class="fail-k">{_ring(state)}{_text(sentence)}</p>'
             f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
+
+
+def _swarm_line(names, judge):
+    """The composer's swarm line: 'SWE-2 Max + Flash · Max judges'. A family every model shares is named once; a list
+    that mixes families, or holds a Fusion pair (whose name has its own '+'), keeps whole names joined by commas.
+    app.js's swarmLine writes the same line as the ticks change."""
+    heads = {n.split(" ", 1)[0] for n in names}
+    fam = next(iter(heads)) if len(heads) == 1 and all(" " in n and "+" not in n for n in names) else ""
+    models = ", ".join(names)
+    if fam:
+        models = fam + " " + " + ".join(n[len(fam) + 1:] for n in names)
+        if judge.startswith(fam + " ") and "+" not in judge:
+            judge = judge[len(fam) + 1:]
+    return f"{models} · {judge} judges"
 
 
 def _swarm_again(ctx, runs):

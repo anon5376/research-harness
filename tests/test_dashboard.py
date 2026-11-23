@@ -2188,7 +2188,7 @@ console.log(JSON.stringify([
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
 
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
-        # A phone header where Cancel still takes a word's width, an icon that is not the drawn cross, or title
+        # A phone header where Cancel still takes a word's width, an icon that is not the stop square, or title
         # room for only one button while Pause and Cancel both show, must fail.
         blocks = re.findall(r"@media \(max-width: 600px\) \{(.*?)\n\}", dashboard.STYLE, re.S)
         block = next(b for b in blocks if 'summary[data-k="c"]' in b)
@@ -2196,11 +2196,11 @@ console.log(JSON.stringify([
         for spec in ("width: 44px", "height: 44px", "padding: 0", "justify-content: center", "font-size: 0",
                      "border: 0"):
             self.assertIn(spec, rule('.job-actions .act > summary[data-k="c"]'))
-        cross = rule('.job-actions .act > summary[data-k="c"]::before')
-        for spec in ("width: 18px", "height: 18px"):
-            self.assertIn(spec, cross)
-        self.assertEqual(cross.count("linear-gradient"), 2)  # the x's two strokes
-        self.assertIn("currentColor", cross)
+        # a filled stop square, so Pause and Cancel read as one transport pair; an x would read as "close this view"
+        stop = rule('.job-actions .act > summary[data-k="c"]::before')
+        for spec in ("width: 10px", "height: 10px", "border-radius: 2px", "background: currentColor"):
+            self.assertIn(spec, stop)
+        self.assertNotIn("linear-gradient", stop)
         one = int(re.search(r"padding-right: (\d+)px",
                             rule(".detail:has(.job-actions .act) .jd-head-in")).group(1))
         two = int(re.search(r"padding-right: (\d+)px",

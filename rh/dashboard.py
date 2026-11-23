@@ -2740,14 +2740,14 @@ def _ib_job(ctx, entry, view):
     # The title is the brief whole when the job's name in the lists cannot say it all: it folds at three
     # lines with a Show all in its foot, the fold the job's own page gives the ask. A brief the name
     # already says keeps the bare title.
-    # A follow-up's brief ends with its follow-up ("Follow-up: ..."): the title is the brief as first asked, and the
-    # follow-up is said in the meta line under it, so the pane's loudest line is what the job is.
+    # A follow-up's brief ends with its follow-up ("Follow-up: ..."): the title is the brief as first asked, so the
+    # pane's loudest line is what the job is, and the follow-up, the owner's own words, is quoted under the actions.
     brief, ask = job.brief, ""
     if job.meta.get("prior"):
         brief = brief.split("\n\nFollow-up: ", 1)[0]
         ask = " ".join(ask_of(job.meta).split())
-    if ask:
-        who.insert(-1, f'<span class="q-fu">Follow-up: {_text(ask)}</span>')
+    quoted = (f'<figure class="q-fu"><figcaption>Follow-up</figcaption><blockquote>{_text(ask)}</blockquote></figure>'
+              if ask else "")
     head, rest = _lead({"brief": brief})
     title = (f'<h2 class="q-title user-message" id="q-h" data-clear>{_text(_reflow(brief))}</h2>'
              '<button type="button" class="ask-more" aria-expanded="false">Show all</button>'
@@ -2756,7 +2756,7 @@ def _ib_job(ctx, entry, view):
     body = (f'<div class="q-head"><div class="q-head-in">{title}'
             f'<p class="q-who q-sub" data-clear>{_SEP_HTML.join(who)}</p></div></div>'
             f'<div class="q-body"><div class="{"q-fail" if bad else "q-wait"}">{said}</div>{stopped}'
-            f'<div class="q-acts">{again}{open_it}</div></div>')
+            f'<div class="q-acts">{again}{open_it}</div>{quoted}</div>')
     return _region("ib-detail", body, "section", attrs=' aria-labelledby="q-h"')
 
 

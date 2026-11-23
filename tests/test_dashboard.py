@@ -1210,11 +1210,21 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("Follow-up", title)
         self.assertNotIn("skip the appendix", title)
         sub = re.search(r'<p class="q-who q-sub"[^>]*>(.*?)</p>', detail, re.S).group(1)
-        self.assertIn('<span class="q-fu">Follow-up: skip the appendix</span>', sub)
         self.assertTrue(sub.endswith('<span class="mono">broke-job</span>'), sub)  # the id still closes the line
-        fu = dashboard.STYLE.split(".q-who.q-sub > .q-fu {", 1)[1].split("}", 1)[0]
-        for spec in ("text-overflow: ellipsis", "white-space: nowrap", "min-width: 0"):
-            self.assertIn(spec, fu)
+        # r22 F3: cut into the meta line, 'Follow-up: half-written reply' read as a promise of a draft the pane never
+        # showed, over half a pane of blank. The follow-up is the owner's own words: it is quoted whole under the
+        # actions, labelled, three lines at most, and the meta line no longer carries it.
+        self.assertNotIn("Follow-up", sub)
+        self.assertIn('<div class="q-acts">', detail)
+        quote = detail.split('<div class="q-acts">', 1)[1]
+        self.assertIn('<figure class="q-fu"><figcaption>Follow-up</figcaption>'
+                      '<blockquote>skip the appendix</blockquote></figure>', quote)
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for spec in ("margin: 24px 0 0", "border: 1px solid #2a3142", "border-radius: 12px"):
+            self.assertIn(spec, rule(".q-fu"))
+        for spec in ("font-size: 14px", "color: #c9ced8", "-webkit-line-clamp: 3"):
+            self.assertIn(spec, rule(".q-fu blockquote"))
+        self.assertNotIn(".q-who.q-sub > .q-fu", dashboard.STYLE)
         # a first run says no follow-up
         first = {**view, "meta": {"broke-job": {"kind": "local-shell", "brief": "Count the words.", "updated": NOW}}}
         self.assertNotIn('class="q-fu"', inbox(first))

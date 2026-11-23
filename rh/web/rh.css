@@ -2180,7 +2180,11 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
 .q-head .q-title.user-message { margin: 0; width: auto; max-width: 600px; padding: 0; border: 0; border-radius: 0;
   background: none; white-space: pre-line; font: 600 17px/22px var(--ui); letter-spacing: 0; color: #e6e8ee; }
 /* A follow-up run says its follow-up in the meta line, one line at most. */
-.q-who.q-sub > .q-fu { min-width: 0; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a follow-up is the owner's own words: quoted under the actions, three lines at most */
+.q-fu { margin: 24px 0 0; padding: 12px 14px; border: 1px solid #2a3142; border-radius: 12px; max-width: 600px; }
+.q-fu figcaption { margin-bottom: 4px; font-size: 12px; color: var(--faint); }
+.q-fu blockquote { margin: 0; font-size: 14px; line-height: 20px; color: #c9ced8; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
 .q-head .q-title.user-message:has(+ .ask-more) { padding: 0; border-bottom: 0; }
 /* Folded, its third line fades out at the end rather than taking the clamp's "…" (which after a full stop reads "....") */
 .q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;

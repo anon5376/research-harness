@@ -117,6 +117,9 @@ def normalize(raw):
         if not isinstance(spec["accept"], str):
             raise ContractError("accept must be a string holding one command, not a list like command")
     spec.setdefault("timeout_min", 120)
+    timeout = spec["timeout_min"]
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or not timeout > 0:
+        raise ContractError("timeout_min must be a number of minutes above 0")
     # An agent's last message (answer.md) is shown as a message on the job page ("chat") or listed as a file ("file").
     if spec.get("answer", "chat") not in ("chat", "file"):
         raise ContractError("answer must be chat or file")

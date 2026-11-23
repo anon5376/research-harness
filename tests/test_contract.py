@@ -40,6 +40,15 @@ class LoadTest(unittest.TestCase):
             spec('accept = ["test", "-s", "runs/j1/out.md"]')
         self.assertEqual(spec('accept = "test -s runs/j1/out.md"')["accept"], "test -s runs/j1/out.md")
 
+    def test_timeout_min_must_be_a_positive_number(self):
+        for bad in ('"30"', "0", "-5", "true", "[30]"):
+            with self.subTest(bad=bad), self.assertRaises(ContractError) as caught:
+                spec(f"timeout_min = {bad}")
+            self.assertIn("timeout_min", str(caught.exception))
+        self.assertEqual(spec()["timeout_min"], 120)
+        self.assertEqual(spec("timeout_min = 30")["timeout_min"], 30)
+        self.assertEqual(spec("timeout_min = 0.5")["timeout_min"], 0.5)
+
 
 class PreflightTest(unittest.TestCase):
     def test_plain_job_is_ready(self):

@@ -1696,20 +1696,30 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
   .top-meta:has(> [data-need]) { display: inline; }
   .top-meta:has(> [data-need]) > :not([data-need]) { display: none; }
 }
-/* An Inbox row's reason gives way before the run's id, which never truncates. */
-.ib-s:has(> .ib-why) { display: flex; min-width: 0; }
-.ib-s > .ib-why { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-.ib-s > :is(.sep, .mono) { flex: none; }
+/* An Inbox row reads its brief in up to two lines, then why it waits, ending with the run's id, in up to three:
+   the reason is what you triage on, so it wraps rather than being cut. */
+.ib-t { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+.ib-s:has(> .ib-why) { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; white-space: normal;
+  overflow-wrap: anywhere; }
+.ib-s .mono { color: var(--muted); white-space: nowrap; }
 /* Your turns read as messages, a step under the answer (15 on 22 against 16 on 26), wrapped greedily so a bubble
    is never much wider than its text. A long brief folds to three lines; Show all opens it. */
 .user-message { font-size: 15px; line-height: 22px; text-wrap: wrap; }
 .user-message:has(+ .ask-more):not(.whole) { max-height: calc(3lh + 8px); }
 @media (max-width: 600px) { .user-message:has(+ .ask-more):not(.whole) { max-height: calc(3lh + 8px); } }
 .user-message:not(.whole) { max-height: calc(3lh + 16px); }
-/* A long identifier moves whole to the next line when it fits there, and breaks at its seams only when it is wider
-   than the column; a phrase of code wraps inline. */
-.assistant-message.md :not(pre) > code.tok { display: inline-block; max-width: 100%; vertical-align: bottom; }
 /* Selection carries the app's navy, as every other surface does. */
 :root[data-live-app] { --active: #1f2638; }
 /* A card's header keeps one inset on both sides. */
 .out .head { padding-right: 14px; }
+/* On a phone the new-job composer sits where every reply box sits, at the foot of the screen under the thumb, with
+   its where-row below it; the question centres in the room above. */
+@media (max-width: 600px) {
+  .sea-page:has(> .dock > .c-strip) { place-items: stretch center; }
+  .sea-page > .dock:has(> .c-strip) { display: flex; flex-direction: column; margin: 0;
+    padding: 72px 0 calc(80px + env(safe-area-inset-bottom)); }
+  .sea-page > .dock > .c-strip { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; }
+  .sea-page > .dock > .c-strip > .compose-intro { flex: 1; align-content: center; }
+}
+/* The line may break after the separator, so the id moves down whole and the reason keeps its last word. */
+.ib-s:has(> .ib-why) > .sep::after { content: "\200B"; }

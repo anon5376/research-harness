@@ -695,10 +695,6 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string in tests/x.py`"),
                          "<code>test_<wbr>rejects_<wbr>an_<wbr>accept_<wbr>that_<wbr>is_<wbr>not_<wbr>a_<wbr>string "
                          "in tests/<wbr>x.<wbr>py</code>")
-        # a long identifier (no spaces) is one token: it moves whole to the next line when it fits there
-        self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string`"),
-                         '<code class="tok">test_<wbr>rejects_<wbr>an_<wbr>accept_<wbr>that_<wbr>is_<wbr>not_<wbr>a_<wbr>'
-                         'string</code>')
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without
@@ -1442,6 +1438,10 @@ console.log(JSON.stringify([
         self.assertEqual(sorted(order[2:]), ["job:broke-job", "job:queued-job", "settled:5"])
         self.assertEqual(current, ["job:web-job"])
         self.assertIn("Paste the patch from Codex", text(detail))
+        # a settled row reads as the rows that wait: what came of it, then the run's id
+        page = dashboard.render({**view, "box": True}, NOW, token=TOKEN)
+        self.assertIn('<span class="ib-s"><span class="ib-why">yes, ship</span><span class="sep">·</span>'
+                      '<span class="mono">live-job</span></span>', page)
         _, current, detail = shown(7)
         self.assertEqual(current, ["job:live-job"])
         self.assertIn(CHECK, text(detail))

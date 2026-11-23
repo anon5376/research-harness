@@ -450,9 +450,8 @@ def _md_inline(text):
         out.append(escape(text[at:m.start()]))
         code, bold, em, label, href = m.groups()
         if code is not None:
-            tok = ' class="tok"' if not re.search(r"\s", code) else ""  # an identifier, not a phrase
             out.append(f'<code class="nw">{escape(code)}</code>' if len(code) <= 40 else
-                       f"<code{tok}>{_breaks(escape(code))}</code>")
+                       f"<code>{_breaks(escape(code))}</code>")
         elif bold is not None:
             out.append(f"<strong>{_md_inline(bold)}</strong>")
         elif em is not None:
@@ -2189,7 +2188,9 @@ def _settled_row(ctx, item, picked):
     ask, _ = _ask_line(item)
     jid = item.get("job")
     note = str(item.get("resolution") or "").strip()
-    sub = _SEP_HTML.join(x for x in ((f'<span class="mono">{_text(jid)}</span>' if jid else ""), _text(note)) if x)
+    # the outcome, then the run's id, as the rows that wait read
+    sub = _SEP_HTML.join(x for x in ((f'<span class="ib-why">{_text(note)}</span>' if note else ""),
+                                     (f'<span class="mono">{_text(jid)}</span>' if jid else "")) if x)
     current = ' aria-current="true"' if picked else ""
     inner = (f'<span class="ib-ic">{_ic("check")}</span><span class="ib-t">{_text(ask)}</span>'
              f'<span class="ib-age mono num">{_clock(item["resolved"], ctx["now"])}</span>'

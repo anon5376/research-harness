@@ -1743,3 +1743,35 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 pre.log.ended .ln { display:block; padding-left:2ch; text-indent:-2ch; white-space:pre-wrap; }
 pre.log.ended .ln + .ln { margin-top:4px; }
 pre.log.ended .ln:empty::before { content: "\200B"; }  /* a blank line keeps its row */
+/* Commands in the composer: the / menu floats just above the brief; a /swarm brief says under it who runs it. */
+form.compose:has([data-slash]) { position: relative; }
+.slash { position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 30; padding: 4px;
+  border: 1px solid rgb(170 185 235 / .14); border-radius: 12px; box-shadow: 0 12px 32px rgb(0 0 0 / .45);
+  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38); }
+@media (max-width: 600px) { .slash { top: auto; bottom: calc(100% + 8px); } }  /* the phone composer sits at the foot */
+/* A swarm's models come from Settings, so the composer's own model and effort step aside while /swarm is typed. */
+form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) { display: none; }
+.slash-o { display: grid; grid-template-columns: 16px auto minmax(0, 1fr); align-items: center; column-gap: 10px;
+  width: 100%; padding: 8px 10px; border: 0; border-radius: 7px; background: var(--active); color: var(--text);
+  font: 13px/18px var(--ui); text-align: left; cursor: pointer; }
+.slash-o svg, .swarm-note svg { width: 16px; height: 16px; color: var(--muted); }
+.slash-n { color: var(--text); }
+.slash-d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swarm-note { display: flex; align-items: center; gap: 8px; min-width: 0; margin: 0 0 0 4px; color: var(--muted);
+  font-size: 12.5px; line-height: 18px; }
+.swarm-note span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swarm-note[hidden], .slash[hidden] { display: none; }
+@media (max-width: 600px) { .slash-o { grid-template-columns: 16px auto; } .slash-d { grid-column: 2; white-space: normal; } }
+/* Settings: swarm models as ticks in two columns, then the judge. */
+.settings .set-hint { margin: 0 0 10px; color: var(--muted); line-height: 19px; }
+.swarm-models { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; margin-bottom: 12px; }
+.swarm-m { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; cursor: pointer; }
+.swarm-m:has(:checked) { border-color: rgb(255 255 255 / .22); background: rgb(255 255 255 / .04); }
+.swarm-m input { margin: 0; accent-color: var(--accent, #7aa2ff); }
+.swarm-m span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swarm-judge { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.swarm-judge span { color: var(--muted); }
+.swarm-judge select { min-width: 0; max-width: 60%; height: 32px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--surface); color: var(--text); font: inherit; }
+@media (max-width: 600px) { .swarm-models { grid-template-columns: minmax(0, 1fr); } }

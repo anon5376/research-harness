@@ -1062,7 +1062,7 @@ document.addEventListener('input', e => {
   if (t === id) { id.dataset.typed = id.value ? '1' : ''; return; }
   if (t.name === 'brief' && id && !id.dataset.typed) {
     // Content words only, each once, with file extensions dropped: "numbers.txt" adds nothing to "numbers".
-    const words = [...new Set(t.value.toLowerCase().replace(/\.[a-z0-9]+\b/g, ' ').replace(/[^a-z0-9\s-]/g, ' ')
+    const words = [...new Set(t.value.replace(/^\s*\/[a-z]+\b/, ' ').toLowerCase().replace(/\.[a-z0-9]+\b/g, ' ').replace(/[^a-z0-9\s-]/g, ' ')
       .split(/\s+/).filter(w => w.length > 2 && !NAME_SKIP.has(w)))].slice(0, 3);
     let name = words.join('-').slice(0, 48).replace(/^-+|-+$/g, '') || 'job', n = 2;
     const base = name;
@@ -1963,5 +1963,64 @@ function toTurn() {
 }
 document.addEventListener('rh:page', toTurn);
 toTurn();
+// Commands in the composer: typing / lists them (Tab or Enter takes the highlighted one), and a brief that starts with
+// /swarm says under it which models will run it.
+function slashState(brief) {
+  const box = brief && brief.closest('form');
+  const menu = box && $('[data-slash]', box), note = box && $('[data-swarm-note]', box);
+  if (!menu) return null;
+  const v = brief.value;
+  menu.hidden = !(/^\/[a-z]*$/.test(v) && '/swarm'.startsWith(v));
+  note.hidden = !/^\s*\/swarm(\s|$)/.test(v);
+  return menu;
+}
+function takeSlash(brief, cmd) {
+  brief.value = cmd + brief.value.replace(/^\s*\/[a-z]*\s*/, '');
+  brief.focus();
+  brief.setSelectionRange(brief.value.length, brief.value.length);
+  brief.dispatchEvent(new Event('input', {bubbles: true}));
+}
+document.addEventListener('input', e => {
+  if (e.target instanceof HTMLTextAreaElement && e.target.name === 'brief') slashState(e.target);
+});
+document.addEventListener('keydown', e => {
+  const t = e.target;
+  if (!(t instanceof HTMLTextAreaElement) || t.name !== 'brief') return;
+  const menu = slashState(t);
+  if (!menu || menu.hidden) return;
+  if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey)) {
+    e.preventDefault(); e.stopPropagation();
+    takeSlash(t, $('[data-slash-cmd]', menu).dataset.slashCmd);
+  } else if (e.key === 'Escape') {
+    e.preventDefault(); e.stopPropagation();
+    menu.hidden = true;
+  }
+}, true);
+document.addEventListener('click', e => {
+  const o = e.target instanceof Element && e.target.closest('[data-slash-cmd]');
+  if (!o) return;
+  const brief = o.closest('form').elements.namedItem('brief');
+  takeSlash(brief, o.dataset.slashCmd);
+});
+document.addEventListener('focusout', e => {
+  const t = e.target;
+  if (!(t instanceof HTMLTextAreaElement) || t.name !== 'brief') return;
+  setTimeout(() => {  // after a click on the menu itself has been taken
+    const menu = t.form && $('[data-slash]', t.form);
+    if (menu && !menu.contains(document.activeElement)) menu.hidden = true;
+  }, 150);
+});
+// Swarm settings save as they change; a swarm needs at least one model, so the last one cannot be unticked.
+document.addEventListener('change', e => {
+  const form = e.target instanceof Element && e.target.closest('[data-swarm-form]');
+  if (!form) return;
+  if (e.target.name === 'models' && !form.querySelector('input[name="models"]:checked')) {
+    e.target.checked = true;
+    toast('A swarm needs at least one model.', false, '');
+    return;
+  }
+  fetch(form.action, {method: 'POST', body: new URLSearchParams(new FormData(form))}).then(r => {
+    if (!r.ok) throw new Error('not saved');
+  }).catch(() => toast('The swarm settings could not be saved.', false, ''));
+});
 })();
-

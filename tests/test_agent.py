@@ -145,5 +145,48 @@ class FollowUpTest(unittest.TestCase):
             self.assertIn("+three", patch)
 
 
+class SwarmJudgeTest(unittest.TestCase):
+    def test_a_judge_reads_every_runs_answer_and_patch_and_keeps_only_what_it_chose(self):
+        # A judge that cannot see the runs' work, or whose changes.patch carries the runs' folder, must fail.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            repo, out = tmp / "repo", tmp / "out"
+            runs = [tmp / "fix.w1", tmp / "fix.w2"]
+            for d in (repo, out, *runs):
+                d.mkdir()
+            git(repo, "init", "--quiet")
+            (repo / "a.txt").write_text("one\n", encoding="utf-8")
+            git(repo, "add", "a.txt")
+            git(repo, "commit", "--quiet", "-m", "start")
+            for run, word in zip(runs, ("deux", "two")):
+                (run / "answer.md").write_text(f"Added {word}.\n", encoding="utf-8")
+                (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
+                                                   f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
+            # A stand-in claude: lists what it was shown, then applies the second run's patch.
+            fake = tmp / "claude"
+            fake.write_text(f"#!{sys.executable}\nimport sys, pathlib, subprocess\nprint(sys.argv[2])\n"
+                            "for p in sorted(pathlib.Path('.swarm').rglob('*')): print('SEEN', p.as_posix())\n"
+                            "subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n",
+                            encoding="utf-8")
+            fake.chmod(0o755)
+            cwd = Path.cwd()
+            try:
+                os.chdir(out)
+                code = agent.main(["agent.py", "claude", str(fake), str(repo), "Add a second line.",
+                                   "--swarm", str(runs[0]), "--swarm", str(runs[1])])
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(code, 0)
+            said = (out / "answer.md").read_text(encoding="utf-8")
+            self.assertIn("Add a second line.", said)
+            for seen in ("fix.w1/answer.md", "fix.w1/changes.patch", "fix.w2/answer.md", "fix.w2/changes.patch"):
+                self.assertIn("SEEN .swarm/" + seen, said)
+            self.assertNotIn("--swarm", said)
+            patch = (out / "changes.patch").read_text(encoding="utf-8")
+            self.assertIn("+two", patch)
+            self.assertNotIn("deux", patch)
+            self.assertNotIn(".swarm", patch)
+
+
 if __name__ == "__main__":
     unittest.main()

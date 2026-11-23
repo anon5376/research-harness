@@ -261,6 +261,26 @@ class ServeTest(unittest.TestCase):
             self.assertIn(f'data-background="{preset}"', self.request("/new")[2])
             self.assertEqual(config.load(self.home)["appearance"]["background"], preset)
 
+    def test_swarm_settings_offer_claude_and_devin_models_and_persist_a_valid_choice(self):
+        page = self.request("/new")[2]
+        self.assertIn('action="/settings/swarm"', page)
+        self.assertIn('value="swe-2-max" checked', page)
+        self.assertNotIn('name="models" value="gpt-', page)  # the ChatGPT plan is never a swarm worker
+        self.assertIn('data-slash-cmd="/swarm "', page)
+        post = lambda pairs, **kw: self.request("/settings/swarm", raw=urlencode([*pairs, ("t", self.token)]).encode(), **kw)
+        self.assertEqual(self.request("/settings/swarm", {"models": "swe-2-high", "judge": "swe-2-high"}, token=False)[0], 403)
+        self.assertEqual(post([("judge", "swe-2-max")])[0], 400)  # none ticked
+        self.assertEqual(post([("models", "gpt-6.1-sol"), ("judge", "swe-2-max")])[0], 400)
+        self.assertEqual(post([("models", "swe-2-high"), ("judge", "gpt-6.1-sol")])[0], 400)
+        self.assertEqual(post([("models", m) for m in ("swe-2-high", "swe-2-max", "swe-2-flash-high", "claude-haiku-5-5",
+                                                      "claude-opus-5-5")] + [("judge", "swe-2-max")])[0], 400)
+        self.assertEqual(post([("models", "swe-2-high"), ("models", "claude-haiku-5-5"), ("judge", "claude-haiku-5-5")])[0], 204)
+        saved = config.load(self.home)["swarm"]
+        self.assertEqual((saved["models"], saved["judge"]), (["swe-2-high", "claude-haiku-5-5"], "claude-haiku-5-5"))
+        page = self.request("/new")[2]
+        self.assertIn('value="claude-haiku-5-5" checked', page)
+        self.assertNotIn('value="swe-2-max" checked', page)
+
     def test_the_file_picker_lists_tracked_files_behind_the_token(self):
         self.assertEqual(self.request("/files", token=False)[0], 403)
         code, _, body = self.request("/files")
@@ -689,6 +709,37 @@ class ServeTest(unittest.TestCase):
             self.request("/job", {"id": "", "kind": "local-agent", "brief": "use a banned model", "model": "gpt-9"})
         with self.ledger() as led:
             self.assertIsNone(led.job("use-a-banned-model"))
+
+    def test_slash_swarm_runs_the_brief_on_every_swarm_model_then_a_judge_on_what_they_did(self):
+        # /swarm must fan out to each model Settings names, and the judge must wait for all of them, see each run's
+        # folder, and open as the swarm's page; a /swarm that ran one job, or a judge that needed every run done, fails.
+        config.set_value("swarm.models", "swe-2-max,claude-haiku-5-5", self.cfg["home"])
+        config.set_value("swarm.judge", "swe-2-high", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
+            code, headers, _ = self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Fix the typo"})
+        self.assertEqual(code, 303)
+        self.assertEqual(headers["Location"], "/job/fix-the-typo.best?t=" + self.token)
+        with self.ledger() as led:
+            runs = [led.job("fix-the-typo.w1"), led.job("fix-the-typo.w2")]
+            best = led.job("fix-the-typo.best")
+        self.assertTrue(all(runs) and best)
+        self.assertEqual([r["spec"]["command"][-1] for r in runs], ["swe-2-max", "claude-haiku-5-5"])
+        self.assertEqual([r["spec"]["brief"] for r in runs], ["Fix the typo", "Fix the typo"])
+        spec = best["spec"]
+        self.assertEqual((spec["after"], spec["after_any"]), (["fix-the-typo.w1", "fix-the-typo.w2"], True))
+        self.assertEqual(spec["command"][2:4], ["devin", "/usr/local/bin/devin"])
+        home = Path(self.cfg["home"])
+        self.assertEqual([spec["command"][i + 1] for i, a in enumerate(spec["command"]) if a == "--swarm"],
+                         [str(home / "runs" / "fix-the-typo.w1"), str(home / "runs" / "fix-the-typo.w2")])
+        self.assertTrue(spec["operator_facing"] and spec["card"]["said"] == "Fix the typo")
+        # an OpenAI model is never a swarm worker: the plan's usage is the owner's
+        config.set_value("swarm.models", "gpt-6.1-sol", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
+            self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Do more"})
+        with self.ledger() as led:
+            self.assertIsNone(led.job("do-more.best"))
 
     def test_refused_new_job_returns_to_the_form_with_the_draft(self):
         cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},

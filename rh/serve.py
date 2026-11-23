@@ -23,7 +23,7 @@ import tomllib
 import urllib.parse
 import webbrowser
 
-from rh import chat, cli, config, contract, dashboard, gitx, lease, oslock, seats
+from rh import chat, cli, config, contract, dashboard, gitx, goals, lease, oslock, seats
 from rh.ledger import TERMINAL, Ledger
 from rh.supervisor import AlreadyRunning, single_instance
 
@@ -46,7 +46,7 @@ _ART = {f"/{name}": dashboard._WEB / name for name in dashboard.BACKGROUNDS}
 _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance")
+          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance", "/settings/swarm")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -215,7 +215,8 @@ def _auto_id(cfg, fields):
     finally:
         led.close()
     name, n = base, 2
-    while name in taken:
+    end = ".best" if "swarm" in fields else ""  # a swarm is named by its judge, <name>.best
+    while name + end in taken:
         name, n = f"{base}-{n}", n + 1
     fields["id"] = [name]
 
@@ -254,6 +255,59 @@ def _job_file(draft, repo):
         except ValueError as error:
             raise ValueError(f"command: {error}") from None
     return spec["id"], _job_text(spec)
+
+
+SWARM_MAX = 4  # runs in one swarm; each is an agent on its own copy, so a few at once is plenty
+_SWARM = re.compile(r"\A\s*/swarm(?:\s+|\Z)")
+
+
+def _swarm_brief(fields):
+    """The brief after /swarm, or None when the composer did not ask for a swarm."""
+    brief = _value(fields, "brief")
+    found = _SWARM.match(brief)
+    return brief[found.end():].strip() if found else None
+
+
+def swarm_choices():
+    """The models a swarm may run: Claude's and Devin's in the dated policy. Codex models are left out, so a swarm
+    never spends the owner's ChatGPT plan."""
+    policy_path = config.REPO / "policy.toml"
+    policy = contract.load_policy(policy_path) if policy_path.is_file() else {}
+    return [m for table in ("devin-local", "claude-local") for m in policy.get(table, {}).get("models", [])]
+
+
+def _swarm_file(cfg, draft):
+    """A /swarm from the composer as a goal file, (judge id, TOML): one run of the brief on each model Settings
+    names (w1, w2, ...), then a judge that waits until they have all ended and keeps the best work of those that
+    finished, as its own answer and changes."""
+    swarm = cfg.get("swarm", {})
+    models = [m for m in swarm.get("models", []) if m][:SWARM_MAX]
+    judge = swarm.get("judge") or (models[0] if models else "")
+    if not models:
+        raise ValueError("no swarm models are set: choose them in Settings")
+    allowed = swarm_choices()
+    if bad := [m for m in (*models, judge) if m not in allowed]:
+        raise ValueError(f"swarm model {bad[0]} is not a Claude or Devin model in the policy: allowed {allowed}")
+    gid, home = draft["id"].strip(), Path(cfg["home"])
+    jobs = []
+    for n, model in enumerate(models, 1):
+        _, text = _job_file({**draft, "id": f"w{n}", "kind": "local-agent", "model": model, "effort": ""},
+                            cfg["repo"]["path"])
+        jobs.append(tomllib.loads(text))
+    _, text = _job_file({**draft, "id": "best", "kind": "local-agent", "model": judge, "effort": ""},
+                        cfg["repo"]["path"])
+    best = tomllib.loads(text)
+    for job in jobs:
+        best["command"] += ["--swarm", str(home / "runs" / f"{gid}.{job['id']}")]
+    best["after"], best["after_any"] = [job["id"] for job in jobs], True
+    said = draft["brief"].replace("\r\n", "\n").strip()
+    card = {"said": said, "form": "the chosen run's answer and its changes",
+            "done_when": "the judge has kept the best work of the runs that finished"}
+    text = (_toml({"id": gid}) + "\n[card]\n" + _toml(card)
+            + "".join("\n[[jobs]]\n" + _toml(job) for job in (*jobs, best)))
+    for raw in goals.expand(tomllib.loads(text)):
+        contract.normalize(raw)
+    return f"{gid}.best", text
 
 
 def _agent_command(brief, model, effort, repo, prior=None):
@@ -372,6 +426,9 @@ def _action(cfg, path, fields):
         return ["cloud", "handoff", "--", value("job")]
     if path == "/job/cancel":
         return ["job", "cancel", "--reason=" + value("reason"), "--", value("job")]
+    if path == "/job" and "swarm" in fields:
+        _, text = _swarm_file(cfg, _draft(fields))
+        return ["goal", "add", "--", str(_upload(cfg, value("id").strip(), ".toml", text))]
     if path == "/job":
         job, text = _job_file(_draft(fields), cfg["repo"]["path"])
         return ["job", "add", "--", str(_upload(cfg, job, ".toml", text))]
@@ -399,7 +456,7 @@ def _say(path, fields, ok, made=None):
                 "/attach": "The task was not linked.", "/reply": "The reply was not saved."}.get(path, "That did not work.")
     pause = "pause" in fields
     return {
-        "/job": f"Added {made or get('id')}.",
+        "/job": (f"Started a swarm. {made} keeps the best work." if "swarm" in fields else f"Added {made or get('id')}."),
         "/again": f"Added {made}, the next run of {job}.",
         "/inbox/resolve": "Done. It is off your list.",
         "/stop": f"Paused {what}." if pause else f"Stopped {what}.",
@@ -851,6 +908,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             view.update({"can_add": True, "compose": draft or {}, "meta": meta, "settled": settled,
                          "background": cfg.get("appearance", {}).get("background"),
                          "tint": cfg.get("appearance", {}).get("tint"),
+                         "swarm": {**cfg.get("swarm", {}), "choices": swarm_choices()},
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
                          "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
                          **(extra or {})})
@@ -1055,6 +1113,23 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     cfg.setdefault("appearance", {}).update(chosen)
                 self.reply(204)
                 return
+            if path == "/settings/swarm":
+                models, judge = fields.get("models", []), _value(fields, "judge")
+                allowed = swarm_choices()
+                if (not 0 < len(models) <= SWARM_MAX or len(set(models)) != len(models)
+                        or any(m not in allowed for m in (*models, judge))):
+                    self.reply(400)
+                    return
+                with _CLI_LOCK:
+                    try:
+                        config.set_value("swarm.models", ",".join(models), cfg["home"])
+                        config.set_value("swarm.judge", judge, cfg["home"])
+                    except (OSError, ValueError):
+                        self.reply(500)
+                        return
+                    cfg.setdefault("swarm", {}).update({"models": list(models), "judge": judge})
+                self.reply(204)
+                return
             back = _next(fields)
             made = None
             if path == "/checks":
@@ -1071,9 +1146,12 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             else:
                 try:
                     if path == "/job":
+                        fields.pop("swarm", None)  # only a brief that starts with /swarm asks for one
+                        if (brief := _swarm_brief(fields)) is not None:
+                            fields["brief"], fields["swarm"] = [brief], ["1"]
                         _auto_id(cfg, fields)
                     if path in ("/job", "/again"):
-                        made = (_value(fields, "id").strip() if path == "/job"
+                        made = (_value(fields, "id").strip() + (".best" if "swarm" in fields else "") if path == "/job"
                                 else _again(cfg, _value(fields, "job"), "")[0])
                     argv = _action(cfg, path, fields)
                     code, output = _call(cfg, argv)

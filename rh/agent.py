@@ -147,12 +147,34 @@ def _continue(work, prior, brief):
     return f"This continues an earlier run on this repository. {note}{earlier}The request, with the follow-up last:\n\n{brief}"
 
 
+def _judge(work, runs, brief):
+    """Lay each swarm run's answer and changes in .swarm/<run>/ of the fresh copy and return the judge's brief."""
+    shown = []
+    for run in runs:
+        place = work / ".swarm" / run.name
+        place.mkdir(parents=True, exist_ok=True)
+        for name in ("answer.md", "changes.patch"):
+            if (run / name).is_file():
+                shutil.copyfile(run / name, place / name)
+        shown.append(f"- .swarm/{run.name}/" + ("" if (run / "answer.md").is_file() else " (it left no answer)"))
+    return (f"{len(runs)} agents each worked on the request below in their own copy of this repository. Each one's "
+            "final answer (answer.md) and its changes (changes.patch, a git diff) are in this folder:\n\n"
+            + "\n".join(shown) + "\n\nRead them all. Choose the best work, or combine the best parts of several, "
+            "and make this copy hold that result (git apply a patch, then edit as needed); check it the way the "
+            "request needs. Do not edit .swarm, which is removed afterwards. Answer with which run you chose and "
+            "why in two or three sentences, then what the change does.\n\nThe request:\n\n" + brief)
+
+
 def main(argv):
     provider, binary, repo, brief, extra = argv[1], argv[2], argv[3], argv[4], argv[5:]
-    prior = None
+    prior, runs = None, []
     if "--prior" in extra[:-1]:  # a follow-up: continue the run in this folder
         at = extra.index("--prior")
         prior, extra = Path(extra[at + 1]), extra[:at] + extra[at + 2:]
+    while "--swarm" in extra[:-1]:  # a swarm's judge: compare these runs' work
+        at = extra.index("--swarm")
+        runs.append(Path(extra[at + 1]))
+        extra = extra[:at] + extra[at + 2:]
     out = Path.cwd()
     scratch = Path(tempfile.mkdtemp(prefix="rh-agent-"))
     work = scratch / "repo"
@@ -160,6 +182,8 @@ def main(argv):
         subprocess.run(["git", "clone", "--quiet", "--shared", repo, str(work)], check=True)
         if prior:
             brief = _continue(work, prior, brief)
+        if runs:
+            brief = _judge(work, runs, brief)
         base = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True,
                               encoding="utf-8", check=True).stdout.strip()
         (out / "base").write_text(base + "\n", encoding="utf-8")  # the commit the changes apply to
@@ -177,6 +201,7 @@ def main(argv):
             text = answer.read_text(encoding="utf-8", errors="replace")
             answer.write_text(text.replace(str(work.resolve()) + "/", "").replace(str(work) + "/", ""),
                               encoding="utf-8")
+        shutil.rmtree(work / ".swarm", ignore_errors=True)  # the runs' work is theirs, never the judge's change
         subprocess.run(["git", "-C", str(work), "add", "--all"], check=True)
         diff = subprocess.run(["git", "-C", str(work), "diff", "--cached", "--binary"],
                               capture_output=True, check=True).stdout

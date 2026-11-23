@@ -95,6 +95,16 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(decide(s, View(states={"up": "failed"})).verdict, "hold")
         self.assertEqual(decide(s, View()).verdict, "hold")
 
+    def test_after_any_waits_for_every_upstream_to_end_and_needs_one_done(self):
+        # A swarm's judge: it runs once each worker has ended, on whichever finished; none done is a hold.
+        s = spec('after = ["w1", "w2"]\nafter_any = true')
+        self.assertEqual(decide(s, View(states={"w1": "failed", "w2": "running"})).verdict, "wait")
+        self.assertEqual(decide(s, View(states={"w1": "failed", "w2": "done"})).verdict, "ready")
+        self.assertEqual(decide(s, View(states={"w1": "failed", "w2": "cancelled"})).verdict, "hold")
+        self.assertEqual(decide(s, View(states={"w1": "done"})).verdict, "hold")  # a missing worker still holds
+        with self.assertRaises(contract.ContractError):
+            spec('after_any = "yes"')
+
     def test_revision_two_needs_changed_and_prior(self):
         self.assertEqual(decide(spec("revision = 2")).verdict, "hold")
         self.assertEqual(decide(spec('revision = 2\nchanged = "new survey data"')).verdict, "hold")

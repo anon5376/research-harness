@@ -143,6 +143,8 @@ _ICONS = {
     "step": '<path d="M4 6.5h16M4 12h16M4 17.5h9"/>',
     "again": '<path d="M4.5 12a7.5 7.5 0 1 0 2.2-5.3"/><path d="M4.5 4.5v4h4"/>',
     "resume": '<path d="M8 5.5v13l10-6.5z"/>',
+    "swarm": '<circle cx="6" cy="6.5" r="2.25"/><circle cx="18" cy="6.5" r="2.25"/><circle cx="12" cy="18" r="2.25"/>'
+             '<path d="M7.3 8.5l3.6 7.3M16.7 8.5l-3.6 7.3"/>',
     "chat": '<path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8.5a1.5 1.5 0 0 1-1.5 1.5h-8l-4.5 3.5V17H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z"/>',
     "jobs": '<path d="M4 6.5h16M4 12h16M4 17.5h16"/>',
     "inspector": '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M14 5v14"/>',
@@ -1541,6 +1543,38 @@ def _model_picker(policy, kind, draft, only=False):
     return worker_picker
 
 
+def _names(models):
+    """Model names in words: "SWE-2 Max", "SWE-2 Max and SWE-2 Flash", "A, B and C"."""
+    names = ["Fusion" if m.startswith("fusion-") else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, m))
+             for m in models]
+    return " and ".join(names) if len(names) < 3 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+def _slash(ctx):
+    """The composer's commands: typing / lists them, and a brief that starts with one says what it will do."""
+    swarm = ctx.get("swarm") or {}
+    models = [m for m in swarm.get("models") or [] if isinstance(m, str)]
+    judge = swarm.get("judge") or (models[0] if models else "")
+    if not models:
+        return ""
+    does = f"Runs on {_names(models)} at once; {_names([judge])} keeps the best work."
+    return ('<div class="slash" data-slash role="listbox" aria-label="Commands" hidden>'
+            '<button type="button" class="slash-o" role="option" data-slash-cmd="/swarm ">'
+            f'{_ic("swarm", True)}<span class="slash-n mono">/swarm</span><span class="slash-d">{_text(does)}</span>'
+            f'</button></div>')
+
+
+def _swarm_note(ctx):
+    """What a /swarm brief will do, said where the model picker stands, which steps aside for it."""
+    swarm = ctx.get("swarm") or {}
+    models = [m for m in swarm.get("models") or [] if isinstance(m, str)]
+    if not models:
+        return ""
+    judge = swarm.get("judge") or models[0]
+    return (f'<p class="swarm-note" data-swarm-note hidden>{_ic("swarm", True)}<span>Runs on {_text(_names(models))} '
+            f'at once; {_text(_names([judge]))} keeps the best work.</span></p>')
+
+
 def _composer(ctx, draft, ready, policy):
     """The one control that starts a job: what it should do, where it runs, its name, and the rest folded away."""
     draft = draft if isinstance(draft, dict) else {}
@@ -1565,7 +1599,7 @@ def _composer(ctx, draft, ready, policy):
               f'title="Where it runs">{options}</select></div>')
     message = ('<label class="sr" for="brief">What should the job do?</label>'
                '<textarea class="c-text" id="brief" name="brief" rows="1" required '
-               f'placeholder="Describe a coding or research job…">{value("brief")}</textarea>')
+               f'placeholder="Describe a coding or research job…">{value("brief")}</textarea>' + _slash(ctx))
     minutes = [15, 30, 60, 120, 240, 480]
     if timeout.isdigit() and int(timeout) not in minutes:
         minutes = sorted(minutes + [int(timeout)])
@@ -1608,7 +1642,7 @@ def _composer(ctx, draft, ready, policy):
     where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}<span class="wc-t">{_text(workspace[key])}</span></span>'
                     for key, icon, title in (("repo", "folder", "Repository"), ("branch", "branch", "Branch"))
                     if workspace.get(key))
-    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker, options=fields, opened=opened,
+    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx), options=fields, opened=opened,
                           controls="".join(controls), where=f'<div class="where-bar">{runner}{where}</div>', files=True,
                           picked=draft.get("input_path", "") if isinstance(draft.get("input_path"), str) else "")
     body = f'<div class="body">{form}</div>'
@@ -2472,6 +2506,27 @@ def _sidebar(ctx, view, page, wait, queue):
     return f'<aside class="side" aria-label="research-harness" id="sidebar">{top}{nav}{queue}{foot}{grip}</aside>'
 
 
+def _swarm_settings(ctx):
+    """Which models /swarm runs a brief on, and which one judges their work. Only Claude and Devin models are offered:
+    a swarm never spends the ChatGPT plan."""
+    swarm = ctx.get("swarm") or {}
+    choices = [m for m in swarm.get("choices") or [] if isinstance(m, str)]
+    if not choices:
+        return ""
+    ticked = set(swarm.get("models") or [])
+    judge = swarm.get("judge") or ""
+    boxes = "".join(f'<label class="swarm-m"><input type="checkbox" name="models" value="{_text(m)}"'
+                    f'{" checked" if m in ticked else ""}><span>{_text(_names([m]))}</span></label>' for m in choices)
+    judges = "".join(f'<option value="{_text(m)}"{" selected" if m == judge else ""}>{_text(_names([m]))}</option>'
+                     for m in choices)
+    return ('<form action="/settings/swarm" method="post" data-swarm-form>'
+            f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
+            '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
+            f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
+            f'<label class="swarm-judge"><span>Judge</span><select name="judge">{judges}</select></label>'
+            '</fieldset></form>')
+
+
 def _settings(ctx, preset, tint="cobalt"):
     choices = "".join(f'<label><input type="radio" name="background" value="{name}"'
                       f'{" checked" if name == preset else ""}><canvas class="background-preview" data-preview="{name}" '
@@ -2483,7 +2538,8 @@ def _settings(ctx, preset, tint="cobalt"):
             '<h2 id="settings-title" tabindex="-1" autofocus>Settings</h2><form method="dialog"><button class="icon-btn" aria-label="Close settings">'
             '×</button></form></header><form action="/appearance" method="post" data-appearance>'
             f'{_hidden(ctx, [])}<fieldset><legend>Background</legend><div class="background-choices">{choices}</div>'
-            f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form><footer><button type="button" data-keys class="btn quiet small" hidden>'
+            f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form>'
+            f'{_swarm_settings(ctx)}<footer><button type="button" data-keys class="btn quiet small" hidden>'
             'Keyboard shortcuts <kbd>?</kbd></button></footer></dialog>')
 
 
@@ -2536,6 +2592,7 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     back = f"/job/{named}" if named else "/new" if compose else None
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
            "workspace": view.get("workspace") or {},
+           "swarm": view.get("swarm") if isinstance(view.get("swarm"), dict) else {},
            "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),
            "followed": {str(m.get("prior")) for m in meta.values() if isinstance(m, dict) and m.get("prior")},
            "rerun": _reruns(meta),

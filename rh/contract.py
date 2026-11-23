@@ -83,6 +83,8 @@ def normalize(raw):
         if not isinstance(value, (list, tuple)) or not all(isinstance(v, str) for v in value):
             raise ContractError(f"{key} must be a list of {what}, not {type(value).__name__} {value!r}"
                                 if not isinstance(value, (list, tuple)) else f"{key} must be a list of {what}")
+    if not isinstance(spec.get("after_any", False), bool):
+        raise ContractError("after_any must be true or false")
     unknown = [n for n in spec["needs"] if n not in CAPABILITIES]
     if unknown:
         raise ContractError(f"unknown needs {unknown}; known: {', '.join(CAPABILITIES)}")
@@ -160,16 +162,19 @@ def preflight(spec, caps, policy, view):
     steps = operator_steps(spec["brief"]) + operator_steps(spec.get("accept", ""))
     if kind == "local-shell":
         steps += operator_steps(" ".join(spec["command"]))
+    ended = ("failed", "blocked", "capacity", "truncated", "aborted", "no_result", "cancelled")
     for up in spec["after"]:
         st = view.states.get(up)
         if st is None:
             holds.append(f"after {up}: no such job")
-        elif st == "done":
-            continue
-        elif st in ("failed", "blocked", "capacity", "truncated", "aborted", "no_result", "cancelled"):
+        elif st == "done" or (st in ended and spec.get("after_any")):
+            continue  # with after_any (a swarm's judge) a run that ended badly is simply left out
+        elif st in ended:
             holds.append(f"after {up}: it ended {st}")
         else:
             waits.append(f"waiting for {up} ({st})")
+    if spec.get("after_any") and spec["after"] and all(view.states.get(up) in ended for up in spec["after"]):
+        holds.append("after: none of the runs it waits on finished")
     for i in spec["inputs"]:
         p = view.input_root / i["path"]
         if not p.is_file():

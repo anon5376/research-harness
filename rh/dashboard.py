@@ -1605,8 +1605,8 @@ def _swarm_note(ctx):
     judge = swarm.get("judge") or models[0]
     return (f'<p class="swarm-note" data-swarm-note hidden><span class="swarm-chip">{_ic("swarm", True)}Swarm'
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
-            f'×</button></span><span class="swarm-says">Runs on {_text(_names(models))} at once; '
-            f'{_text(_names([judge]))} keeps the best work.</span></p>')
+            f'×</button></span><span class="swarm-says">{_text(" + ".join(_names([m]) for m in models))}'
+            f'{_SEP_HTML}judge {_text(_names([judge]))}</span></p>')
 
 
 def _composer(ctx, draft, ready, policy):
@@ -2534,10 +2534,11 @@ def _inbox_pane(view, ctx, feedback):
     tabbar = f'<div class="tabs" role="tablist" aria-label="Filter">{"".join(tabs)}</div>' if tabbed else ""
     top = _top('<h1 tabindex="-1">Inbox</h1>'
                     f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>'
-                    f'<span class="settled">{_SEP_HTML}<span class="num">{len(settled)}</span> settled today</span></span>')
+                    + (f'<span class="settled">{_SEP_HTML}<span class="num">{len(settled)}</span> settled today</span>'
+                       if settled else "") + '</span>')
     lists = (_section("ib-wait", "Needs you", _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
                       # the top bar carries the one count of what waits and what was settled; the lists repeat none
-                      f'<span class="ib-gh-r mono">newest first</span>{tabbar}')
+                      tabbar)
              + _section("ib-settled", "Settled today", _rows(done), "", hidden=not done))
     ctx["back"] = "/inbox"
     detail = _ib_detail(ctx, entry, settled_item, view, missing, lead)

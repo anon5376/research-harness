@@ -355,6 +355,25 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("I chose run w1", text(row))
         self.assertIn("The label is renamed in the header", text(re.search(r"<h1.*?</h1>", pane(page), re.S).group(0)))
 
+    def test_the_inbox_carries_no_label_that_says_nothing(self):
+        # 'newest first' over a list with no other order, or '0 settled today' beside the count of what waits, must
+        # fail; a day with settled items still says how many.
+        page = pane(inbox(live_view()))
+        self.assertNotIn("newest first", page)
+        top = re.search(r'<span class="top-meta mono">.*?</span></span>', page, re.S).group(0)
+        self.assertNotIn("settled today", text(top))
+        settled = {**live_view(), "settled": [{"id": 90, "job": "live-job", "kind": "question", "body": "Which?",
+                                               "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
+        self.assertIn("1 settled today", text(pane(inbox(settled))))
+
+    def test_the_swarm_line_beside_the_chip_is_short(self):
+        # A sentence naming the judge twice beside the chip, crowding the options button, must fail: the line lists
+        # the runs and the judge once, compactly.
+        page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
+                                                          "judge": "swe-2-max"}}, NOW, token=TOKEN)
+        says = re.search(r'<span class="swarm-says">(.*?)</span></p>', page).group(1)
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max + SWE-2 Flash · judge SWE-2 Max".split())
+
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that
         # repeats it, or a lone tab, must fail.

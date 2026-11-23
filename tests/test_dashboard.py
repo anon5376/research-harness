@@ -645,7 +645,7 @@ class ListsTest(unittest.TestCase):
         # a hunk whose head over-counts (x.py's says 3 old lines, its body has 2) ends at a line no body line starts
         # with, so the next file's header is not read as code
         self.assertNotIn("diff --git", dashboard._peek_html("changes.patch", two))
-        self.assertIn(":is(.peek-head, .peek .dl.file) .n.add", dashboard.STYLE)
+        self.assertIn(":is(.peek-sum, .peek .dl.file) .n.add", dashboard.STYLE)
         self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono">2 files</span>'))
         self.assertIn('<span class="n del zero">−0</span>', dashboard._diff_head("+++ b/x.py\n@@ -0,0 +1 @@\n+a\n"))
         self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")
@@ -661,7 +661,21 @@ class ListsTest(unittest.TestCase):
         done["open"].update(files=[{"path": "changes.patch", "size": 300}],
                             peek={"path": "changes.patch", "text": patch, "more": False})
         body = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertIn('<div class="peek-card"><div class="peek-head"><span class="mono">x.py</span>', body)
+        # one head (critic r14 F1: the file row, a card head and a file head stacked three heads before any code):
+        # the file's own row names what the patch changes and its counts, and heads the card when it opens
+        row = re.search(r'<span class="session-file-main">.*?</span></span>', body, re.S).group(0)
+        self.assertIn('<span class="peek-sum"><span class="mono">x.py</span><span class="n add">+2</span>', row)
+        self.assertNotIn("peek-head", body)
+        self.assertIn('<div class="peek-card"><pre class="peek diff"', body)
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        card = rule(".session-file:has(> .file-preview[open])")
+        for spec in ("border: 1px solid var(--border)", "border-radius: var(--r-card)", "overflow: hidden"):
+            self.assertIn(spec, card)
+        head = rule(".session-file:has(> .file-preview[open]) > .session-file-main")
+        for spec in ("min-height: 40px", "padding: 0 108px 0 14px", "border-bottom: 1px solid var(--rule)"):
+            self.assertIn(spec, head)
+        for spec in ("margin-top: 0", "border: 0", "border-radius: 0"):
+            self.assertIn(spec, rule(".session-file > .file-preview[open] .peek-card"))
         # and the page keeps its own head (a preview's head once took its place)
         self.assertRegex(body, r'<div class="jd-main"><section class="jd-head" data-region="j-head"')
         self.assertIn('<pre class="peek diff" tabindex="0">', body)
@@ -683,6 +697,13 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(len(buttons), 1)
         self.assertIn(f'data-copy-url="{link.group(1)}"', buttons[0])
         self.assertIn('aria-label="Copy the whole patch"', buttons[0])
+        # a button, not a caption: its copy glyph, 28px tall, 8px corners, a fill on hover; shown once the card opens
+        self.assertIn(dashboard._ic("copy", True), body.split('class="peek-copy"', 1)[1].split("</button>", 1)[0])
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for spec in ("height: 28px", "border-radius: 8px"):
+            self.assertIn(spec, rule(".peek-copy"))
+        self.assertIn("background: #1c2030", rule(".peek-copy:hover, .peek-copy:focus-visible"))
+        self.assertIn("display: none", rule(".session-file:not(:has(> .file-preview[open])) .peek-copy"))
         self.assertNotIn("peek-copy", pane(dashboard.render(done, NOW)))
         self.assertIn("copyUrl", dashboard.SCRIPT)
         self.assertIn("fetch(b.dataset.copyUrl", dashboard.SCRIPT)

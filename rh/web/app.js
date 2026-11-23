@@ -931,10 +931,11 @@ async function copyUrl(b) {
     const r = await fetch(b.dataset.copyUrl, { credentials: 'same-origin' });
     if (r.ok) { await navigator.clipboard.writeText(await r.text()); done = true; }
   } catch (err) { done = false; }
-  const was = b.dataset.was || b.textContent;
+  const label = b.querySelector('.pc-t') || b;  // the label alone changes, so the button keeps its glyph
+  const was = b.dataset.was || label.textContent;
   b.dataset.was = was;
-  b.textContent = done ? 'Copied' : 'Open it to copy';
-  setTimeout(() => { b.textContent = was; }, 1600);
+  label.textContent = done ? 'Copied' : 'Open it to copy';
+  setTimeout(() => { label.textContent = was; }, 1200);
 }
 
 // A fenced block in an answer offers Copy at its corner. The button sits in a wrapper beside the pre, not in it,

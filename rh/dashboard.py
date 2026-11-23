@@ -927,6 +927,9 @@ class _Job:
         self.held = self.state == "held" and not self.items
         self.setup = bool(ctx["setup"]) and self.kind == "codex-cloud" and self.state in _PRE
         self.native = bool(ctx.get("native")) and self.kind == "codex-cloud" and self.state == "ready"
+        limit = self.meta.get("timeout_min")
+        if self.state == "stalled" and _number(limit) and limit > 0:
+            self.word = f"Past its {_minutes(limit)} limit"  # the limit the job page names, in every list
         if self.native:
             self.word, self.tone = _STATES["env"]
         elif self.kind == "gpt-chat" and self.state == "handoff":

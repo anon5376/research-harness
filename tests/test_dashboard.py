@@ -3729,6 +3729,17 @@ console.log(JSON.stringify([
         work = text(page).split("Job details", 1)[0]  # the details panel keeps its own State row
         self.assertEqual(work.count("time limit") + work.count("2 h limit"), 1)
         self.assertNotIn('class="st t-amber"', page.split('class="job-result"', 1)[1].split("</p>", 1)[0])
+        # r21 F3: the palette and every list name the same limit as the job page, not 'Past its time limit'; with no
+        # limit recorded they keep the plain word
+        listed = live_view()
+        listed["live"] = [{**r, "state": "stalled"} if r["id"] == "live-job" else r for r in listed["live"]]
+        listed["meta"] = {**listed.get("meta", {}), "live-job": {"kind": "local-shell", "timeout_min": 120}}
+        page = dashboard.render(listed, NOW, token=TOKEN)
+        self.assertRegex(page, r'<a class="p-row" role="option" data-id="live-job"[^>]*>(?:(?!</a>).)*<span class="p-w">Past its 2 h limit</span>')
+        self.assertNotIn('<span class="p-w">Past its time limit', page)  # the ring's label still names the state
+        listed["meta"]["live-job"] = {"kind": "local-shell"}
+        self.assertRegex(dashboard.render(listed, NOW, token=TOKEN),
+                         r'<a class="p-row" role="option" data-id="live-job"[^>]*>(?:(?!</a>).)*<span class="p-w">Past its time limit</span>')
         # In the Inbox, a question on a failed job is drawn dim too; one on a running job, amber.
         view = live_view()
         view["inbox"].append({"id": 9, "kind": "decision", "job": "broke-job", "action": "run it again?", "detail": "",

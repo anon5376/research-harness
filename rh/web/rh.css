@@ -1927,3 +1927,8 @@ a.sw-run:hover { background: var(--surface); }
 .peek .dl.del { background: rgb(248 113 113 / .10); color: #f6c1c1; }
 .peek .dl.hunk { color: #8fb0ff; }
 .peek .dl.meta { color: #7d8394; }
+/* A failure toast's output folds behind the app's chevron, not the browser's triangle. */
+.toast summary { list-style: none; display: inline-flex; align-items: center; gap: 6px; font-size: 12px; }
+.toast summary::-webkit-details-marker { display: none; }
+.toast summary::before { content: "›"; display: inline-block; width: 8px; transition: transform .15s; }
+.toast details[open] > summary::before { transform: rotate(90deg); }

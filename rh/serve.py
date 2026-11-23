@@ -446,8 +446,19 @@ def _action(cfg, path, fields):
     return ["supervise", "--once"]  # /tick without the app's checks, checked by the request handler
 
 
-def _say(path, fields, ok, made=None):
-    """The app's one sentence about an action; the CLI's own output stays available as its details."""
+def _swarm_said(swarm):
+    swarm = swarm if isinstance(swarm, dict) else {}
+    models = [m for m in swarm.get("models") or [] if isinstance(m, str)]
+    if not models:
+        return "Swarm started."
+    judge = swarm.get("judge") or models[0]
+    return (f"Swarm started · {' + '.join(dashboard._names([m]) for m in models)}, "
+            f"judged by {dashboard._names([judge])}")
+
+
+def _say(path, fields, ok, made=None, swarm=None):
+    """The app's one sentence about an action; the CLI's own output stays available as its details. A swarm is said
+    in model names (`swarm` is the config's swarm table), not by its judge's id."""
     get = lambda name: (fields.get(name) or [""])[0].strip()  # noqa: E731
     job, route = get("job"), get("route")
     what = job or ({"codex-cloud": "Codex cloud", "local-shell": dashboard.HERE}.get(route, route)
@@ -458,7 +469,7 @@ def _say(path, fields, ok, made=None):
                 "/attach": "The task was not linked.", "/reply": "The reply was not saved."}.get(path, "That did not work.")
     pause = "pause" in fields
     return {
-        "/job": (f"Started a swarm. {made} keeps the best work." if "swarm" in fields else f"Added {made or get('id')}."),
+        "/job": (_swarm_said(swarm) if "swarm" in fields else f"Added {made or get('id')}."),
         "/again": f"Added {made}, the next run of {job}.",
         "/inbox/resolve": "Done. It is off your list.",
         "/stop": f"Paused {what}." if pause else f"Stopped {what}.",
@@ -1221,7 +1232,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     cfg["cloud"]["env_id"] = _value(fields, "env_id").strip()  # the loop's Supervisor reads this
                     for item in _open_setup_items(cfg):
                         _call(cfg, ["inbox", "resolve", "--", str(item), "environment ID set in the app"])
-                last_result = _result(code, output, _say(path, fields, code == 0, made))
+                last_result = _result(code, output, _say(path, fields, code == 0, made, cfg.get("swarm")))
                 if loop and code == 0 and path != "/tick":
                     loop.nudge()
                 if path in ("/job", "/again"):

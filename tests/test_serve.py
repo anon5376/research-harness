@@ -77,6 +77,24 @@ class Forms(HTMLParser):
             self.current = None
 
 
+class SayTest(unittest.TestCase):
+    def test_a_started_swarm_says_its_models_not_its_judges_slug(self):
+        # 'Started a swarm. fix.best keeps the best work.' names an internal id a person cannot parse: the sentence
+        # names the runs' models and the judge in words.
+        from rh import serve
+        said = serve._say("/job", {"swarm": ["1"]}, True, "fix.best",
+                          swarm={"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max"})
+        self.assertEqual(said, "Swarm started · SWE-2 Max + SWE-2 Flash, judged by SWE-2 Max")
+        self.assertNotIn("fix.best", said)
+
+    def test_a_done_toast_carries_no_cli_details(self):
+        # A success toast with a browser-default 'Details' disclosure of the CLI's output is debug text; only a
+        # failure keeps its output to read.
+        from rh import dashboard
+        self.assertIn("if (!ok && out.trim())", dashboard.SCRIPT)
+        self.assertIn(".toast summary::-webkit-details-marker { display: none; }", dashboard.STYLE)
+
+
 class ServeTest(unittest.TestCase):
     def setUp(self):
         # A missing implementation is a clear assertion failure in the RED run.

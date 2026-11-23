@@ -831,7 +831,7 @@ function toast(say, ok, out) {
   x.setAttribute('aria-label', 'Dismiss');
   x.addEventListener('click', () => drop(t));
   t.append(head, x);
-  if (out.trim()) {
+  if (!ok && out.trim()) {  // a failure keeps the CLI's words to read; a success says only what happened
     const d = document.createElement('details'), s = document.createElement('summary'), pre = document.createElement('pre');
     s.textContent = 'Details'; pre.textContent = out.trim(); d.append(s, pre); t.append(d);
   }

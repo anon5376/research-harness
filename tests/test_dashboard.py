@@ -353,9 +353,12 @@ class ListsTest(unittest.TestCase):
         self.assertRegex(card, r'<a class="sw-run lost"[^>]*>.*?<span class="sw-id mono">w2</span>')
         # marked once, in words: a coloured left rule beside the tag doubled it (critic r9 F12)
         self.assertNotIn(".sw-run.kept::before", dashboard.STYLE)
-        # a passed-over run steps back, but its id stays readable: the judge's answer names runs by it (r10 F7)
+        # a passed-over run steps back in colour, not opacity: its text keeps full contrast, only the ring dims,
+        # and its id stays readable: the judge's answer names runs by it (r10 F7)
         self.assertNotIn(".sw-run.lost { opacity", dashboard.STYLE)
-        self.assertIn(".sw-run.lost > :not(.sw-id) { opacity: .6; }", dashboard.STYLE)
+        self.assertNotIn(".sw-run.lost > :not(.sw-id)", dashboard.STYLE)
+        self.assertIn(".sw-run.lost > :is(.sw-m, .sw-s, .sw-a) { color: #9aa0ad; }", dashboard.STYLE)
+        self.assertIn(".sw-run.lost > svg { opacity: .6; }", dashboard.STYLE)
         self.assertIn("font-variant-numeric: tabular-nums", dashboard.STYLE.split(".sw-id {", 1)[1].split("}", 1)[0])
         # each run row says it opens, as 'Preview ›' does: a trailing chevron and a soft hover (critic r11 F3)
         for row in re.findall(r'<a class="sw-run[^"]*".*?</a>', card, re.S):
@@ -372,11 +375,16 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<span class="sw-s">1 min 0 s <span class="sw-c">Check passed</span></span>', rows["w1"])
         self.assertIn('<span class="sw-w">Running</span><span class="sep">·</span>', rows["w2"])
         self.assertIn("color: #9aa0ad", rule(".sw-id"))
+        self.assertIn("font-variant-numeric: tabular-nums", rule(".sw-s"))
         # on a phone each run is one 44px line: no answer line, no state word, no 'Check passed' (critic r11 F2)
         phone = dashboard.STYLE.split("/* phone swarm rows */", 1)[1].split("\n}", 1)[0]
         for spec in ("min-height: 44px", ".sw-a { display: none; }", ".sw-w, .sw-w + .sep { display: none; }",
                      ".sw-c:not(.bad) { display: none; }"):
             self.assertIn(spec, phone)
+        # the Kept column is a fixed 48px so a row without the tag ends its time at the same x, and the time
+        # right-aligns against it
+        self.assertIn("grid-template-columns: 22px 16px minmax(0, 1fr) auto 48px 12px", phone)
+        self.assertIn(".sw-run .sw-s { grid-column: 4; grid-row: 1; justify-self: end; }", phone)
         answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
         self.assertIn("Judge", text(answer))
 

@@ -27,7 +27,7 @@ BUILD = format(zlib.crc32((STYLE + SCRIPT).encode("utf-8")), "08x")
 FONTS = ("GeistSerif-Square.woff2", "GeistMono-VF.woff2")  # the only files GET /fonts/<name> serves
 BACKGROUNDS = ("halftone.webp", "clouds.webp")
 PRESETS = ("beam", "arc", "clouds", "aurora", "dunes", "orbit", "quiet", "off")
-TINTS = ("cobalt", "violet", "teal", "ember", "mono")
+TINTS = ("cobalt", "violet", "teal", "mono")  # no warm accent: amber is needs you, red is failed
 _LEGACY = {"halftone": "beam"}  # names saved by earlier versions
 _SEP = " · "
 _SEP_HTML = '<span class="sep">·</span>'
@@ -758,6 +758,7 @@ class _Job:
         # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
         self.label = (self.meta.get("said") if self.state == "done" else "") or self.title
         self.dup = False  # set once every job is known: another listed job has the same name
+        self.after = "earlier" if _number(ended) and ended < ctx["midnight"] else "ended"  # its group once nothing waits
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
     def headline_parts(self, runs=1):
@@ -2366,16 +2367,25 @@ def _inbox_pane(view, ctx, feedback):
 
 def _palette(jobs, ctx, keys):
     """⌘K: every job, the pages, and what this page can do, filtered as you type."""
+    # grouped and named as the sidebar groups them; an older run folded into a newer one's Needs you row sits with the
+    # runs that ended, so the first group holds exactly what the badge counts
+    heads = {e["jid"] for e in ctx["needs"] if e.get("job")}
+    group = lambda j: j.group if j.group != "needs" or j.id in heads else j.after  # noqa: E731
     order = {"needs": 0, "live": 1, "next": 2, "ended": 3, "earlier": 4}
-    rows = ['<p class="p-sec">Jobs</p>'] if jobs else []
-    for j in sorted(jobs, key=lambda j: order[j.group]):
+    names = {"needs": "Needs you", "live": "Live", "next": "Up next", "ended": "Ended today", "earlier": "Earlier"}
+    rows, at = [], None
+    for j in sorted(jobs, key=lambda j: order[group(j)]):
+        if group(j) != at:
+            at = group(j)
+            rows.append(f'<p class="p-sec">{names[at]}</p>')
         rows.append(f'<a class="p-row" role="option" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
                     f'<span class="p-ic">{_ring(j.state, kind=j.kind)}</span>'
-                    # as the sidebar names it: when names clash the id leads and the shared name moves to the grey line
-                    + (f'<span class="p-t">{_text(j.id)}</span><span class="p-s"><span>{_text(j.label)}</span>'
-                       if j.dup else
-                       f'<span class="p-t">{_text(j.label)}</span><span class="p-s"><span class="mono">{_text(j.id)}</span>')
-                    + f'<span>{_text(j.word.lower())}</span></span>'
+                    # as the sidebar names it: when names clash the id leads and the shared name moves to the grey
+                    # line, which leads with the state so states form one column
+                    + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'
+                    f'<span class="p-s"><span class="p-w">{_text(j.word)}</span>'
+                    + (f'<span>{_text(j.label)}</span>' if j.dup else f'<span class="mono">{_text(j.id)}</span>')
+                    + '</span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:

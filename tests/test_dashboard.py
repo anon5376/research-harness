@@ -221,7 +221,8 @@ class ListsTest(unittest.TestCase):
             row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
             self.assertIn(f'<span class="name"><span class="nm" title="Same brief">{jid}</span></span>', row)
             # the palette too: the id leads, and the shared name moves to the grey line
-            self.assertRegex(page, rf'<span class="p-t">{jid}</span><span class="p-s"><span>Same brief</span>')
+            self.assertRegex(page, rf'<span class="p-t">{jid}</span><span class="p-s"><span class="p-w">[^<]+</span>'
+                                   rf'<span>Same brief</span>')
             # and the job's own page names it as the sidebar does, so the two never disagree
             one = opened(view, jid, kind="local-shell")
             one["open"]["job"]["spec"]["brief"] = "Same brief."
@@ -1522,6 +1523,14 @@ console.log(JSON.stringify([
         self.assertRegex(link, rf'<span class="name">live-job</span><span class="sub">{re.escape(ASK.capitalize())}</span>')
         self.assertNotIn('class="sub', row.split("</a>", 1)[1])  # the control stands alone
 
+    def test_accent_colours_stay_clear_of_needs_you_and_failed(self):
+        # Amber means needs you and red means failed, so no accent may sit between them; a page saved with the
+        # retired orange accent opens in the default blue.
+        page = dashboard.render({**live_view(), "tint": "ember"}, NOW, token=TOKEN)
+        self.assertIn('data-tint="cobalt"', page)
+        self.assertEqual(re.findall(r'<span class="tint-dot" data-tint="(\w+)">', page),
+                         ["cobalt", "violet", "teal", "mono"])
+
     def test_the_palette_has_a_way_out_without_a_keyboard(self):
         # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.
         pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(live_view(), NOW, token=TOKEN), re.S).group(0)
@@ -1720,7 +1729,8 @@ console.log(JSON.stringify([
         page = dashboard.render(opened(view, "deep-dive", kind="gpt-chat", spec=spec), NOW, token=TOKEN)
         self.assertIn('data-key="job:deep-dive" aria-current="page"', page)  # its row is lit in the lane
         self.assertIn("Waiting for GPT Pro", text(pane(page)))
-        self.assertNotIn("Launch by hand", text(pane(page)))  # head and properties alike
+        own = re.sub(r'<dialog class="pal".*?</dialog>', "", pane(page), flags=re.S)  # the palette lists other jobs
+        self.assertNotIn("Launch by hand", text(own))  # head and properties alike
         card = re.search(r'<div class="ask-card chat-card">.*?</div>', page, re.S).group(0)
         self.assertIn('<pre class="prompt" id="prompt-deep-dive" tabindex="0">Compare the three pacing designs.</pre>',
                       card)
@@ -1945,7 +1955,13 @@ console.log(JSON.stringify([
         # A job's id and state run together in one ellipsised line, or a meta column that can show part of the state
         # word, must fail.
         page = dashboard.render(live_view(), NOW, token=TOKEN)
-        self.assertRegex(page, r'<span class="p-s"><span class="mono">web-job</span><span>launch by hand</span></span>')
+        self.assertRegex(page, r'<span class="p-s"><span class="p-w">Launch by hand</span><span class="mono">web-job</span></span>')
+        # its jobs are grouped as the sidebar groups them, and Needs you holds exactly what the badge counts
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        needs = pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]
+        badge = int(re.search(r'<b class="count num" data-need="(\d+)"', page).group(1))
+        self.assertEqual(needs.count('class="p-row"'), badge)
+        self.assertNotIn('<p class="p-sec">Jobs</p>', pal)
         row = dashboard.STYLE.split(".p-row {", 1)[1].split("}", 1)[0]
         self.assertIn("grid-template-columns: 20px minmax(0, 1fr) 240px auto", row)
         meta = dashboard.STYLE.split(".p-s {", 1)[1].split("}", 1)[0]

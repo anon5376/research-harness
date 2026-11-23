@@ -27,14 +27,12 @@
     cobalt: ['#050b1f', '#1d4fd8', '#eaf1ff'],
     violet: ['#0b0618', '#6d3df2', '#f1ebff'],
     teal: ['#03110f', '#0f9f8f', '#e6fffb'],
-    ember: ['#140703', '#e0521b', '#fff1e6'],
     mono: ['#0b0b0c', '#6b6b73', '#f4f4f5']
   };
   var TINTS = [
     { id: 'cobalt', label: 'Cobalt', swatch: '#1d4fd8' },
     { id: 'violet', label: 'Violet', swatch: '#6d3df2' },
     { id: 'teal', label: 'Teal', swatch: '#0f9f8f' },
-    { id: 'ember', label: 'Ember', swatch: '#e0521b' },
     { id: 'mono', label: 'Mono', swatch: '#6b6b73' }
   ];
 

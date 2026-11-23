@@ -2284,7 +2284,7 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
         cls = "sw-run kept" if won else "sw-run lost" if kept and kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "sw-run"
         inner = f'<span class="sw-id mono">{_text(short)}</span>' + inner + (
             '<span class="sw-k">Kept</span>' if won else "")
-        # a row opens its run, and says so as 'Preview ›' does
+        # a row opens its run, and says so as 'Show ›' does
         go = f'<span class="sw-go" aria-hidden="true">{_ic("chev", True)}</span>'
         items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}{go}</a></li>' if ctx["live"]
                      else f'<li><div class="{cls}">{inner}</div></li>')
@@ -2547,7 +2547,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 copy = (f'<button type="button" class="peek-copy" data-copy-url="{_text(file_url)}" '
                         f'aria-label="Copy the whole patch">{_ic("copy", True)}<span class="pc-t">Copy</span></button>'
                         if ctx["live"] and diff_head else "")
-                details = (f'<details class="file-preview"><summary>Preview</summary><div class="peek-card">'
+                details = (f'<details class="file-preview"><summary>Show</summary><div class="peek-card">'
                            f'<pre class="peek{" diff" if diff_head else ""}" tabindex="0">'
                            f'{_peek_html(path, peek_text, whole=not preview.get("more"))}{more}</pre></div></details>')
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'

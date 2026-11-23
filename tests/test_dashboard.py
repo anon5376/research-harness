@@ -3012,7 +3012,9 @@ console.log(JSON.stringify([
         page = pane(dashboard.render(done, NOW, token=TOKEN))
         body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
         self.assertIn('data-region="j-output"', body)
-        self.assertIn('<details class="file-preview"><summary>Preview</summary>', body)
+        # r21 F8: the file row and the Output row below it open the same way, so they say the same verb, 'Show ›'
+        self.assertIn('<details class="file-preview"><summary>Show</summary>', body)
+        self.assertNotIn("<summary>Preview</summary>", page)
         dock = page.split('<div class="jd-dock">', 1)[1]
         self.assertIn('data-region="j-reply"', dock)
         self.assertIn('action="/again"', dock)

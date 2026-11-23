@@ -1039,13 +1039,16 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     # an agent's base (the commit its changes apply to) is bookkeeping, not a result
                     skip = (("answer.md",) if chat_answer else ()) + (
                         ("base",) if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
-                    checks = root / "swarm-checks.json"  # a swarm judge's verdicts on its runs, shown on its card
-                    if shown["job"].get("spec", {}).get("after_any") and checks.is_file() and not checks.is_symlink():
-                        try:
-                            shown["swarm_checks"] = json.loads(checks.read_text(encoding="utf-8"))
-                        except (OSError, ValueError):
-                            pass
-                        skip += ("swarm-checks.json",)
+                    if shown["job"].get("spec", {}).get("after_any"):  # a swarm judge: its verdicts and the run kept
+                        for name, key in (("swarm-checks.json", "swarm_checks"), ("swarm-result.json", "swarm_kept")):
+                            found = root / name
+                            if found.is_file() and not found.is_symlink():
+                                try:
+                                    value = json.loads(found.read_text(encoding="utf-8"))
+                                except (OSError, ValueError):
+                                    continue
+                                shown[key] = value.get("kept") if key == "swarm_kept" and isinstance(value, dict) else value
+                            skip += (name,)
                     shown["files"], shown["peek"] = _files(root, skip=skip)
                 if shown["job"].get("spec", {}).get("prior"):
                     shown["thread"] = _thread(cfg, shown["job"])  # the chat so far, while this run works too

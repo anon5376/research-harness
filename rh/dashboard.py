@@ -1945,9 +1945,11 @@ def _job_head(title, kind, tip=""):
     return _region("j-head", body, "section", "jd-head")
 
 
-def _said(provider, model, text, link="", inner=False):
-    """An agent's answer as a chat message: who answered and on which model, then the answer rendered from Markdown."""
+def _said(provider, model, text, link="", inner=False, role=""):
+    """An agent's answer as a chat message: who answered and on which model, then the answer rendered from Markdown.
+    `role` names what the agent was (a swarm's "Judge") in place of its provider."""
     who, mark = _AGENT_WHO.get(provider or "", ("Answer", "chat"))
+    who = role or who
     name = _MODEL_NAMES.get(model, model) if model else ""
     head = (f'<p class="who" data-prov="{_text(provider or "")}">{_ic(mark, True)}{who}'
             + (f'<span class="who-model">{_text(name)}</span>' if name else "")
@@ -1976,7 +1978,7 @@ def _fail_banner(state, spec, bad):
             f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
 
 
-def _swarm_card(ctx, runs, checks=None):
+def _swarm_card(ctx, runs, checks=None, kept=None):
     """A swarm's runs on its judge's page: each run's model, state, time, check verdict and first answer line, linked
     to its page."""
     now, items = ctx["now"], []
@@ -1998,11 +2000,17 @@ def _swarm_card(ctx, runs, checks=None):
         inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="sw-m">{_text(model)}</span>'
                  f'<span class="sw-s">{_SEP_HTML.join(x for x in (_text(word), took) if x)}</span>'
                  + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))
-        items.append(f'<li><a class="sw-run" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}</a></li>' if ctx["live"]
-                     else f'<li><div class="sw-run">{inner}</div></li>')
+        short = rid.rsplit(".", 1)[-1]
+        won = kept in (rid, short)
+        cls = "sw-run kept" if won else "sw-run lost" if kept and kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "sw-run"
+        inner = f'<span class="sw-id mono">{_text(short)}</span>' + inner + (
+            '<span class="sw-k">Kept</span>' if won else "")
+        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}</a></li>' if ctx["live"]
+                     else f'<li><div class="{cls}">{inner}</div></li>')
     n = len(runs)
+    note = " · combined" if kept == "combined" else ""
     body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{n} {"run" if n == 1 else "runs"}'
-            f'</span></div><ul class="sw-runs">{"".join(items)}</ul>')
+            f'{note}</span></div><ul class="sw-runs">{"".join(items)}</ul>')
     return _region("j-swarm", body, "section", "out s-j-swarm", ' aria-label="Swarm runs"')
 
 
@@ -2106,6 +2114,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         else:
             checks_text = f'{len(check_rows)} {"check" if len(check_rows) == 1 else "checks"} pending'
         status_line.append(_text(checks_text))
+    if runs:  # a swarm's time is the whole swarm's, from its first run's start
+        firsts = [ctx["meta"].get(r, {}).get("started") for r in runs if isinstance(ctx["meta"].get(r), dict)]
+        firsts = [t for t in firsts if _number(t)]
+        started_at = min([*firsts, *([started_at] if _number(started_at) else [])], default=started_at)
     if _number(started_at) and _number(ended_at):
         status_line.append(_text(_duration(ended_at - started_at)))
     elif _number(started_at) and not finished:
@@ -2124,7 +2136,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
     work.append(_region("job-result", "".join(result), "p", "job-result"))
     if runs:
-        work.append(_swarm_card(ctx, runs, opened.get("swarm_checks")))
+        work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept")))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     chat_dock = ""
@@ -2168,7 +2180,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         provider, model = agent[:2] if agent else ("codex" if kind == "codex-cloud" else "", "")
         if not model and kind == "codex-cloud" and isinstance(spec.get("model"), dict):
             model = str(spec["model"].get("requested") or "")
-        work.append(_region("j-answer", _said(provider, model, said, inner=True), "section", "msg ai",
+        work.append(_region("j-answer", _said(provider, model, said, inner=True, role="Judge" if runs else ""),
+                            "section", "msg ai",
                             ' aria-label="The answer"'))
     if not finished:
         loop = view.get("checks") if isinstance(view.get("checks"), dict) else None

@@ -1809,3 +1809,18 @@ a.sw-run:hover { background: var(--surface); }
 .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 16px 112px 236px minmax(0, 1fr); }
 @media (max-width: 600px) { .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 16px minmax(0, 1fr) auto; } }
 .swarm-judge select { width: 60%; max-width: none; }
+/* Each swarm row names its run (w1, w2), the run the judge kept carries an accent rule and a Kept tag, and the
+   runs it passed over step back. */
+.sw-run { grid-template-columns: 22px 16px 112px 148px minmax(0, 1fr) auto; position: relative; }
+.sw-runs:has(.sw-c) .sw-run { grid-template-columns: 22px 16px 112px 236px minmax(0, 1fr) auto; }
+.sw-id { color: var(--faint); font-size: 12px; }
+.sw-run.kept::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 2px; border-radius: 2px;
+  background: #4f7cff; }
+.sw-run.lost { opacity: .6; }
+.sw-k { padding: 1px 7px; border-radius: 5px; background: rgb(79 124 255 / .16); color: #a9bcff; font-size: 12px; }
+@media (max-width: 600px) {
+  .sw-run, .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 22px 16px minmax(0, 1fr) auto; }
+  .sw-run .sw-s { grid-column: 3 / 5; grid-row: 2; }
+  .sw-run .sw-a { grid-column: 3 / 5; grid-row: 3; }
+  .sw-k { grid-column: 4; grid-row: 1; }
+}

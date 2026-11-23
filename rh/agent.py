@@ -254,6 +254,13 @@ def main(argv):
                               capture_output=True, check=True).stdout
         if diff:
             (out / "changes.patch").write_bytes(diff)
+        if runs:  # which run's work the judge kept whole, by its patch, so the app need not read the judge's prose
+            def same(patch):  # one change, whatever blob ids or line positions (the repo may have moved) it carries
+                return [b"@@" if line.startswith(b"@@") else line for line in patch.splitlines()
+                        if not line.startswith(b"index ")]
+            kept = next((run.name for run in runs if (run / "changes.patch").is_file()
+                         and same((run / "changes.patch").read_bytes()) == same(diff)), "combined" if diff else "none")
+            (out / "swarm-result.json").write_text(json.dumps({"kept": kept}) + "\n", encoding="utf-8")
         print(f"changes.patch: {len(diff.splitlines())} lines" if diff else "no files changed")
         return code
     finally:

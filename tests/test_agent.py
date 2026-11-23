@@ -160,8 +160,10 @@ class SwarmJudgeTest(unittest.TestCase):
             git(repo, "commit", "--quiet", "-m", "start")
             for run, word in zip(runs, ("deux", "two")):
                 (run / "answer.md").write_text(f"Added {word}.\n", encoding="utf-8")
+                # w2 was made when the line sat elsewhere: its hunk header differs, its change does not
+                where = "-1 +1,2" if word == "deux" else "-3 +3,2"
                 (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
-                                                   f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
+                                                   f"@@ {where} @@\n one\n+{word}\n", encoding="utf-8")
             # A stand-in claude: lists what it was shown, then applies the second run's patch.
             fake = tmp / "claude"
             fake.write_text(f"#!{sys.executable}\nimport sys, pathlib, subprocess\nprint(sys.argv[2])\n"
@@ -187,6 +189,8 @@ class SwarmJudgeTest(unittest.TestCase):
             self.assertIn("+two", patch)
             self.assertNotIn("deux", patch)
             self.assertNotIn(".swarm", patch)
+            # the harness, not the judge's prose, records which run's work was kept whole
+            self.assertEqual(json.loads((out / "swarm-result.json").read_text(encoding="utf-8")), {"kept": "fix.w2"})
 
 
 class SwarmCheckTest(unittest.TestCase):

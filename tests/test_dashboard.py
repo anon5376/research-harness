@@ -315,6 +315,17 @@ class ListsTest(unittest.TestCase):
         card = re.search(r'data-region="j-swarm".*?</section>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
         self.assertIn('<span class="sw-c">Check passed</span>', card)
         self.assertIn('<span class="sw-c bad">Check failed</span>', card)
+        # the run the judge kept is marked, the others step back, each row names its run, and the answer is the judge's
+        done["open"].update(swarm_kept="fix.w1", answer="Kept the label fix")
+        done["open"]["job"]["state"] = "done"
+        done["open"]["job"]["spec"]["command"] = ["python3", "/x/rh/agent.py", "devin", "/bin/devin", "/r", "b",
+                                                  "--model", "swe-2-max"]
+        page = dashboard.render(done, NOW, token=TOKEN)
+        card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
+        self.assertRegex(card, r'<a class="sw-run kept"[^>]*>.*?<span class="sw-id mono">w1</span>.*?Kept</span>')
+        self.assertRegex(card, r'<a class="sw-run lost"[^>]*>.*?<span class="sw-id mono">w2</span>')
+        answer = re.search(r'data-region="j-answer".*?</p>', page, re.S).group(0)
+        self.assertIn("Judge", text(answer))
 
     def test_the_inbox_counts_what_waits_once_in_its_list(self):
         # Mixed kinds get filter tabs; one kind needs none. The count lives in the top bar only: a list heading that

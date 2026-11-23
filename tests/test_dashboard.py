@@ -768,7 +768,7 @@ class ListsTest(unittest.TestCase):
         says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span></p>', page).group(1)
         # 'A + B' names one Fusion model everywhere else, so the runs are listed with commas and the judge is a verb
         # (critic r11 F1)
-        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max + Flash · Max judges".split())  # r22 F2
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge: Max".split())  # r22 F2, r23 F6
         # the chip's × shows on hover or focus where there is a pointer, always on touch, with a 24px hit area
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("gap: 12px", rule(".swarm-note"))
@@ -846,14 +846,15 @@ class ListsTest(unittest.TestCase):
         for gone in (".swarm-cost", ".mp-cost", ".mp-cur"):
             self.assertNotIn(gone, dashboard.STYLE)
 
-    SWARM_LINES = [  # r22 F2: a shared family is printed once; a Fusion pair's own '+' keeps mixed lists comma-joined
-        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max + Flash · Max judges"),
-        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · Max judges"),
-        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max + Flash · Claude Opus 5.5 judges"),
-        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · SWE-2 Max judges"),
+    SWARM_LINES = [  # r22 F2: a shared family is printed once. r23 F6: '+' is Fusion's (one model of two), so runs
+        # join with commas, and the judge is named as one ('Max judges' read as 'maximum judges')
+        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max, Flash · judge: Max"),
+        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · judge: Max"),
+        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max, Flash · judge: Claude Opus 5.5"),
+        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · judge: SWE-2 Max"),
         (["Fable 5.2 Medium + SWE-2 High", "SWE-2 Max"], "SWE-2 Max",
-         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · SWE-2 Max judges"),
-        (["Opus"], "Opus", "Opus · Opus judges"),
+         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · judge: SWE-2 Max"),
+        (["Opus"], "Opus", "Opus · judge: Opus"),
     ]
 
     def test_settings_shows_every_swarm_group_when_it_opens(self):
@@ -913,7 +914,7 @@ class ListsTest(unittest.TestCase):
             self.assertEqual(dashboard._swarm_line(names, judge), line)
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
                                                           "judge": "swe-2-max"}}, NOW, token=TOKEN)
-        self.assertIn(f'SWE-2 Max + Flash{dashboard._SEP_HTML}Max judges', page)
+        self.assertIn(f'SWE-2 Max, Flash{dashboard._SEP_HTML}judge: Max', page)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_script_writes_the_swarm_line_as_the_page_does(self):

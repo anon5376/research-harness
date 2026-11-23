@@ -2162,10 +2162,10 @@ function swarmLine(names, judge) {
   const fam = heads.size === 1 && names.every(n => n.includes(' ') && !n.includes('+')) ? [...heads][0] : '';
   let models = names.join(', ');
   if (fam) {
-    models = fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(' + ');
+    models = fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(', ');
     if (judge.startsWith(fam + ' ') && !judge.includes('+')) judge = judge.slice(fam.length + 1);
   }
-  return `${models} · ${judge} judges`;
+  return `${models} · judge: ${judge}`;
 }
 function swarmSays(form) {
   const says = form.id && document.querySelector(`[data-swarm-says="${form.id}"]`);

@@ -2235,17 +2235,17 @@ def _fail_banner(state, spec, bad):
 
 
 def _swarm_line(names, judge):
-    """The composer's swarm line: 'SWE-2 Max + Flash · Max judges'. A family every model shares is named once; a list
-    that mixes families, or holds a Fusion pair (whose name has its own '+'), keeps whole names joined by commas.
+    """The composer's swarm line: 'SWE-2 Max, Flash · judge: Max'. A family every model shares is named once; a list
+    that mixes families, or holds a Fusion pair, keeps whole names. Runs join with commas: '+' is Fusion's own.
     app.js's swarmLine writes the same line as the ticks change."""
     heads = {n.split(" ", 1)[0] for n in names}
     fam = next(iter(heads)) if len(heads) == 1 and all(" " in n and "+" not in n for n in names) else ""
     models = ", ".join(names)
     if fam:
-        models = fam + " " + " + ".join(n[len(fam) + 1:] for n in names)
+        models = fam + " " + ", ".join(n[len(fam) + 1:] for n in names)
         if judge.startswith(fam + " ") and "+" not in judge:
             judge = judge[len(fam) + 1:]
-    return f"{models} · {judge} judges"
+    return f"{models} · judge: {judge}"
 
 
 def _swarm_again(ctx, runs):

@@ -2316,6 +2316,25 @@ console.log(JSON.stringify([
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
 
+    def test_on_a_phone_pause_and_stop_are_one_capsule(self):
+        # Four equal glass squares made the running header four unrelated buttons around a squeezed name (critic r9
+        # F3). Pause and Stop must join into one 72px capsule split by a hairline, their touch areas must not
+        # overlap at the seam (a tap there would hit whichever came last), and the name gets the room back.
+        spec = dashboard.STYLE.split("one button spec", 1)[1].split("\n}", 1)[0]
+        rule = lambda sel: spec.split("\n  " + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("gap: 0", rule(".job-actions:has(.act + .act)"))
+        first = rule(".job-actions .act:has(+ .act) > summary")
+        self.assertIn("border-radius: 10px 0 0 10px", first)
+        self.assertIn("border-right: 0", first)
+        second = rule(".job-actions .act + .act > summary")
+        self.assertIn("border-radius: 0 10px 10px 0", second)
+        self.assertIn("border-left: 1px solid rgb(255 255 255 / .10)", second)
+        # each half's 44px touch area reaches outward from the seam, so the two never share a point
+        self.assertIn("right: 0", rule(".job-actions .act:has(+ .act) > summary::after"))
+        self.assertIn("left: 0", rule(".job-actions .act + .act > summary::after"))
+        two = int(re.search(r"padding-right: (\d+)px", rule(".detail:has(.job-actions .act + .act) .jd-head-in")).group(1))
+        self.assertEqual(two, 56 + 72 + 8)  # header edge to capsule, the capsule, one gap
+
     def test_on_a_phone_cancel_is_an_icon_with_room_for_two(self):
         # A phone header where Cancel still takes a word's width, an icon that is not the stop square, or title
         # room for only one button while Pause and Cancel both show, must fail.

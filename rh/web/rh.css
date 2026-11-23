@@ -1642,6 +1642,14 @@ select[data-job-filter]::picker-icon { margin: 4px 3px 0 6px; }
   .has-sidebar-toggle .detail .jd-head-in, html.side-hidden[data-live-app] .detail .jd-head-in { padding-left: 64px; }
   .detail .jd-head-in { padding-right: 60px; }
   .detail:has(.job-actions .act) .jd-head-in { padding-right: 104px; }
+  /* Pause and Stop are one 72px capsule split by a hairline: the band reads [sidebar] name [pause|stop] [details]. */
+  .job-actions:has(.act + .act) { gap: 0; }
+  .job-actions .act:has(+ .act) > summary { border-radius: 10px 0 0 10px; border-right: 0; }
+  .job-actions .act + .act > summary { border-radius: 0 10px 10px 0; border-left: 1px solid rgb(255 255 255 / .10); }
+  /* each half's 44px touch area reaches outward from the seam, so the two never share a point */
+  .job-actions .act:has(+ .act) > summary::after { left: auto; right: 0; translate: 0 -50%; }
+  .job-actions .act + .act > summary::after { left: 0; translate: 0 -50%; }
+  .detail:has(.job-actions .act + .act) .jd-head-in { padding-right: 136px; }
 }
 /* The composer's options and send sit a thumb apart, so their touch areas never share a point. */
 @media (pointer: coarse), (max-width: 600px) { .compose .compose-tools { gap: 16px; } }

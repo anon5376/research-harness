@@ -1608,3 +1608,41 @@ select[data-job-filter]::picker-icon { margin: 4px 3px 0 6px; }
 .c-row .model-picker { min-width: 0; flex: 0 1 auto; }
 .c-row .model-picker .mp-trigger { max-width: 100%; }
 @media (max-width: 600px) { .jd-compose .c-row:has(.model-picker) .compose-tools .model-note { display: none; } }
+/* Phone header: one button spec (36px glass squares on the header's midline); the name takes the room the
+   buttons leave, and a finished job keeps no empty slot for Pause. */
+@media (max-width: 600px) {
+  .has-sidebar-toggle .app .sidebar-toggle, html.side-hidden[data-live-app] .app .sidebar-toggle { top: 10px; left: 16px; }
+  .has-sidebar-toggle .app .sidebar-toggle, html.side-hidden[data-live-app] .app .sidebar-toggle,
+  .job-actions .act > summary[data-k="s"], .jd-inspector > summary {
+    width: 36px; height: 36px; border-radius: 10px; color: var(--text); background: rgb(255 255 255 / .08);
+    border: 1px solid rgb(255 255 255 / .10); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+  .detail .jd-side:has(.jd-inspector:not([open])) { top: 10px; right: 12px; }
+  .job-actions { top: 10px; right: 56px; }
+  .has-sidebar-toggle .detail .jd-head-in, html.side-hidden[data-live-app] .detail .jd-head-in { padding-left: 64px; }
+  .detail .jd-head-in { padding-right: 60px; }
+  .detail:has(.job-actions .act) .jd-head-in { padding-right: 104px; }
+}
+/* The composer's options and send sit a thumb apart, so their touch areas never share a point. */
+@media (pointer: coarse), (max-width: 600px) { .compose .compose-tools { gap: 16px; } }
+/* A running log shows its newest lines and scrolls for the rest; the status row above stays the headline. */
+.worked pre.log[data-follow] { max-height: min(300px, max(200px, calc(100dvh - 420px))); }
+@media (max-width: 600px) { .worked pre.log[data-follow] { max-height: 210px; } }
+/* Answers read at a book measure: 16px on 26px, about 70 letters a line, under a heading one clear step up. */
+.assistant-message.md { font-size: 16px; line-height: 26px; }
+.assistant-message.md > :is(p, ul, ol, blockquote) { max-width: 36em; }
+.assistant-message.md .md-title { font-size: 22px; line-height: 28px; }
+/* Modal sheets push what is behind them back. */
+dialog::backdrop { background: rgb(3 5 12 / .72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+/* One left edge down the sidebar: nav icons and job marks share a centre, their words one start. */
+.nav a { padding-left: 6px; gap: 6px; }
+.ws .new-job { gap: 6px; }
+.side .rows a.item > svg.st:first-child { margin-left: 1px; }
+/* Cancelled is not done: a dashed ring, and its name steps back. */
+svg.st[data-s="cancelled"] circle { stroke-dasharray: 2.2 1.6; }
+.side .rows a.item:has(> svg.st[data-s="cancelled"]) .name { color: var(--faint); }
+/* The palette's list fades under its footer instead of slicing a row. */
+.p-list { -webkit-mask-image: linear-gradient(#000 calc(100% - 28px), transparent); mask-image: linear-gradient(#000 calc(100% - 28px), transparent);
+  padding-bottom: 20px; }
+/* The Inbox's actions are the composer's pills. */
+.q-acts .btn { border-radius: 999px; height: 30px; padding: 0 14px; }
+.assistant-message.md > .md-title { max-width: 36em; }

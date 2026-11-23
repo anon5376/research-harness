@@ -1231,6 +1231,9 @@ function place(d) {
   }
   const p = placePop(s.getBoundingClientRect(), room, body.offsetWidth, body.scrollHeight, 6);
   body.classList.toggle('up', p.up); body.classList.toggle('right', p.right); body.style.maxHeight = p.max + 'px';
+  // below a composer it floats the same 8px clear of the glass as the model and effort popovers
+  const box = d.closest('.composer'), cb = body.offsetParent;
+  body.style.top = !p.up && box && cb ? (box.getBoundingClientRect().bottom + 8 - cb.getBoundingClientRect().top) + 'px' : '';
 }
 function closeOthers(keep) { for (const d of $$('details.act[open]')) if (d !== keep) d.open = false; }
 const field = d => $('input:not([type="hidden"]):not([type="checkbox"]), textarea', d);

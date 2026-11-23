@@ -450,7 +450,9 @@ def _md_inline(text):
         out.append(escape(text[at:m.start()]))
         code, bold, em, label, href = m.groups()
         if code is not None:
-            out.append(f"<code class=\"nw\">{escape(code)}</code>" if len(code) <= 40 else f"<code>{_breaks(escape(code))}</code>")
+            tok = ' class="tok"' if not re.search(r"\s", code) else ""  # an identifier, not a phrase
+            out.append(f'<code class="nw">{escape(code)}</code>' if len(code) <= 40 else
+                       f"<code{tok}>{_breaks(escape(code))}</code>")
         elif bold is not None:
             out.append(f"<strong>{_md_inline(bold)}</strong>")
         elif em is not None:
@@ -2167,9 +2169,10 @@ def _ib_row(ctx, entry, picked):
     created = entry["created"]
     age = _clock(created, ctx["now"]) if _number(created) else ""  # clock times, as the sidebar and Settled give
     head = job.title if job else entry["ask"]
-    sub = (f'{job.headline_html(len(entry.get("runs", [])) or 1)}{_SEP_HTML}<span class="mono">{_text(jid)}</span>'
-           if job and not entry["item"] else
-           f'{_text(entry["ask"])}{_SEP_HTML}<span class="mono">{_text(jid)}</span>' if job else
+    # the reason gives way before the run's id, which tells runs of one brief apart
+    sub = (f'<span class="ib-why">{job.headline_html(len(entry.get("runs", [])) or 1)}</span>{_SEP_HTML}'
+           f'<span class="mono">{_text(jid)}</span>' if job and not entry["item"] else
+           f'<span class="ib-why">{_text(entry["ask"])}</span>{_SEP_HTML}<span class="mono">{_text(jid)}</span>' if job else
            f'<span class="mono">{_text(jid)}</span>{_SEP_HTML}a job not listed here' if jid
            else "The app's own pause" if entry["stop"] else "The harness")
     current = ' aria-current="true"' if picked else ""

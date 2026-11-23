@@ -1690,9 +1690,26 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 /* On a phone the composer types at 16px, so focusing it never zooms the page. */
 @media (max-width: 600px) { .composer textarea.c-text, :is(.dock, .session-dock) .compose textarea.c-text { font-size: 16px; } }
 /* Short headings and bubbles break evenly rather than leaving one word on the last line. */
-:is(.user-message, .ib-t, .q-title, .md-title) { text-wrap: pretty; }
+:is(.ib-t, .q-title, .md-title) { text-wrap: pretty; }
 /* The phone Inbox keeps its one count of what needs you after the title; the settled count stays on desktop. */
 @media (max-width: 600px) {
   .top-meta:has(> [data-need]) { display: inline; }
   .top-meta:has(> [data-need]) > :not([data-need]) { display: none; }
 }
+/* An Inbox row's reason gives way before the run's id, which never truncates. */
+.ib-s:has(> .ib-why) { display: flex; min-width: 0; }
+.ib-s > .ib-why { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ib-s > :is(.sep, .mono) { flex: none; }
+/* Your turns read as messages, a step under the answer (15 on 22 against 16 on 26), wrapped greedily so a bubble
+   is never much wider than its text. A long brief folds to three lines; Show all opens it. */
+.user-message { font-size: 15px; line-height: 22px; text-wrap: wrap; }
+.user-message:has(+ .ask-more):not(.whole) { max-height: calc(3lh + 8px); }
+@media (max-width: 600px) { .user-message:has(+ .ask-more):not(.whole) { max-height: calc(3lh + 8px); } }
+.user-message:not(.whole) { max-height: calc(3lh + 16px); }
+/* A long identifier moves whole to the next line when it fits there, and breaks at its seams only when it is wider
+   than the column; a phrase of code wraps inline. */
+.assistant-message.md :not(pre) > code.tok { display: inline-block; max-width: 100%; vertical-align: bottom; }
+/* Selection carries the app's navy, as every other surface does. */
+:root[data-live-app] { --active: #1f2638; }
+/* A card's header keeps one inset on both sides. */
+.out .head { padding-right: 14px; }

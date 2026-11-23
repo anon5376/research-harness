@@ -695,6 +695,10 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string in tests/x.py`"),
                          "<code>test_<wbr>rejects_<wbr>an_<wbr>accept_<wbr>that_<wbr>is_<wbr>not_<wbr>a_<wbr>string "
                          "in tests/<wbr>x.<wbr>py</code>")
+        # a long identifier (no spaces) is one token: it moves whole to the next line when it fits there
+        self.assertEqual(dashboard._md_inline("`test_rejects_an_accept_that_is_not_a_string`"),
+                         '<code class="tok">test_<wbr>rejects_<wbr>an_<wbr>accept_<wbr>that_<wbr>is_<wbr>not_<wbr>a_<wbr>'
+                         'string</code>')
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without
@@ -1799,7 +1803,7 @@ console.log(JSON.stringify([
         self.assertEqual(sorted(box), ["sweep-3", "sweep-odd"])
         self.assertRegex(box["sweep-3"], r'<span class="ib-t">Run the test suite twenty times and list every test '
                                          r'that failed at least once\.?</span>')
-        self.assertRegex(box["sweep-3"], r'<span class="ib-s">Failed 3 times: [^<]+<span class="sep">·</span><span class="mono">sweep-3'
+        self.assertRegex(box["sweep-3"], r'<span class="ib-s"><span class="ib-why">Failed 3 times: [^<]+</span><span class="sep">·</span><span class="mono">sweep-3'
                                          r'</span></span>')
         # Each run's page names every run that failed the same way, newest first, and links the others.
         for jid in ("sweep-3", "sweep"):

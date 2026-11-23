@@ -2118,10 +2118,18 @@ console.log(JSON.stringify([
                 self.assertNotIn('<div class="jd-prog">', page)
         done_page = pane(dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN))
         self.assertIn('<svg class="st t-accent"', done_page.split('class="job-result"', 1)[1])
+        # A job past its limit says so once, in the status line, with its limit and what happens next; it is not
+        # amber (amber means it needs you) and no second line repeats it.
         stalled = opened(live_view(), "live-job", state="stalled")
-        self.assertRegex(pane(dashboard.render(stalled, NOW, token=TOKEN)),
-                         r'<p class="job-result"[^>]*><svg class="st [^"]+"[^>]*>.*?</svg>'
-                         r'<span class="job-result-status">Past its time limit(?:</span>|<span class="sep">·</span>)')
+        stalled["open"]["job"]["spec"]["timeout_min"] = 120
+        page = pane(dashboard.render(stalled, NOW, token=TOKEN))
+        self.assertRegex(page, r'<p class="job-result"[^>]*><svg class="st t-accent"[^>]*data-s="late"[^>]*>.*?</svg>'
+                               r'<span class="job-result-status">Past its 2 h limit<span class="sep">·</span>'
+                               r'still being checked')
+        self.assertNotIn('data-region="j-now"', page)
+        work = text(page).split("Job details", 1)[0]  # the details panel keeps its own State row
+        self.assertEqual(work.count("time limit") + work.count("2 h limit"), 1)
+        self.assertNotIn('class="st t-amber"', page.split('class="job-result"', 1)[1].split("</p>", 1)[0])
         # In the Inbox, a question on a failed job is drawn dim too; one on a running job, amber.
         view = live_view()
         view["inbox"].append({"id": 9, "kind": "decision", "job": "broke-job", "action": "run it again?", "detail": "",

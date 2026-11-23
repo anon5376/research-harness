@@ -42,7 +42,7 @@ _FACES = ('@font-face{font-family:"Geist Serif";src:url(/fonts/GeistSerif-Square
 _STATES = {
     "draft": ("New", "neutral"), "ready": ("Ready", "neutral"), "waiting": ("Waiting", "neutral"),
     "held": ("On hold", "warn"), "launching": ("Starting", "live"), "handoff": ("Launch by hand", "warn"),
-    "running": ("Running", "live"), "stalled": ("Past its time limit", "warn"),
+    "running": ("Running", "live"), "stalled": ("Past its time limit", "live"),
     "collecting": ("Checking the result", "live"), "done": ("Done", "good"), "failed": ("Failed", "bad"),
     "blocked": ("Blocked", "warn"), "capacity": ("No capacity", "warn"), "truncated": ("Cut short", "bad"),
     "aborted": ("Ended early", "bad"), "no_result": ("No result", "bad"), "cancelled": ("Cancelled", "neutral"),
@@ -180,6 +180,11 @@ _SHAPES = {
     "held": _RING + '<path d="M5.7 5v4M8.3 5v4" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>',
     "quarter": _RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 10.1 7Z" fill="currentColor"/>',
     "half": _RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1Z" fill="currentColor"/>',
+    # running past its limit: the running half, with a small clock at the lower right
+    "late": (_RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1Z" fill="currentColor"/>'
+             '<circle cx="11" cy="11" r="3.4" fill="#0b0d14" stroke="none"/>'
+             '<circle cx="11" cy="11" r="2.7" fill="none" stroke="currentColor" stroke-width="1"/>'
+             '<path d="M11 9.6V11l.9.7" fill="none" stroke="currentColor" stroke-width=".9" stroke-linecap="round"/>'),
     "three": _RING + '<path d="M7 7V3.9A3.1 3.1 0 0 1 7 10.1A3.1 3.1 0 0 1 3.9 7Z" fill="currentColor"/>',
     "handoff": _RING + ('<path d="M5.1 8.9 8.7 5.3M5.9 5.2h2.9v2.9" fill="none" stroke="currentColor" '
                         'stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>'),
@@ -194,7 +199,7 @@ _SHAPES = {
 # its limit; red, a finished job that needs a person.
 _RINGS = {"draft": ("draft", "faint"), "ready": ("empty", "faint"), "waiting": ("wait", "faint"),
           "held": ("held", "muted"), "launching": ("quarter", "accent"), "handoff": ("handoff", "amber"),
-          "running": ("half", "accent"), "stalled": ("half", "amber"), "collecting": ("three", "accent"),
+          "running": ("half", "accent"), "stalled": ("late", "accent"), "collecting": ("three", "accent"),
           "done": ("done", "accent"), "cancelled": ("cancelled", "faint"), "env": ("wait", "amber"),
           **{s: ("failed", "red") for s in _FAILED}}
 # The sea: where a seat's jellyfish sits in a small tank, as fractions of it, and how fast each swims.
@@ -2103,7 +2108,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         shown, word = "running", _STATES["running"][0]
     result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
     status_line = [_text("Done" if state == "done" else word)]
-    if swarming:
+    late = state == "stalled"
+    if late:  # past its limit, said once: the limit, then what happens next (the line under it is left out)
+        limit = spec.get("timeout_min")
+        status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word),
+                       _text("still being checked")]
+    elif swarming:
         ended = sum(ctx["states"].get(r) not in (*_LIVE, *_PRE) for r in runs)
         status_line.append(_text(f"{ended} of {len(runs)} runs ended"))
     elif check_rows:
@@ -2118,12 +2128,14 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         firsts = [ctx["meta"].get(r, {}).get("started") for r in runs if isinstance(ctx["meta"].get(r), dict)]
         firsts = [t for t in firsts if _number(t)]
         started_at = min([*firsts, *([started_at] if _number(started_at) else [])], default=started_at)
-    if _number(started_at) and _number(ended_at):
+    if late:
+        pass  # its time is past the limit it names
+    elif _number(started_at) and _number(ended_at):
         status_line.append(_text(_duration(ended_at - started_at)))
     elif _number(started_at) and not finished:
         status_line.append(_when(started_at, now, "j:worked", short=True))
     # A run whose newest lines count "N of M" says how far along it is, and about how long is left at its pace.
-    step = _progress(opened.get("log")) if state == "running" else None
+    step = _progress(opened.get("log")) if state in ("running", "stalled") else None
     if step:
         done_n, total = step
         status_line.append(f'<span class="num">{done_n}/{total}</span>')
@@ -2201,7 +2213,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                     + (f'<span class="soft">{_text(detail)}</span>' if detail and detail != doing else "")
                     + (f'<span class="soft">{_text(next_line)}</span>' if next_line else "") + "</p>")
         # The head already gives the state, so this line is there only when it adds what comes next or why.
-        if next_line or (detail and detail != doing):
+        if (next_line or (detail and detail != doing)) and state != "stalled":
             work.append(_region("j-now", now_body, "section", "s-j-now", ' aria-label="Now"'))
     # A running job shows its output as it comes. A finished one leads with what it made, or, when it failed, with
     # where it stopped and the box to fix it right under that; its output (the last 200 lines) is folded away below.

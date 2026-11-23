@@ -1310,7 +1310,8 @@ def _composer(ctx, draft, ready, policy):
                    "gpt-6.1-sol-pro": "GPT-6.1 Sol Pro", "gpt-6-pro": "GPT-6 Pro",
                    "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5",
                    "claude-haiku-5-5": "Claude Haiku 5.5", "claude-fable-5-2": "Claude Fable 5.2",
-                   "swe-2-high": "SWE-2 High", "swe-2-max": "SWE-2 Max", "swe-2-flash-high": "SWE-2 Flash"}
+                   "swe-2-high": "SWE-2 High", "swe-2-max": "SWE-2 Max", "swe-2-flash-high": "SWE-2 Flash",
+                   "fusion-claude-fable-5-2-medium-sidekick-swe-2-high": "Fusion: Fable 5.2 + SWE-2 High"}
     # Codex on this Mac follows the same dated policy as Codex cloud: its models, at standard speed.
     # This Mac runs any provider's agent; each group is a provider, each model carries its mark.
     codex_models = list(policy.get("codex-cloud", {}).get("models", ()))

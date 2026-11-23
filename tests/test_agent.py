@@ -32,7 +32,11 @@ FAKE = textwrap.dedent('''
             send(id=m["id"], result={"protocolVersion": 1})
         elif m["method"] == "session/new":
             assert m["params"]["mcpServers"] == []
-            send(id=m["id"], result={"sessionId": "s1"})
+            send(id=m["id"], result={"sessionId": "s1", "configOptions": [
+                 {"id": "model", "currentValue": "swe-2-max"}, {"id": "mode", "currentValue": "accept-edits"}]})
+        elif m["method"] == "session/set_config_option":
+            choices.append(m["params"]["configId"] + "=" + m["params"]["value"])
+            send(id=m["id"], result={})
         elif m["method"] == "session/prompt":
             send(method="session/update", params={"update": {"sessionUpdate": "agent_message_chunk",
                                                              "content": {"type": "text", "text": "Looking."}}})
@@ -54,7 +58,7 @@ class DevinAcpTest(unittest.TestCase):
     def test_devin_runs_over_acp_under_the_workspace_write_rule(self):
         # A client that answers a command with yes, an edit outside the copy with yes, an edit inside it with no,
         # ever picks plan_bypass, keeps text from before the last tool call in the answer, or reports a finished
-        # turn as a failure, must fail.
+        # turn as a failure, or leaves the session on a model other than the one asked for, must fail.
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             fake = tmp / "devin"
@@ -66,7 +70,7 @@ class DevinAcpTest(unittest.TestCase):
             code = agent._devin(str(fake), work, "fix the typo", ["--model", "swe-2-high"], answer)
             self.assertEqual(code, 0)
             self.assertEqual(answer.read_text(encoding="utf-8"), "Fixed the typo.\n")
-            self.assertEqual(json.loads((tmp / "choices.json").read_text()), ["no", "yes", "no"])
+            self.assertEqual(json.loads((tmp / "choices.json").read_text()), ["model=swe-2-high", "no", "yes", "no"])
 
 
 if __name__ == "__main__":

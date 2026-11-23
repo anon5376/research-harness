@@ -1,6 +1,6 @@
 # Model policy every launcher reads. Change it only with a new date and the reason.
 dated = "2026-11-23"
-reason = "founder: fast off unless a job is time-critical (that takes a new dated policy); Astra off since a classifier blocked its launch; anchor seats run Sol or Terra at max reasoning (founder, 30 Oct, relayed by the lead); GPT Pro chats are jobs handed to ChatGPT on the web by a person, never the API (founder, 1 Nov); Claude and Devin models run as local agents on a private copy of the repository from the composer, Devin on its own free SWE-2 models, Claude at any effort from light to max and Codex on this Mac at any effort from light to ultra, chosen per job; Codex cloud and its anchor seats stay at max (founder, 23 Nov)"
+reason = "founder: fast off unless a job is time-critical (that takes a new dated policy); Astra off since a classifier blocked its launch; anchor seats run Sol or Terra at max reasoning (founder, 30 Oct, relayed by the lead); GPT Pro chats are jobs handed to ChatGPT on the web by a person, never the API (founder, 1 Nov); Claude and Devin models run as local agents on a private copy of the repository from the composer, Devin on its own free SWE-2 models, Claude at any effort from light to max and Codex on this Mac at any effort from light to ultra, chosen per job; Codex cloud and its anchor seats stay at max (founder, 23 Nov); the improve loop may also run Devin's Fusion of Claude Fable 5.2 leading and SWE-2 High as its sidekick, which Devin bills per token for the Fable part, in a capped number of rounds (founder, 23 Nov)"
 
 [codex-cloud]
 models = ["gpt-6.1-sol", "gpt-6.1-terra"]
@@ -26,4 +26,4 @@ models = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fa
 efforts = ["light", "medium", "high", "extra-high", "max"]
 
 [devin-local]
-models = ["swe-2-high", "swe-2-max", "swe-2-flash-high"]
+models = ["swe-2-high", "swe-2-max", "swe-2-flash-high", "fusion-claude-fable-5-2-medium-sidekick-swe-2-high"]

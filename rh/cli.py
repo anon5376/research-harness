@@ -127,6 +127,13 @@ def main(argv=None):
     c.add_argument("id")
     cps.add_parser("show")
 
+    p = sub.add_parser("improve", help="send a coding agent to improve this repository; keep tested patches on "
+                                       "local branches improve/<job> (never pushes)")
+    p.add_argument("--rounds", type=int, default=1, help="rounds to run, one job each (1 to 5)")
+    p.add_argument("--model", default=None, help="a Devin model from policy.toml (default: the Fusion model)")
+    p.add_argument("--focus", default="", help="what to look at first, in a sentence")
+    p.add_argument("--timeout-min", type=int, default=60)
+
     p = sub.add_parser("config", help="local config in $RH_HOME/config.toml")
     cfs = p.add_subparsers(dest="config_cmd", required=True)
     c = cfs.add_parser("set")
@@ -597,6 +604,15 @@ def cmd_caps(args, cfg):
     return 0
 
 
+def cmd_improve(args, cfg):
+    from rh import improve
+    if not 1 <= args.rounds <= 5:
+        raise ValueError("--rounds is 1 to 5: each round is a paid agent run")
+    improve.run(cfg, rounds=args.rounds, model=args.model or improve.FUSION, focus=args.focus,
+                timeout_min=args.timeout_min)
+    return 0
+
+
 def cmd_config(args, cfg):
     if args.config_cmd == "set":
         v = config.set_value(args.key, args.value)
@@ -609,4 +625,4 @@ def cmd_config(args, cfg):
 COMMANDS = {"job": cmd_job, "goal": cmd_goal, "status": cmd_status, "inbox": cmd_inbox, "stop": cmd_stop, "resume": cmd_resume,
             "supervise": cmd_supervise, "cloud": cmd_cloud, "land": cmd_land, "env": cmd_env, "doctor": cmd_doctor,
             "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve,
-            "seats": cmd_seats, "chat": cmd_chat}
+            "seats": cmd_seats, "chat": cmd_chat, "improve": cmd_improve}

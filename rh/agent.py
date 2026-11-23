@@ -91,7 +91,15 @@ def _devin(binary, work, brief, extra, answer):
         call("initialize", {"protocolVersion": 1, "clientInfo": {"name": "research-harness", "version": "3"},
                             "clientCapabilities": {"fs": {"readTextFile": False, "writeTextFile": False},
                                                    "terminal": False}})
-        session = call("session/new", {"cwd": str(work), "mcpServers": []})["sessionId"]
+        opened = call("session/new", {"cwd": str(work), "mcpServers": []})
+        session = opened["sessionId"]
+        # `--model` is a start-up default; if the session came up on another model, ask for this one by name.
+        current = next((o.get("currentValue") for o in opened.get("configOptions") or []
+                        if isinstance(o, dict) and o.get("id") == "model"), None)
+        if model and current and current != model:
+            call("session/set_config_option", {"sessionId": session, "configId": "model", "value": model})
+            current = model
+        print(f"model: {current or model or 'default'}", flush=True)
         stop = call("session/prompt", {"sessionId": session, "prompt": [{"type": "text", "text": brief}]}).get("stopReason")
     except (RuntimeError, KeyError, BrokenPipeError) as error:
         print(f"\ndevin: {error}", flush=True)

@@ -644,6 +644,12 @@ def _duration(seconds):
     return f"{h} h {rest} min" if rest else f"{h} h"
 
 
+def _left(seconds):
+    """A guess at the time left: an hour or more rounds to whole hours ("~10 h left"); less keeps its minutes."""
+    seconds = max(0, round(seconds))
+    return f"~{(seconds + 1800) // 3600} h left" if seconds >= 3600 else f"~{_duration(seconds)} left"
+
+
 def _hidden(ctx, fields):
     back = [("next", ctx["back"])] if ctx.get("back") else []
     return "".join(f'<input type="hidden" name="{name}" value="{_text(value)}">'
@@ -2173,7 +2179,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         status_line.append(f'<span class="num">{done_n}/{total}</span>')
         spent = now - started_at if _number(started_at) else 0
         if spent > 30 and done_n < total:
-            status_line.append(_text(f"~{_duration(spent * (total - done_n) / done_n)} left"))
+            status_line.append(_text(_left(spent * (total - done_n) / done_n)))
+    status_line = [f'<span class="nowrap">{part}</span>' for part in status_line]
     result.append(f'<span class="job-result-status">{_SEP_HTML.join(status_line)}</span>')
     if step:
         result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '

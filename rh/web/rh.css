@@ -1572,6 +1572,10 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 .q-acts form.act .btn .ic { color: inherit; }
 /* The status row keeps its mark beside its words: the words wrap, never the mark. */
 .job-result-status { flex: 1 1 0; min-width: 0; }
+.job-result-status .nowrap { white-space: nowrap; }  /* a part wraps whole, at a separator or not at all */
+/* and the line breaks before a separator, never after it, so no dot hangs at a line's end */
+.job-result-status .sep::before { content: "\200B"; }
+.job-result-status .sep::after { content: "\2060"; }
 @media (max-width: 600px) { .jd[data-state="running"] .job-result-status { font-size: 14px; } }
 /* On a phone the head's name is one line again; the brief below says it whole. */
 @media (max-width: 600px) {

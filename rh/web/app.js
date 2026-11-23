@@ -2030,6 +2030,29 @@ function echoTitle() {
 }
 document.addEventListener('rh:page', echoTitle);
 echoTitle();
+
+// A brief or reply typed and left keeps its words, as T3 Code keeps each thread's draft: every composer box saves its
+// text per page as it is typed, finds it again when the page comes back with the box empty, and drops it when sent.
+function draftKey(t) { return 'rh-draft:' + location.pathname + '#' + t.id; }
+function restoreDrafts() {
+  for (const t of $$('.pane textarea.c-text')) {
+    if (!t.id || t.value) continue;
+    let saved = null;
+    try { saved = localStorage.getItem(draftKey(t)); } catch { return; }
+    if (saved) { t.value = saved; t.dispatchEvent(new Event('input', { bubbles: true })); }
+  }
+}
+document.addEventListener('input', e => {
+  const t = e.target;
+  if (!(t instanceof HTMLTextAreaElement) || !t.id || !t.matches('.pane textarea.c-text')) return;
+  try {
+    if (t.value.trim()) localStorage.setItem(draftKey(t), t.value); else localStorage.removeItem(draftKey(t));
+  } catch { /* the draft lasts this page only */ }
+});
+// sent, it is no longer a draft: cleared before the page swaps, so the fresh empty box is not refilled with it
+document.addEventListener('submit', e => { for (const t of $$('textarea.c-text', e.target)) { try { localStorage.removeItem(draftKey(t)); } catch { /* none kept */ } } }, true);
+document.addEventListener('rh:page', restoreDrafts);
+restoreDrafts();
 // Commands in the composer: typing / lists them (Tab or Enter takes the highlighted one), and a brief that starts with
 // /swarm says under it which models will run it.
 function slashState(brief) {

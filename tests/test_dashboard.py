@@ -1616,6 +1616,26 @@ class DashboardTest(unittest.TestCase):
         keys = [k for k, _ in dashboard._KEYS]
         self.assertEqual(keys[keys.index("l") + 1], "y")
 
+    def test_a_composer_keeps_its_draft_across_pages(self):
+        # A reply typed on one job and left for another came back empty, since the page swap renders a new form
+        # (T3 Code keeps each thread's draft). Each composer saves its words per page and box as they are typed,
+        # finds them again when the page comes back with the box empty, and drops them when sent; a draft that
+        # reappeared after sending, or one shared between jobs, must fail.
+        body = dashboard.SCRIPT.split("function draftKey(", 1)[1].split("\nrestoreDrafts();", 1)[0]
+        self.assertIn("'rh-draft:' + location.pathname + '#' + t.id", body)
+        self.assertIn("localStorage.setItem(draftKey(t), t.value)", body)
+        self.assertIn("localStorage.removeItem(draftKey(t))", body)
+        self.assertIn("document.addEventListener('rh:page', restoreDrafts);", body)
+        self.assertIn("if (!t.id || t.value) continue;", body)  # never over words already in the box
+        # sending clears it before the page swaps, so the fresh empty box is not refilled with what was sent
+        self.assertIn("document.addEventListener('submit'", body)
+        self.assertRegex(body, r"addEventListener\('submit', e => \{[^}]*removeItem", )
+        # every composer box has a stable id to key it by
+        page = dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN)
+        new = dashboard.render({**live_view(), "new": True}, NOW, token=TOKEN)
+        for box in re.findall(r'<textarea class="c-text"[^>]*>', page + new):
+            self.assertRegex(box, r' id="[^"]+"')
+
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
         # A reply box without the model picker, one that offers routes the job cannot take, or Devin models without
         # their section and cost, must fail.

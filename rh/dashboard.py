@@ -589,7 +589,8 @@ def _duration(seconds):
         return f"{seconds} s"
     if seconds < 3600:
         return f"{seconds // 60} min {seconds % 60} s" if seconds < 600 else f"{seconds // 60} min"
-    return f"{seconds // 3600} h {seconds % 3600 // 60} min"
+    h, rest = seconds // 3600, seconds % 3600 // 60
+    return f"{h} h {rest} min" if rest else f"{h} h"
 
 
 def _hidden(ctx, fields):

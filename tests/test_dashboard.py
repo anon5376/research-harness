@@ -274,6 +274,25 @@ class ListsTest(unittest.TestCase):
         self.assertIn("~30 min left", status)
         self.assertIn('<progress class="run-progress" max="2400" value="600"', status)
 
+    def test_a_whole_number_of_hours_drops_the_zero_minutes(self):
+        # A duration like "12 h 0 min" prints a zero minor unit; whole hours must read "12 h" while non-zero
+        # minutes stay ("11 h 40 min").
+        self.assertEqual(dashboard._duration(12 * 3600), "12 h")
+        self.assertEqual(dashboard._duration(11 * 3600 + 40 * 60), "11 h 40 min")
+        # the running status line's estimate: 1 h spent at 600/7800 leaves exactly 12 h
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["log"] = "step 600: window 600 of 7800"
+        view["open"]["job"]["started"] = NOW - 3600
+        status = re.search(r'data-region="job-result".*?</p>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn("~12 h left", status)
+        self.assertNotIn("0 min", status)
+        # and a done job that ran exactly two hours
+        done = opened(live_view(), "finished-job", kind="local-shell")
+        done["open"]["job"].update(started=NOW - 7200, updated=NOW)
+        status = re.search(r'data-region="job-result".*?</p>', dashboard.render(done, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn("2 h", status)
+        self.assertNotIn("0 min", status)
+
 
 class DashboardTest(unittest.TestCase):
     def test_detail_is_escaped(self):

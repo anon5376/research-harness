@@ -1418,9 +1418,8 @@ html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 .assistant-message.md .md-title { font-size: 20px; line-height: 1.3; font-weight: 600; letter-spacing: -0.01em; }
 .assistant-message.md > :is(p, ul, ol) { max-width: 600px; }
 .assistant-message.md :not(pre) > code { padding: 1px 4px; background: rgb(255 255 255 / .06); }
-/* A running job's output is open, framed, and follows its newest line. */
-.worked pre.log[data-follow] { max-height: 360px; margin-top: 6px; padding: 10px 14px; font-size: 12.5px; line-height: 1.5;
-  color: var(--muted); background: rgb(0 0 0 / .3); border: 1px solid rgb(255 255 255 / .08); border-radius: 8px; }
+/* A running job's output is open and follows its newest line (framed below). */
+.worked pre.log[data-follow] { font-size: 12.5px; line-height: 1.5; color: var(--muted); }
 /* Where it runs, the repository and the branch: one row that gives way by ellipsis, on a phone too. */
 .where-bar { right: 4px; min-width: 0; }
 .where-bar .worker-picker { flex: none; max-width: none; }
@@ -1445,4 +1444,80 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .q-acts { display: flex; gap: 8px; }
 /* The model that will answer is named whole unless the toolbar is really short of room. */
 .mp-trigger { max-width: 360px; min-width: 0; }
-.worked-summary .sep { margin: 0 -3px; }
+.worked-summary > .sep { margin: 0 -2px; }
+/* One open state for every composer trigger, and nothing of the env row peeking past an open menu. */
+.model-picker:has(.mp-trigger[aria-expanded="true"]), .ef-trigger[aria-expanded="true"], .opts[open] > summary {
+  background: rgb(255 255 255 / .08); color: rgb(255 255 255 / .9); }
+.compose:has(.mp-trigger[aria-expanded="true"], .ef-trigger[aria-expanded="true"], details.opts[open]) .where-bar { visibility: hidden; }
+/* The picked provider is a lit tile with its bar on the outer edge, away from the search field's caret. */
+.mp-bar { right: auto; left: 0; width: 2px; border-radius: 0 2px 2px 0; }
+.mp-prov[aria-pressed="true"] { background: rgb(255 255 255 / .1); }
+/* Settings opens over the page it changes, centred on the main pane as the palette is; its swatches are flat. */
+@media (min-width: 901px) { html[data-live-app]:not(.side-hidden) dialog.settings[open] { translate: calc(var(--side) / 2) 0; } }
+.settings footer { margin-left: -10px; }
+.tint-dot { box-shadow: none; }
+.tint-dot[data-tint="cobalt"] { background: #2f5fe0; } .tint-dot[data-tint="violet"] { background: #7347f0; }
+.tint-dot[data-tint="teal"] { background: #13a393; } .tint-dot[data-tint="ember"] { background: #e2622a; }
+.tint-dot[data-tint="mono"] { background: #8a8a94; }
+/* Off draws nothing, so its tile says so with a slash, apart from Quiet. */
+.background-preview[data-preview="off"] { background: linear-gradient(to top right, transparent calc(50% - .5px), rgb(255 255 255 / .2) 50%, transparent calc(50% + .5px)), #0b0b0c; }
+/* On a narrow screen the Inbox is two screens: the whole list, then an item with the way back. */
+.ib-back { display: none; }
+@media (max-width: 900px) {
+  .ibx[data-view] { grid-template-rows: minmax(0, 1fr); }
+  .ibx[data-view="list"] .ib-list { max-height: none; border-bottom: 0; }
+  .ibx[data-view="list"] > .ib-detail { display: none; }
+  .ibx[data-view="item"] .ib-list { display: none; }
+  .ib-back { display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 16px; color: var(--muted);
+    font-size: 14px; text-decoration: none; }
+  .ib-back::before { content: "‹"; font-size: 22px; line-height: 1; }
+}
+/* The head names the job and its id; on a phone the name gets the room. */
+@media (max-width: 600px) { .job-worker { display: none; } }
+/* Pause is a button, not a label. */
+.job-actions .act > summary { display: inline-flex; align-items: center; height: 28px; padding: 0 10px;
+  border: 1px solid rgb(255 255 255 / .14); border-radius: 8px; }
+/* A reply box sends even when empty (it runs again), so its send button is always the ready one. */
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] { background: #fff; color: #0b0b0c; }
+.composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]:hover { background: #e3e3e7; }
+/* Surfaces are white glass over the tint, so they take its temperature instead of sitting on it as grey. */
+.user-message { background: rgb(255 255 255 / .075); }
+.out { background: rgb(255 255 255 / .025); }
+/* A running job's log frames the rest of the page's height, its older lines dissolving at the top. */
+.worked-content:has(> pre.log[data-follow]) { margin-top: 6px; border: 1px solid rgb(255 255 255 / .08); border-radius: 8px;
+  background: rgb(0 0 0 / .3); overflow: hidden; }
+.worked pre.log[data-follow] { max-height: max(360px, calc(100dvh - 290px)); margin: 0; padding: 14px 14px 10px; border: 0;
+  border-radius: 0; background: none; }
+.worked pre.log[data-follow].above { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
+.job-result:has(.run-progress) { flex-wrap: wrap; }
+.run-progress { flex-basis: 100%; height: 2px; margin-top: 8px; border: 0; border-radius: 1px; appearance: none;
+  background: rgb(255 255 255 / .08); color: var(--ef-accent); }
+.run-progress::-webkit-progress-bar { background: rgb(255 255 255 / .08); border-radius: 1px; }
+.run-progress::-webkit-progress-value { background: var(--ef-accent); border-radius: 1px; transition: width .2s cubic-bezier(.16, 1, .3, 1); }
+.run-progress::-moz-progress-bar { background: var(--ef-accent); }
+/* Short code stays one token on one line. */
+.assistant-message.md code.nw { white-space: nowrap; }
+/* Touch: every composer and header control is a 44px target, whatever it draws. */
+@media (pointer: coarse) {
+  .compose .c-row :is(.add-input, .mp-trigger, .ef-trigger, .send), .compose .opts > summary, .sidebar-toggle,
+  .job-actions .act > summary, .ib .btn, .q-acts .btn { position: relative; }
+  .compose .c-row :is(.add-input, .mp-trigger, .ef-trigger, .send)::after, .compose .opts > summary::after,
+  .sidebar-toggle::after, .job-actions .act > summary::after {
+    content: ""; position: absolute; left: 50%; top: 50%; width: max(100%, 44px); height: max(100%, 44px);
+    translate: -50% -50%; }
+  .q-acts .btn { min-height: 44px; }
+}
+/* Groups stand apart; a run that shares its name shows its id. */
+.side .group + .group { margin-top: 16px; }
+.name:has(> .slug) { display: flex; min-width: 0; gap: 6px; }
+.name > .nm { flex: 0 1 auto; min-width: 3ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.name > .slug { flex: 0 1 auto; min-width: 0; max-width: 62%; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--faint); font-size: 12px; }
+/* A clamped ask ends on a whole line: no padding for the next line to show through. */
+.user-message:has(+ .ask-more):not(.whole) { padding-bottom: 0; max-height: calc(10lh + 8px); }
+@media (max-width: 600px) { .user-message:has(+ .ask-more):not(.whole) { max-height: calc(6lh + 8px); } }
+/* The settings close button rings only for the keyboard. */
+.settings .icon-btn:focus:not(:focus-visible) { outline: none; box-shadow: none; }
+/* Palette: the status words share one column, so the ids share one edge. */
+.p-s > span:last-child { flex: none; width: 84px; text-align: left; }
+@media (max-width: 900px) { .ibx[data-view="list"] .ib[aria-current]:not(:hover) { background: transparent; } }

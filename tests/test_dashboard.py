@@ -220,6 +220,22 @@ class ListsTest(unittest.TestCase):
         detail = re.search(r'data-region="ib-detail".*?</section>', page, re.S).group(0)
         self.assertIn(">Open job</a>", detail)
         self.assertRegex(page, r'<a class="ib" href="[^"]*" data-nav aria-current="true">')
+        # on a narrow screen the list and an item are two screens: the list unless an item was asked for
+        self.assertIn('class="page ibx" data-view="list"', page)
+        self.assertIn('class="page ibx" data-view="item"', inbox(live_view(), live_view()["inbox"][0]["id"]))
+
+    def test_a_running_job_says_how_far_along_its_log_says_it_is(self):
+        self.assertEqual(dashboard._progress("start\nstep 357: window 357 of 2400\n"), (357, 2400))
+        self.assertIsNone(dashboard._progress("1 of 1 done"))
+        self.assertIsNone(dashboard._progress("no count here"))
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["log"] = "step 600: window 600 of 2400"
+        view["open"]["job"]["started"] = NOW - 600
+        view["open"]["job"]["state"] = "running"
+        status = re.search(r'data-region="job-result".*?</p>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn("600/2400", status)
+        self.assertIn("~30 min left", status)
+        self.assertIn('<progress class="run-progress" max="2400" value="600"', status)
 
 
 class DashboardTest(unittest.TestCase):
@@ -648,7 +664,7 @@ class DashboardTest(unittest.TestCase):
                                '<ul><li><strong>Disk:</strong> 154 GiB free</li><li>see <a href="https://developer.apple.com/x" '
                                'target="_blank" rel="noopener noreferrer">guide</a> and <span class="md-path" '
                                'title="/private/tmp/n.md">notes</span></li></ul>'
-                               '<p><code>top</code> was blocked &lt;script&gt;x&lt;/script&gt;</p>'
+                               '<p><code class="nw">top</code> was blocked &lt;script&gt;x&lt;/script&gt;</p>'
                                '<pre><code>log &lt;b&gt;</code></pre>')
 
     def test_the_reply_box_under_an_agent_picks_the_next_runs_model(self):
@@ -665,7 +681,7 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('<option value="swe-2-high" data-prov="devin"', reply)
         self.assertIn('data-group="SWE-2" data-cost="Free"', reply)
         self.assertIn('data-group="Fusion"', reply)
-        self.assertIn('data-row="Fable 5.2 Medium · SWE-2 High" data-cost="API"', reply)
+        self.assertIn('data-row="Fable 5.2 Medium + SWE-2 High" data-cost="API"', reply)
         self.assertRegex(reply, r'<option value="swe-2-high"[^>]* selected>')
 
     def test_job_page_shows_the_work_left_and_its_record_right(self):

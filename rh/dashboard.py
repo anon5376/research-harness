@@ -445,7 +445,7 @@ def _md_inline(text):
         out.append(escape(text[at:m.start()]))
         code, bold, em, label, href = m.groups()
         if code is not None:
-            out.append(f"<code>{escape(code)}</code>")
+            out.append(f"<code class=\"nw\">{escape(code)}</code>" if len(code) <= 40 else f"<code>{escape(code)}</code>")
         elif bold is not None:
             out.append(f"<strong>{_md_inline(bold)}</strong>")
         elif em is not None:
@@ -531,6 +531,18 @@ def ask_of(spec):
         changed = str(spec.get("changed") or "")
         return "" if changed == "run again with no changes" or changed.startswith("added input ") else changed
     return str(spec.get("brief") or "").strip()
+
+
+_STEP = re.compile(r"\b(\d+) of (\d+)\b")
+
+
+def _progress(log):
+    """How far a run says it is: (n, m) from the newest of its last five lines that reads "n of m", or None."""
+    for line in reversed(str(log or "").rstrip().splitlines()[-5:]):
+        if found := _STEP.search(line):
+            n, total = int(found.group(1)), int(found.group(2))
+            return (n, total) if 0 < n <= total and total > 1 else None
+    return None
 
 
 def answer_head(text):
@@ -739,6 +751,7 @@ class _Job:
         self.title = _title(self.meta, self.id)
         # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
         self.label = (self.meta.get("said") if self.state == "done" else "") or self.title
+        self.dup = False  # set once every job is known: another listed job has the same name
         self.place = _WHERE.get(self.kind, str(self.kind)[:6])
 
     def headline_parts(self, runs=1):
@@ -824,6 +837,12 @@ class _Job:
             return go(page, "Set up Codex cloud", "cloud", "r")
         return ""
 
+    def name_html(self):
+        """The job's name in a list, with its id after it when another listed job shares the name."""
+        if not self.dup:
+            return _text(self.label)
+        return f'<span class="nm">{_text(self.label)}</span><span class="slug mono">{_text(self.id)}</span>'
+
     def item(self, runs=1):
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
         and the one control it offers. In Needs you the ring is amber, or red for a failure; a failure repeated by
@@ -832,7 +851,7 @@ class _Job:
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
-        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{_text(self.label)}</span>'
+        cells = (f'{_ring("env" if self.native else self.state, hue, self.kind)}<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
                  f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
@@ -1408,7 +1427,7 @@ _MODEL_NAMES = {"gpt-6.1-sol": "GPT-6.1 Sol", "gpt-6.1-terra": "GPT-6.1 Terra",
                 "claude-opus-5-5": "Claude Opus 5.5", "claude-sonnet-5-5": "Claude Sonnet 5.5",
                 "claude-haiku-5-5": "Claude Haiku 5.5", "claude-fable-5-2": "Claude Fable 5.2",
                 "swe-2-high": "SWE-2 High", "swe-2-max": "SWE-2 Max", "swe-2-flash-high": "SWE-2 Flash",
-                "fusion-claude-fable-5-2-medium-sidekick-swe-2-high": "Fusion: Fable 5.2 + SWE-2 High",
+                "fusion-claude-fable-5-2-medium-sidekick-swe-2-high": "Fable 5.2 Medium + SWE-2 High",
                 "fable-5-2-medium": "Fable 5.2 Medium"}
 # Devin's chooser groups its models (Fusion first, with what Fusion is) and tags each with its cost; so does this one.
 _DEVIN_FUSION = "Pairs frontier intelligence with cost-efficient execution to deliver frontier-level results at lower cost."
@@ -1417,8 +1436,8 @@ _DEVIN_FUSION = "Pairs frontier intelligence with cost-efficient execution to de
 def _devin_tags(key):
     if key.startswith("fusion-"):
         lead = key.removeprefix("fusion-").split("-sidekick-")
-        row = " · ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part) for part in lead)  # lead · sidekick
-        return (f' data-group="Fusion" data-group-tip="{_DEVIN_FUSION} Lead · sidekick." data-row="{_text(row)}" data-cost="API" '
+        row = " + ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part) for part in lead)  # lead + sidekick
+        return (f' data-group="Fusion" data-group-tip="{_DEVIN_FUSION} Lead + sidekick." data-row="{_text(row)}" data-cost="API" '
                 'data-cost-tip="Billed at API pricing: the lead per token, the SWE-2 sidekick free"')
     return ' data-group="SWE-2" data-cost="Free" data-cost-tip="No quota used"'
 
@@ -1838,7 +1857,7 @@ def _stops(ctx, entry):
 
 
 def _job_head(title, kind):
-    """A compact, persistent title and worker crumb for the session view."""
+    """A compact, persistent title, named as the sidebar names the job, and its worker crumb."""
     body = ('<div class="jd-head-in">'
             f'<h1 tabindex="-1" data-clear>{_text(title)}</h1>'
             f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p></div>')
@@ -1890,7 +1909,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         acts.append(_pause(ctx, jid))
     if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
         acts.append(_cancel(ctx, jid))
-    head = _job_head(_lead(spec)[0] or jid, kind)
+    named = entry.label if entry.label != entry.title else (_lead(spec)[0] or jid)  # as the sidebar names it
+    head = _job_head(named, kind)
     work = []
     if feedback:
         work.append(feedback)
@@ -1922,11 +1942,13 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 turns.append(f'<div class="user-message">{_text(_reflow(run["ask"]))}</div>')
             link = (f'<a class="mono" href="{_url(ctx, "/job/" + str(run.get("id")))}" data-nav>{_text(run.get("id"))}</a>'
                     if ctx["live"] else f'<span class="mono">{_text(run.get("id"))}</span>')
+            # each earlier turn wears the status row the current one does, above what its agent said
+            word = _text("Done" if run.get("state") == "done" else _STATES.get(run.get("state"), (run.get("state"),))[0])
+            said = "" if run.get("answer") else f'{_SEP_HTML}no answer'
+            turns.append(f'<p class="job-result turn-state">{_ring(str(run.get("state")))}<span class="job-result-status">'
+                         f'{word}{_SEP_HTML}{link}{said}</span></p>')
             if run.get("answer"):
-                turns.append(_said(run.get("provider"), run.get("model"), run["answer"], link))
-            else:
-                turns.append(f'<p class="run-note">{link}{_SEP_HTML}{_text(_STATES.get(run.get("state"), (run.get("state"),))[0])}'
-                             f', no answer</p>')
+                turns.append(_said(run.get("provider"), run.get("model"), run["answer"]))
         work.append(_region("j-thread", "".join(turns), "section", "s-j-thread", ' aria-label="Earlier runs"'))
     original_prompt = ask_of(spec)
     if original_prompt:
@@ -1954,7 +1976,18 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         status_line.append(_text(_duration(ended_at - started_at)))
     elif _number(started_at) and not finished:
         status_line.append(_when(started_at, now, "j:worked", short=True))
+    # A run whose newest lines count "N of M" says how far along it is, and about how long is left at its pace.
+    step = _progress(opened.get("log")) if state == "running" else None
+    if step:
+        done_n, total = step
+        status_line.append(f'<span class="num">{done_n}/{total}</span>')
+        spent = now - started_at if _number(started_at) else 0
+        if spent > 30 and done_n < total:
+            status_line.append(_text(f"~{_duration(spent * (total - done_n) / done_n)} left"))
     result.append(f'<span class="job-result-status">{_SEP_HTML.join(status_line)}</span>')
+    if step:
+        result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '
+                      f'aria-label="{step[0]} of {step[1]}"></progress>')
     work.append(_region("job-result", "".join(result), "p", "job-result"))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
@@ -2217,7 +2250,8 @@ def _ib_detail(ctx, entry, settled, view, missing, lead=None):
     # An item on a job is its seat's jellyfish; one from the harness itself is the octopus.
     water = (_tank([_creature(job.seat or "harness", tone, 1, 1, (0.9, 0.55))], "q-water") if job else
              _tank([], "q-water", {"octopus": {"tone": tone, "at": [0.92, 0.5]}}))
-    head = (f'<div class="q-head">{water}<div class="q-head-in">'
+    back = (f'<a class="ib-back" href="{_url(ctx, "/inbox")}" data-nav>Inbox</a>' if ctx["live"] else "")
+    head = (f'{back}<div class="q-head">{water}<div class="q-head-in">'
             f'<p class="q-who" data-clear>{"".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
             f'{about}</div></div>')
     parts = [f'<div class="q-msg">{_text(detail)}</div>'] if detail else []
@@ -2305,7 +2339,10 @@ def _inbox_pane(view, ctx, feedback):
                         hidden=not done))
     ctx["back"] = "/inbox"
     detail = _ib_detail(ctx, entry, settled_item, view, missing, lead)
-    page = (f'<div class="page ibx"><div class="ib-list" aria-label="Waiting on you">{lists}</div>{detail}</div>')
+    # On a narrow screen the list and an item are two screens: the list until an item is asked for by its address.
+    shown = "item" if pick is not None else "list"
+    page = (f'<div class="page ibx" data-view="{shown}"><div class="ib-list" aria-label="Waiting on you">{lists}</div>'
+            f'{detail}</div>')
     return top + feedback + page
 
 
@@ -2436,6 +2473,11 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
            "others": [s for s in view.get("stops", []) if s.get("owner") != "app"
                       and not str(s["scope"]).startswith("job:")]}
     jobs = [_Job(row, where, ctx) for row, where in rows]
+    names = {}
+    for j in jobs:  # runs that share a name in the lists are told apart by their ids
+        names[j.label] = names.get(j.label, 0) + 1
+    for j in jobs:
+        j.dup = names[j.label] > 1
     ctx["jobs"] = jobs
     loose_stops = [s for s in view.get("stops", []) if s.get("owner") == "app"
                    and not (str(s["scope"]).startswith("job:") and str(s["scope"])[4:] in known)]

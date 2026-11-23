@@ -1925,9 +1925,16 @@ function fadeAll() {
     } else if (!long && has) next.remove();
   }
   // a running job's output opens at its newest lines
-  for (const log of $$('pre.log[data-follow]')) log.scrollTop = log.scrollHeight;
+  for (const log of $$('pre.log[data-follow]')) { log.scrollTop = log.scrollHeight; fadeTop(log); }
 }
-document.addEventListener('scroll', e => { if (e.target.classList && e.target.classList.contains('user-message')) fadeLong(e.target); }, true);
+// older lines scrolled out of a log dissolve at its top edge instead of being cut through
+function fadeTop(log) { log.classList.toggle('above', log.scrollTop > 2); }
+document.addEventListener('scroll', e => {
+  const t = e.target;
+  if (!t.classList) return;
+  if (t.classList.contains('user-message')) fadeLong(t);
+  else if (t.matches('pre.log[data-follow]')) fadeTop(t);
+}, true);
 document.addEventListener('click', e => {
   const more = e.target.closest && e.target.closest('.ask-more');
   if (!more) return;
@@ -1939,5 +1946,17 @@ document.addEventListener('click', e => {
 document.addEventListener('rh:page', fadeAll);
 addEventListener('resize', fadeAll);
 fadeAll();
+
+// A follow-up opens on its own turn, under the earlier ones, once per visit; live refreshes leave the scroll alone.
+let turnFor = null;
+function toTurn() {
+  const key = document.body.dataset.open;
+  if (key === turnFor) return;
+  turnFor = key;
+  const brief = $('.s-j-brief[aria-label="Follow-up"]'), scroller = brief && brief.closest('.jd-scroll');
+  if (scroller) scroller.scrollTop += brief.getBoundingClientRect().top - scroller.getBoundingClientRect().top - 24;
+}
+document.addEventListener('rh:page', toTurn);
+toTurn();
 })();
 

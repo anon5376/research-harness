@@ -1502,9 +1502,8 @@ def _job_list(jobs, stop_rows, ctx):
     out = []
     for key, heading in (("needs", "Needs you"), ("live", "Live"), ("next", "Up next"), ("ended", "Ended today"),
                          ("earlier", "Earlier")):
-        items = groups[key]
-        extra = f'<span class="n num">{len(items)}</span>' if items else ""
-        out.append(_section(f"g-{key}", heading, _rows(items), extra, "group", hidden=not items, h="h3"))
+        items = groups[key]  # a group shows all its rows, so its head counts nothing; the Inbox badge is the one count
+        out.append(_section(f"g-{key}", heading, _rows(items), "", "group", hidden=not items, h="h3"))
     none = not jobs and not stop_rows
     empty = (f'<p class="empty no-jobs" data-region="no-jobs" data-sig="{_sig(none)}"{"" if none else " hidden"}>'
              '<b>No jobs yet.</b></p>')
@@ -1538,10 +1537,9 @@ def _coord(view, ctx, jobs):
         word, dot = ("Checks", "warn" if quiet or not sup else "good")
     if loop and loop.get("failed"):
         dot = "bad"
-    live = sum(j.group == "live" for j in jobs)
     seats = [x for x in view.get("seats", []) if isinstance(x, dict) and x.get("name")]
-    said = (f'{_dot(dot, dot == "live")}<span class="coord-status">{word}{_SEP_HTML}'
-            f'<span class="soft num">{live} live</span></span>')
+    # the Live group above lists what runs, so the pill says only how the checks are
+    said = f'{_dot(dot, dot == "live")}<span class="coord-status">{word}</span>'
     line = f'<span class="coord-line" data-region="coord" data-sig="{_sig(said)}">{said}</span>'
     parts = [f'<h2 class="side-h">Check loop</h2>{_checks(view, ctx)}']
     if ctx["live"]:

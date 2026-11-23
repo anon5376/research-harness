@@ -1478,7 +1478,7 @@ class DashboardTest(unittest.TestCase):
                                    ("dataset.creatures", " data-creatures="),
                                    ("'data-still'", " data-still"),
                                    ("'.ibx'", 'class="page ibx"'), ("[data-job-filter]", " data-job-filter "),
-                                   ("dataset.kind", " data-kind="), ("'.n'", 'class="n num"')):
+                                   ("dataset.kind", " data-kind=")):  # '.n' bumps a count only where one shows
             with self.subTest(hook=in_script):
                 self.assertIn(in_script, dashboard.SCRIPT)
                 self.assertIn(in_page, page)
@@ -2111,8 +2111,10 @@ console.log(JSON.stringify([
                 home, box = dashboard.render(v, NOW, token=TOKEN), inbox(v)
                 needs = re.search(r'<section class="s-g-needs group".*?</section>', home, re.S).group(0)
                 waiting = re.search(r'<section class="s-ib-wait".*?</section>', box, re.S).group(0)
-                counts = {"header": re.search(r'<h3 id="g-needs">Needs you</h3><span class="n num">(\d+)<', needs).group(1),
-                          "badge": re.search(r'<b class="count num" data-need="(\d+)"', home).group(1),
+                # the sidebar's group heads count nothing: the rows show how many, and the badge is the one count of
+                # what needs you (critic r13 F1)
+                self.assertRegex(needs, r'<h3 id="g-needs">Needs you</h3></div>')
+                counts = {"badge": re.search(r'<b class="count num" data-need="(\d+)"', home).group(1),
                           "inbox title": re.search(r'<span class="top-meta mono"><span data-need="(\d+)"', box).group(1),
                           "rows": str(needs.count('<li class="row"')), "inbox rows": str(waiting.count('<li class="ib-li"'))}
                 self.assertEqual(set(counts.values()), {str(int(expected))}, counts)
@@ -2432,7 +2434,7 @@ console.log(JSON.stringify([
         summary = coord[:coord.index("</summary>")]
         self.assertIn("Checks on", text(summary))
         self.assertNotIn("1 job live", text(pane(page)))
-        self.assertIn("·1 live", text(summary))
+        self.assertNotIn("live", text(summary))  # the Live group lists them; the pill repeated it (r13 F1)
         self.assertNotIn("seat", text(summary))  # the pill fits the sidebar; the seats are in the panel
         self.assertIn("backend", text(coord[coord.index("</summary>"):]))
         forms = Forms(coord).forms

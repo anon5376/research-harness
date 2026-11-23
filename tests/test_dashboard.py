@@ -791,7 +791,7 @@ class ListsTest(unittest.TestCase):
         status = re.search(r'<span class="job-result-status sl">(.*?)</span><progress', page, re.S).group(1)
         parts = status.split("<wbr>")
         self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
-                         ["Past its 2 h limit", "·still being checked", "·600/2400", "·~3 h left"])
+                         ["Past its 2 h limit", "·600/2400", "·~3 h left"])  # no vague 'still being checked' (r12 F7)
         self.assertRegex(parts[0], r'^<span class="nowrap">[^<]*</span>$')
         for part in parts[1:]:
             self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')
@@ -2313,6 +2313,11 @@ console.log(JSON.stringify([
         rule = dashboard.STYLE.split("\n.jd-main:has(> .jd-dock .model-note) .job-worker {", 1)[1].split("}", 1)[0]
         self.assertIn("display: none", rule)
 
+    def test_a_popover_sits_above_the_page(self):
+        # The Cancel confirm, with no shadow and a fill near the brief bubble's, read as two panels colliding (critic
+        # r12 F6): it casts the menus' shadow.
+        self.assertIn("\nform.pop { box-shadow: 0 16px 40px rgb(0 0 0 / .55); }", dashboard.STYLE)
+
     def test_the_composer_offers_its_workers(self):
         # A composer without GPT Pro, Codex on this Mac, Codex cloud and the plain shell, in that order, or one whose
         # GPT Pro choice posts another kind, must fail.
@@ -2801,14 +2806,14 @@ console.log(JSON.stringify([
                 self.assertNotIn('<div class="jd-prog">', page)
         done_page = pane(dashboard.render(opened(live_view(), "finished-job"), NOW, token=TOKEN))
         self.assertIn('<svg class="st t-accent"', done_page.split('class="job-result"', 1)[1])
-        # A job past its limit says so once, in the status line, with its limit and what happens next; it is not
-        # amber (amber means it needs you) and no second line repeats it.
+        # A job past its limit says so once, in the status line, with its limit; it is not amber (amber means it needs
+        # you) and no second line repeats it. 'still being checked' named nothing and orphaned '~7 h left' on a phone.
         stalled = opened(live_view(), "live-job", state="stalled")
         stalled["open"]["job"]["spec"]["timeout_min"] = 120
         page = pane(dashboard.render(stalled, NOW, token=TOKEN))
         self.assertRegex(page, r'<p class="job-result"[^>]*><svg class="st t-accent"[^>]*data-s="late"[^>]*>.*?</svg>'
-                               r'<span class="job-result-status sl"><span class="nowrap">Past its 2 h limit</span>'
-                               r'<wbr><span class="nowrap"><span class="sep">·</span>still being checked</span>')
+                               r'<span class="job-result-status sl"><span class="nowrap">Past its 2 h limit</span>')
+        self.assertNotIn("still being checked", page.split('class="job-result"', 1)[1].split("</p>", 1)[0])
         self.assertNotIn('data-region="j-now"', page)
         work = text(page).split("Job details", 1)[0]  # the details panel keeps its own State row
         self.assertEqual(work.count("time limit") + work.count("2 h limit"), 1)

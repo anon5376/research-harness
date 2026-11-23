@@ -2279,10 +2279,9 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
     status_line = [_text("Done" if state == "done" else word)]
     late = state == "stalled"
-    if late:  # past its limit, said once: the limit, then what happens next (the line under it is left out)
+    if late:  # past its limit, said once, with the limit (the line under it is left out)
         limit = spec.get("timeout_min")
-        status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word),
-                       _text("still being checked")]
+        status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word)]
     elif swarming:
         pass  # how many runs have finished is said once, by the Swarm card's head beside its bar
     elif check_rows:

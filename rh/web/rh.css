@@ -1713,6 +1713,8 @@ form.pop, .toast:not(.no) {
   border-color: rgb(170 185 235 / .14); -webkit-backdrop-filter: blur(40px) saturate(160%);
   backdrop-filter: blur(40px) saturate(160%); }
 form.pop :is(input[type="text"], textarea) { background: #0e1220; border-color: rgb(170 185 235 / .14); }
+/* A popover sits above the page it covers, as the menus do, not beside it as another panel. */
+form.pop { box-shadow: 0 16px 40px rgb(0 0 0 / .55); }
 .s-j-fail, .q-fail { border: 1px solid #57252b; border-radius: 10px; background: #2a1519; }
 /* With the sidebar folded away, its amber count shows as a dot on the button that opens it. */
 body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; position: absolute; top: -3px;

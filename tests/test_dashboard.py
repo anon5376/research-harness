@@ -476,7 +476,17 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(dashboard._diff_head(patch),
                          '<span class="mono">x.py</span><span class="n add">+2</span><span class="n del">−1</span>')
         two = patch + "diff --git a/y.py b/y.py\n--- a/y.py\n+++ b/y.py\n@@ -1 +1 @@\n-a\n+b\n"
-        self.assertIn('<span class="dl file">y.py</span>', dashboard._peek_html("changes.patch", two))
+        # each file of a patch names its own counts (critic r10 F11); a preview cut short leaves them off its last
+        # file, whose count would be partial
+        self.assertIn('<span class="dl file">y.py<span class="n add">+1</span><span class="n del">−1</span></span>',
+                      dashboard._peek_html("changes.patch", two))
+        self.assertIn('<span class="dl file">x.py<span class="n add">+2</span>',
+                      dashboard._peek_html("changes.patch", two, whole=False))
+        self.assertIn('<span class="dl file">y.py</span>', dashboard._peek_html("changes.patch", two, whole=False))
+        # a hunk whose head over-counts (x.py's says 3 old lines, its body has 2) ends at a line no body line starts
+        # with, so the next file's header is not read as code
+        self.assertNotIn("diff --git", dashboard._peek_html("changes.patch", two))
+        self.assertIn(":is(.peek-head, .peek .dl.file) .n.add", dashboard.STYLE)
         self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono">2 files</span>'))
         self.assertIn('<span class="n del zero">−0</span>', dashboard._diff_head("+++ b/x.py\n@@ -0,0 +1 @@\n+a\n"))
         self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")

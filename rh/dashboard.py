@@ -237,6 +237,8 @@ def _diff_parse(text):
     old_left = new_left = new_n = 0
     minus, pending = "", None  # the last '--- ' path; the row of a 'diff --git' file still waiting for '+++ '
     for line in text.splitlines():
+        if (old_left > 0 or new_left > 0) and line[:1] not in ("", " ", "+", "-", "\\"):
+            old_left = new_left = 0  # a body line starts with one of those: a hunk whose head over-counted has ended
         if old_left > 0 or new_left > 0:
             mark = line[:1]
             if mark == "\\":  # "\ No newline at end of file"
@@ -288,24 +290,30 @@ def _diff_head(text, whole=True):
     if not whole:
         return f'<span class="mono">{_text(files[0][0] + (" and more" if len(files) > 1 else ""))}</span>'
     name = files[0][0] if len(files) == 1 else f"{len(files)} files"
-    added, removed = sum(f[1] for f in files), sum(f[2] for f in files)
+    return f'<span class="mono">{_text(name)}</span>' + _counts(sum(f[1] for f in files), sum(f[2] for f in files))
+
+
+def _counts(added, removed):
     zero = lambda n: "" if n else " zero"  # noqa: E731  (a zero count is quiet, not green or red)
-    return (f'<span class="mono">{_text(name)}</span><span class="n add{zero(added)}">+{added}</span>'
-            f'<span class="n del{zero(removed)}">−{removed}</span>')
+    return f'<span class="n add{zero(added)}">+{added}</span><span class="n del{zero(removed)}">−{removed}</span>'
 
 
-def _peek_html(path, text):
+def _peek_html(path, text, whole=True):
     """A file's preview, escaped. A patch reads as a diff: each line its own block, marked added or removed and
     numbered as in the new file (the gutter draws it), a hunk headed by its function, and a wrapped line hung under
-    its code; a patch of several files names each where it starts."""
+    its code; a patch of several files names each where it starts, with its own counts (not the last file's when the
+    preview is cut short, as they would undercount)."""
     rows, files = _diff_parse(text) if path.endswith((".patch", ".diff")) else ([], [])
     if not files:
         return _text(text)
-    out = []
+    out, seen = [], 0
     for kind, n, line in rows:
         if kind == "file":
             if len(files) > 1:
-                out.append(f'<span class="dl file">{_text(line)}</span>')
+                f = files[seen]
+                counts = _counts(f[1], f[2]) if whole or seen < len(files) - 1 else ""
+                out.append(f'<span class="dl file">{_text(line)}{counts}</span>')
+            seen += 1
             continue
         if kind == "hunk":
             out.append(f'<span class="dl hunk">{_text(line)}</span>')
@@ -2392,7 +2400,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 details = (f'<details class="file-preview"><summary>Preview</summary><div class="peek-card">'
                            + (f'<div class="peek-head">{diff_head}</div>' if diff_head else "")
                            + f'<pre class="peek{" diff" if diff_head else ""}" tabindex="0">'
-                           f'{_peek_html(path, peek_text)}{more}</pre></div></details>')
+                           f'{_peek_html(path, peek_text, whole=not preview.get("more"))}{more}</pre></div></details>')
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'
                              f'<span class="session-file-size">{_text(_size(file.get("size")))}</span></span>'
                              f'{details}</li>')

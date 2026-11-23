@@ -2006,9 +2006,11 @@ form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-col
   border-bottom: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
 .peek-head .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
 .peek-head .n { flex: none; font: 12px var(--mono); }
-.peek-head .n.add { color: #7ee2a0; }
-.peek-head .n.del { color: #f69a9a; }
-.peek-head .n.zero { color: var(--faint); }
+/* a file's own counts sit after its name in the diff, in the head's colours */
+.peek .dl.file .n { margin-left: 10px; font: 12px var(--mono); font-weight: 400; font-variant-numeric: tabular-nums; }
+:is(.peek-head, .peek .dl.file) .n.add { color: #7ee2a0; }
+:is(.peek-head, .peek .dl.file) .n.del { color: #f69a9a; }
+:is(.peek-head, .peek .dl.file) .n.zero { color: var(--faint); }
 /* Its lines: a 40px gutter of new-file numbers drawn from data-n (so a copy takes only the code), then the code,
    a wrapped line hung under its first character (--i, set per indented line). No inner scroll: it folds. */
 pre.peek.diff { padding: 8px 0; tab-size: 4; overflow: hidden; }

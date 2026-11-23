@@ -542,6 +542,11 @@ pre.log.err { color: var(--text); }
 .ib-list .head .tabs { order: 3; width: 100%; height: 34px; gap: 14px; border-bottom: 1px solid var(--rule);
   margin-bottom: 6px; }
 .ib-list .head h2 { font-size: 13px; }
+/* Read aloud, never drawn: a lone group's name, which the top bar's count already says. */
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.ib-list .head:has(> h2 > .vh:only-child):not(:has(.tabs)) { min-height: 0; }
+/* then the first row's text starts 13px under the divider, on the detail's first line */
+.ib-list:has(> .s-ib-wait > .head > h2 > .vh:only-child):not(:has(.tabs)) { padding-top: 2px; }
 .ib-list .n { font: 12px var(--ui); color: var(--faint); }
 .ib-gh-r { margin-left: auto; color: var(--faint); }
 .ib-list .rows > li { margin: 0 8px 2px; }

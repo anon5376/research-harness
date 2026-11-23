@@ -430,6 +430,19 @@ class ListsTest(unittest.TestCase):
         # below it, so the panes began 11px apart across the divider (critic r10 F10).
         self.assertIn(".q-head-in { position: relative; padding: 13px 40px 20px; }", dashboard.STYLE)
 
+    def test_a_lone_inbox_group_wears_no_heading(self):
+        # 'Needs you' under the top bar's '4 need you', with no other group below it, says the count's fact twice
+        # (critic r11 F5). Alone, the heading stays for a screen reader only; with Settled today below, both show.
+        lone = pane(inbox(live_view()))
+        head = re.search(r'<h2 id="ib-wait">(.*?)</h2>', lone).group(1)
+        self.assertIn('class="vh"', head)
+        settled = {**live_view(), "settled": [{"id": 90, "job": "live-job", "kind": "question", "body": "Which?",
+                                               "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
+        self.assertNotIn('class="vh"', re.search(r'<h2 id="ib-wait">(.*?)</h2>', pane(inbox(settled))).group(1))
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("clip-path: inset(50%)", rule(".vh"))
+        self.assertIn("min-height: 0", rule(".ib-list .head:has(> h2 > .vh:only-child):not(:has(.tabs))"))
+
     def test_the_inbox_carries_no_label_that_says_nothing(self):
         # 'newest first' over a list with no other order, or '0 settled today' beside the count of what waits, must
         # fail; a day with settled items still says how many.

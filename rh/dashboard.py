@@ -2695,7 +2695,9 @@ def _inbox_pane(view, ctx, feedback):
                     f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>'
                     + (f'<span class="settled">{_SEP_HTML}<span class="num">{len(settled)}</span> settled today</span>'
                        if settled else "") + '</span>')
-    lists = (_section("ib-wait", "Needs you", _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
+    # alone, the group's name repeats the top bar's count: it stays for a screen reader only
+    lists = (_section("ib-wait", "Needs you" if done else '<span class="vh">Needs you</span>',
+                      _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
                       # the top bar carries the one count of what waits and what was settled; the lists repeat none
                       tabbar)
              + _section("ib-settled", "Settled today", _rows(done), "", hidden=not done))

@@ -2207,17 +2207,16 @@ document.addEventListener('change', e => {
   }).catch(() => toast('The swarm settings could not be saved.', false, ''));
 });
 // the composer's swarm line names what was just saved: the ticked models, then the judge
-// as the page writes it (dashboard._swarm_line): a family every model shares is named once
+// as the page writes it (dashboard._swarm_line): a family every model shares is named once, and the judge keeps
+// its whole name (a bare 'Max' reads as an effort); with no judge the line is the models alone, the Quick
+// swarm's subtitle, which team.js writes too
 function swarmLine(names, judge) {
   const heads = new Set(names.map(n => n.split(' ')[0]));
   const fam = heads.size === 1 && names.every(n => n.includes(' ') && !n.includes('+')) ? [...heads][0] : '';
-  let models = names.join(', ');
-  if (fam) {
-    models = fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(', ');
-    if (judge.startsWith(fam + ' ') && !judge.includes('+')) judge = judge.slice(fam.length + 1);
-  }
-  return `${models} · judge: ${judge}`;
+  const models = fam ? fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(', ') : names.join(', ');
+  return judge ? `${models} · judge ${judge}` : models;
 }
+window.RHswarmLine = swarmLine;
 function swarmSays(form) {
   const says = form.id && document.querySelector(`[data-swarm-says="${form.id}"]`);
   const judge = form.elements.namedItem('judge');
@@ -2226,6 +2225,12 @@ function swarmSays(form) {
   const names = [...form.elements].filter(i => i.name === 'models' && i.checked).map(i => i.dataset.name);
   const line = swarmLine(names, judge.selectedOptions[0].text), cut = line.lastIndexOf(' · ');
   says.replaceChildren(line.slice(0, cut), sep, line.slice(cut + 3));
+  // the popover's Quick swarm row follows: its radio keeps the whole line, its subtitle the models
+  const radio = document.querySelector('[data-team-pick] input[value="quick"]');
+  if (!radio) return;
+  radio.dataset.says = line;
+  const sub = radio.closest('label') && radio.closest('label').querySelector('.swarm-team-d');
+  if (sub) sub.textContent = line.slice(0, cut);
 }
 // An identifier moves whole to the next line; only one wider than its column breaks, and then at its own seams
 // (after _ and .), never mid-word as "strin / g".

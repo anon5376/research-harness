@@ -13,6 +13,9 @@ const EFFORTS = {claude: ['light', 'medium', 'high', 'extra-high', 'max'],
 const WORDS = {light: 'Light', medium: 'Medium', high: 'High', 'extra-high': 'Extra high', max: 'Max', ultra: 'Ultra'};
 const LIMITS = {jobs: 12, workers: 8, depth: 4, count: 4};
 const T = {data: null, cur: null, sel: null, uid: 0, timer: 0, drag: null, dirty: false};
+// app.js's one swarm line (it is served ahead of this file in the page's one script): with no judge it names the
+// ticked models, the Quick swarm's subtitle in every list
+const swarmLine = window.RHswarmLine;
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -140,7 +143,8 @@ function sync() {
   if (pick) {
     const form = pick.querySelector('input')?.getAttribute('form') || 'team-pick-f';
     const quickSays = pick.querySelector('input[value="quick"]')?.dataset.says || '';
-    const rows = [['quick', 'Quick swarm', 'the models ticked below', quickSays]].concat(presets().map(p =>
+    const cut = quickSays.lastIndexOf(' · ');  // the subtitle is the line's models part, as the chip names them
+    const rows = [['quick', 'Quick swarm', cut < 0 ? quickSays : quickSays.slice(0, cut), quickSays]].concat(presets().map(p =>
       [p.id, p.name, sub(p),
        `${p.name} · ${size(p)} agents`]));
     const edit = pick.querySelector('[data-team-open]');
@@ -248,7 +252,7 @@ function list() {
     h('span', {class: 'tm-p-d'}, sub));
   const q = d.quickNames;
   return h('nav', {class: 'tm-list', 'aria-label': 'Teams'},
-    row('quick', 'Quick swarm', q.models.length ? `${q.models.join(', ')} · judge ${q.judge}` : 'the ticks in Settings'),
+    row('quick', 'Quick swarm', q.models.length ? swarmLine(q.models) : 'the ticks in Settings'),
     presets().map(p => row(p.id, p.name, sub(p))),
     h('button', {type: 'button', class: 'tm-new', 'data-new': ''}, '+ New team'));
 }

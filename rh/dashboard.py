@@ -1862,7 +1862,8 @@ def _swarm_note(ctx):
     chip = (f'<span class="swarm-chip">{_ic("swarm", True)}Swarm'
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
             '×</button></span>')
-    ran, judged = _swarm_line([_names([m]) for m in models], _names([judge])).rsplit(" · ", 1)
+    ran = _swarm_line([_names([m]) for m in models])
+    judged = f"judge {_names([judge])}"
     quick_says = f'{_text(ran)}{_SEP_HTML}{_text(judged)}'
     team = _active_team(swarm)
     says = (f'{_text(team["name"])}{_SEP_HTML}{_team_size(team)} agents' if team else quick_says)
@@ -1872,7 +1873,7 @@ def _swarm_note(ctx):
         if swarm.get("team_models"):  # the teams Settings keeps, picked here; Quick swarm is the ticks below
             data = _team_presets(swarm)
             # each radio carries its line as plain text, 'A · B'; team.js puts the dot back as the page draws it
-            rows = [("quick", "Quick swarm", "the models ticked below", f"{ran} · {judged}")] + [
+            rows = [("quick", "Quick swarm", ran, f"{ran} · {judged}")] + [
                 (p["id"], p["name"], _team_sub(p),
                  f'{p["name"]} · {_team_size(p)} agents')
                 for p in data["presets"] if isinstance(p, dict) and p.get("id")]
@@ -2315,18 +2316,15 @@ def _fail_banner(state, spec, bad):
             f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
 
 
-def _swarm_line(names, judge):
-    """The composer's swarm line: 'SWE-2 Max, Flash · judge: Max'. A family every model shares is named once; a list
-    that mixes families, or holds a Fusion pair, keeps whole names. Runs join with commas: '+' is Fusion's own.
-    app.js's swarmLine writes the same line as the ticks change."""
+def _swarm_line(names, judge=""):
+    """The composer's swarm line: 'SWE-2 Max, Flash · judge SWE-2 Max', or the models alone with no judge (the Quick
+    swarm's subtitle in the teams lists). A family every model shares is named once; a list that mixes families,
+    or holds a Fusion pair, keeps whole names. Runs join with commas: '+' is Fusion's own. The judge keeps its
+    whole name — a bare 'Max' reads as an effort. app.js's swarmLine writes the same line as the ticks change."""
     heads = {n.split(" ", 1)[0] for n in names}
     fam = next(iter(heads)) if len(heads) == 1 and all(" " in n and "+" not in n for n in names) else ""
-    models = ", ".join(names)
-    if fam:
-        models = fam + " " + ", ".join(n[len(fam) + 1:] for n in names)
-        if judge.startswith(fam + " ") and "+" not in judge:
-            judge = judge[len(fam) + 1:]
-    return f"{models} · judge: {judge}"
+    models = fam + " " + ", ".join(n[len(fam) + 1:] for n in names) if fam else ", ".join(names)
+    return f"{models} · judge {judge}" if judge else models
 
 
 def _swarm_again(ctx, runs):

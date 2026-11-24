@@ -884,7 +884,7 @@ class ListsTest(unittest.TestCase):
         says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span></p>', page).group(1)
         # 'A + B' names one Fusion model everywhere else, so the runs are listed with commas and the judge is a verb
         # (critic r11 F1)
-        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge: Max".split())  # r22 F2, r23 F6
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge SWE-2 Max".split())  # r22 F2, r23 F6
         # the chip's × shows on hover or focus where there is a pointer, always on touch, with a 24px hit area
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("gap: 12px", rule(".swarm-note"))
@@ -981,13 +981,13 @@ class ListsTest(unittest.TestCase):
 
     SWARM_LINES = [  # r22 F2: a shared family is printed once. r23 F6: '+' is Fusion's (one model of two), so runs
         # join with commas, and the judge is named as one ('Max judges' read as 'maximum judges')
-        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max, Flash · judge: Max"),
-        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · judge: Max"),
-        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max, Flash · judge: Claude Opus 5.5"),
-        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · judge: SWE-2 Max"),
+        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max, Flash · judge SWE-2 Max"),
+        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · judge SWE-2 Max"),
+        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max, Flash · judge Claude Opus 5.5"),
+        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · judge SWE-2 Max"),
         (["Fable 5.2 Medium + SWE-2 High", "SWE-2 Max"], "SWE-2 Max",
-         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · judge: SWE-2 Max"),
-        (["Opus"], "Opus", "Opus · judge: Opus"),
+         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · judge SWE-2 Max"),
+        (["Opus"], "Opus", "Opus · judge Opus"),
     ]
 
     def test_settings_shows_every_swarm_group_when_it_opens(self):
@@ -1050,7 +1050,7 @@ class ListsTest(unittest.TestCase):
             self.assertEqual(dashboard._swarm_line(names, judge), line)
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
                                                           "judge": "swe-2-max"}}, NOW, token=TOKEN)
-        self.assertIn(f'SWE-2 Max, Flash{dashboard._SEP_HTML}judge: Max', page)
+        self.assertIn(f'SWE-2 Max, Flash{dashboard._SEP_HTML}judge SWE-2 Max', page)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_script_writes_the_swarm_line_as_the_page_does(self):
@@ -1114,7 +1114,7 @@ class ListsTest(unittest.TestCase):
         # with the quick swarm active, the ticks are the swarm again
         quick = dashboard.render({**live_view(), "swarm": {**swarm, "presets": hierarchy.defaults()}}, NOW, token=TOKEN)
         self.assertIn('data-team="quick"', quick)
-        self.assertIn("judge:", text(re.search(r'<details class="swarm-pick">.*?</summary>', quick, re.S).group(0)))
+        self.assertIn("judge SWE-2 Max", text(re.search(r'<details class="swarm-pick">.*?</summary>', quick, re.S).group(0)))
 
     def test_the_swarm_popover_hides_the_page_behind_it(self):
         # r153 swarm-teams-phone: the popover opens inside the glass composer, whose backdrop filter keeps the
@@ -1256,7 +1256,7 @@ class ListsTest(unittest.TestCase):
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the
-        # composer's line is 'SWE-2 Max, Flash · judge: Max': the sheet must follow that order — the tick groups,
+        # composer's line is 'SWE-2 Max, Flash · judge SWE-2 Max': the sheet must follow that order — the tick groups,
         # then one group holding the Judge row and the 'Check each run' row, then the hint. A Judge above the ticks,
         # two .swarm-opts groups, or a check row before the judge must fail.
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
@@ -1601,7 +1601,8 @@ class ListsTest(unittest.TestCase):
             self.assertIn(spec, more)
         # folded, its last line fades out instead of taking the clamp's "…", which after a full stop read "...."
         fold = dashboard.STYLE.split(".q-head .q-title.user-message:has(+ .ask-more):not(.whole) {", 1)[1].split("}", 1)[0]
-        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 2lh", "overflow: hidden", "mask-image:"):
+        # r28 F11: four lines, not two, so the pane does not hide a brief it has room for behind Show all
+        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 4lh", "overflow: hidden", "mask-image:"):
             self.assertIn(spec, fold)
         # folded, its paragraphs run on, so a brief and its follow-up fill both lines instead of a line and a blank
         # (critic r18 F4: 'Show all' under one visible line read as a control with nothing to show)
@@ -1909,6 +1910,26 @@ class ListsTest(unittest.TestCase):
 
 
 class DashboardTest(unittest.TestCase):
+    def test_the_quick_swarm_is_named_one_way_everywhere(self):
+        # One team read three ways: the dialog's left list said 'SWE-2 Max, SWE-2 Flash · judge SWE-2 Max' and was
+        # cut mid-word at 190px, the /swarm popover said 'the models ticked below', and the chip's 'judge: Max'
+        # read as an effort level. The one line is now the chip's: the ticked models with a shared family named
+        # once, then 'judge' with the judge's whole name; each list's subtitle is its models part.
+        from rh import hierarchy
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max",
+                 "presets": hierarchy.defaults(), "choices": ["swe-2-max", "swe-2-flash-high"],
+                 "team_models": [["swe-2-max", "devin"], ["claude-opus-5-5", "claude"], ["gpt-6.2-astra", "codex"]]}
+        page = dashboard.render({**live_view(), "swarm": swarm}, NOW, token=TOKEN)
+        says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span><', page, re.S).group(1)
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge SWE-2 Max".split())
+        quick = re.search(r'<input type="radio" name="active" value="quick".*?</label>', page, re.S).group(0)
+        self.assertIn('<span class="swarm-team-d">SWE-2 Max, Flash</span>', quick)
+        self.assertNotIn("the models ticked below", dashboard.SCRIPT)
+        self.assertNotIn("judge: ", dashboard.SCRIPT)
+        # one formatter, shared: team.js writes the same subtitle in the dialog's list with it
+        self.assertIn("window.RHswarmLine = swarmLine", dashboard.SCRIPT)
+        self.assertIn("swarmLine(q.models)", dashboard.SCRIPT)
+
     def test_detail_is_escaped(self):
         # Removing escaping must expose the worker's script and fail this test.
         view = full_view()

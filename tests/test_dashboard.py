@@ -654,8 +654,8 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<button class="sw-again" data-k="w" aria-keyshortcuts="w">', card(page))
         self.assertIn("Swarm again", text(card(page)))
         # r21 F2: Swarm again and Judge again shared the circular arrow, so only the labels told them apart and the w
-        # key showed nowhere. Swarm again leads with no arrow and ends on its key chip, as the composer's hint chips;
-        # a phone, with no key to show, draws the Swarm chip's glyph instead.
+        # key showed nowhere. Swarm again leads with the swarm glyph, not the arrow, and ends on its key chip, as the
+        # composer's hint chips; a phone, with no key to show, drops the chip.
         btn = re.search(r'<button class="sw-again".*?</button>', card(page), re.S).group(0)
         self.assertNotIn(dashboard._ic("again", True), btn)
         self.assertTrue(btn.endswith('<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button>'), btn)
@@ -663,16 +663,17 @@ class ListsTest(unittest.TestCase):
         chip = dashboard.STYLE.split("\n.sw-again kbd {", 1)[1].split("}", 1)[0]
         for spec in ("height: 18px", "background: #1a1f2c", "font: 11px/18px var(--mono)"):
             self.assertIn(spec, chip)
-        self.assertIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
-        self.assertIn(".sw-again > .ic { display: block; } .sw-again kbd { display: none; }", dashboard.STYLE)
-        # on a phone the head's right side is a quiet pill like the dock's Judge again — 32px, a hairline edge,
-        # fully round — so it reads as an action, not a second 'Swarm' title in the title's own grey; the desktop
-        # keeps the bare label and its W chip
+        self.assertIn(".sw-again > .ic { display: block; }", dashboard.STYLE)
+        self.assertNotIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
+        self.assertIn(".sw-again kbd { display: none; }", dashboard.STYLE)
+        # the head's right side is a quiet pill like the dock's Judge again — a hairline edge, fully round — so it
+        # reads as an action, not a second 'Swarm' title in the title's own grey; a phone only grows it a step
         phone_again = dashboard.STYLE.split("@media (max-width: 600px) { .sw-again {", 1)[1].split("}", 1)[0]
-        for spec in ("height: 32px", "border: 1px solid #2a3142", "border-radius: 16px", "padding: 0 12px"):
+        for spec in ("height: 32px", "border-radius: 16px", "padding: 0 12px"):
             self.assertIn(spec, phone_again)
+        self.assertNotIn("border:", phone_again)  # the edge is the shared rule's now, not the phone's own
         desk_again = dashboard.STYLE.split("\n.sw-again {", 1)[1].split("}", 1)[0]
-        for spec in ("height: 28px", "padding: 0 10px", "border: 0", "border-radius: 8px"):
+        for spec in ("height: 28px", "padding: 0 10px", "border: 1px solid #2a3142", "border-radius: 14px"):
             self.assertIn(spec, desk_again)
         # the page's w key presses it, once: no other control on the page may carry the key
         self.assertEqual(page.count('data-k="w"'), 1)
@@ -2787,6 +2788,33 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(opened(view, "g.w2", kind="local-shell", state="done"), NOW)
         self.assertIn("Run 2 of 2 in a swarm", head(page))
         self.assertNotIn('href="/job/g.best', head(page))
+
+    def test_swarm_again_is_an_outlined_pill_on_desktop_too(self):
+        # On desktop 'Swarm again' was borderless text and read as a label, not a button, while the dock's 'Judge
+        # again' and the phone's version were pills: the shared rule now wears the same hairline edge at the
+        # desktop's 28px and shows the swarm glyph, so a phone only grows the pill and drops the W chip.
+        desk = dashboard.STYLE.split("\n.sw-again {", 1)[1].split("}", 1)[0]
+        self.assertIn("border: 1px solid #2a3142", desk)
+        self.assertIn("border-radius: 14px", desk)
+        self.assertNotIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
+        # the rendered button keeps its w key and chip
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix", "timeout_min": 90}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                            "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "fix.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"]["swarm_kept"] = "fix.w1"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
+        btn = re.search(r'<button class="sw-again".*?</button>', card, re.S).group(0)
+        self.assertIn('data-k="w"', btn)
+        self.assertIn("<kbd", btn)
 
     def test_a_composer_keeps_its_draft_across_pages(self):
         # A reply typed on one job and left for another came back empty, since the page swap renders a new form

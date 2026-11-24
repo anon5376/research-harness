@@ -2023,19 +2023,18 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 /* An ended swarm's head offers the whole swarm again on the same brief: the patch head's Copy, so the two head
    actions are one control. */
 .sw-again { display: inline-flex; align-items: center; gap: 6px; flex: none; height: 28px; padding: 0 10px;
-  border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 12px; cursor: pointer;
-  transition: background-color 120ms ease-out, color 120ms ease-out; }
+  border: 1px solid #2a3142; border-radius: 14px; background: none; color: var(--muted); font-size: 12px;
+  cursor: pointer; transition: background-color 120ms ease-out, color 120ms ease-out; }
 .sw-again svg { width: 14px; height: 14px; }
 .sw-again:hover, .sw-again:focus-visible { color: var(--text); background: #1c2030; }
-/* Swarm again ends on its key, as the composer's hint chips, so it is not read as Judge again's circular arrow; a
-   phone has no key to show, draws the Swarm chip's glyph instead, and wears the dock's Judge again pill so the
-   head's right side does not read as a second title */
-.sw-again > .ic { display: none; }
+/* Swarm again wears the dock's Judge again pill so the head's right side reads as a control, not a second title;
+   the swarm glyph — not Judge again's circular arrow — leads the label and the key chip ends it, as the
+   composer's hint chips; a phone has no key to show, so the chip drops and the pill grows a step */
+.sw-again > .ic { display: block; }
 .sw-again kbd { display: inline-block; height: 18px; padding: 0 5px; border-radius: 4px; background: #1a1f2c;
   color: var(--muted); font: 11px/18px var(--mono); }
-@media (max-width: 600px) { .sw-again { height: 32px; padding: 0 12px; border: 1px solid #2a3142;
-    border-radius: 16px; }
-  .sw-again > .ic { display: block; } .sw-again kbd { display: none; } }
+@media (max-width: 600px) { .sw-again { height: 32px; padding: 0 12px; border-radius: 16px; }
+  .sw-again kbd { display: none; } }
 .sw-runs { margin: 0; padding: 6px; list-style: none; }
 .sw-run { display: grid; grid-template-columns: 16px 112px 148px minmax(0, 1fr); align-items: center;
   column-gap: 10px; min-height: 36px; padding: 0 10px; border-radius: 8px; color: var(--text); font-size: 13px;

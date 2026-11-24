@@ -1102,6 +1102,25 @@ class ListsTest(unittest.TestCase):
         self.assertIn('data-team="quick"', quick)
         self.assertIn("judge:", text(re.search(r'<details class="swarm-pick">.*?</summary>', quick, re.S).group(0)))
 
+    def test_the_swarm_popover_hides_the_page_behind_it(self):
+        # r153 swarm-teams-phone: the popover opens inside the glass composer, whose backdrop filter keeps the
+        # popover's own blur from reaching the page, so a 96% fill let the big title show through the model list.
+        rule = dashboard.STYLE.split("\n.swarm-pop {", 1)[1].split("}", 1)[0]
+        fill = re.search(r"background:[^;]*", rule).group(0)
+        self.assertRegex(fill, r"rgb\(\d+ \d+ \d+\)$")  # the last layer is a solid colour
+        self.assertNotIn("backdrop-filter", rule)
+
+    def test_a_cut_sidebar_name_ends_on_a_word_not_a_space(self):
+        # r26 F7: the browser's ellipsis cut names after a space or comma ('Improve research-harness, ...'). The
+        # script cuts them itself, trims what the cut leaves dangling, and keeps the whole name for screen readers.
+        fit = dashboard.SCRIPT.split("function fitName(el) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".replace(CUT_END, '') + '…'", fit)
+        self.assertIn("whole.className = 'vh'", fit)
+        self.assertIn("shown.setAttribute('aria-hidden', 'true')", fit)
+        self.assertRegex(dashboard.SCRIPT, r"const CUT_END = /\[\\s,;:")
+        self.assertIn("document.addEventListener('rh:page', fitNames);", dashboard.SCRIPT)
+        self.assertIn("\n.vh {", dashboard.STYLE)
+
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the

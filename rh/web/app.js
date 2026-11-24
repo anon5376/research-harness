@@ -2004,6 +2004,42 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('rh:page', fadeAll);
 addEventListener('resize', fadeAll);
+
+// A sidebar name too long for its row ends on its last whole character: the browser's own ellipsis can land after a
+// space or a comma ('Improve research-harness, …'). The cut copy is what shows; the whole name stays for a screen
+// reader and as the row's tooltip.
+const CUT_END = /[\s,;:.·(–—-]+$/;
+function fitName(el) {
+  const full = el.dataset.full || el.textContent;
+  if (el.dataset.full) { el.textContent = full; delete el.dataset.full; el.removeAttribute('title'); }
+  if (!el.clientWidth || el.scrollWidth <= el.clientWidth) return;
+  const cut = n => full.slice(0, n).replace(CUT_END, '') + '…';
+  let lo = 1, hi = full.length - 1;
+  while (lo < hi) {  // the longest cut that fits
+    const mid = (lo + hi + 1) >> 1;
+    el.textContent = cut(mid);
+    if (el.scrollWidth <= el.clientWidth) lo = mid; else hi = mid - 1;
+  }
+  const shown = document.createElement('span'), whole = document.createElement('span');
+  shown.setAttribute('aria-hidden', 'true');
+  shown.textContent = cut(lo);
+  whole.className = 'vh';
+  whole.textContent = full;
+  el.replaceChildren(shown, whole);
+  el.dataset.full = full;
+  el.title = full;
+}
+const fitNames = () => { for (const el of $$('.lane .row .name')) fitName(el); };
+document.addEventListener('rh:page', fitNames);
+if (window.ResizeObserver) {
+  let lane = null;
+  const seen = new ResizeObserver(() => requestAnimationFrame(fitNames));
+  document.addEventListener('rh:page', () => {
+    const now = $('.lane');
+    if (now !== lane) { if (lane) seen.unobserve(lane); lane = now; if (lane) seen.observe(lane); }
+  });
+}
+if (document.fonts) document.fonts.ready.then(fitNames);
 // a preview folded away has no height to measure until it opens
 document.addEventListener('toggle', e => { if (e.target.matches && e.target.matches('.file-preview')) fadeAll(); }, true);
 fadeAll();

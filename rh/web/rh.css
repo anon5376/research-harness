@@ -2177,8 +2177,9 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .swarm-pop { position: absolute; z-index: 90; top: calc(100% + 8px); left: -8px; display: block;
   width: min(360px, calc(100vw - 32px)); max-height: 50vh; overflow-y: auto; overscroll-behavior: contain;
   padding: 6px; border: 1px solid rgb(170 185 235 / .14); border-radius: 12px;
-  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38 / .96);
-  -webkit-backdrop-filter: blur(40px) saturate(160%); backdrop-filter: blur(40px) saturate(160%);
+  /* opaque: it opens inside the glass composer, whose own backdrop filter keeps this one from blurring the page,
+     so any see-through let the title behind it show crisp through the list */
+  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38);
   box-shadow: 0 16px 40px rgb(0 0 0 / .55); color: var(--text); font-size: 13px; }
 .swarm-pop > .swarm-models { display: block; }
 .swarm-pop > .swarm-opts { display: block; margin-top: 6px; }

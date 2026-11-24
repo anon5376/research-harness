@@ -234,6 +234,21 @@ def _ln(line):
     return f'<span class="ln{tone}">{_text(line)}</span>'
 
 
+_BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")  # Markdown bold: no space just inside the markers
+
+
+def _tail_lines(tail):
+    """A kept tail as the lines the Inbox's stop card shows: blank lines at its ends dropped, so its first line
+    sits where the same card on a job's page puts it, and each line's paired ** markers off, so an agent's
+    markdown reads as words; a ** with no partner, or spaced as an operator (a ** b ** c), stays: logs hold code."""
+    lines = str(tail or "").splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return [_BOLD.sub(r"\1", line) for line in lines]
+
+
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 
 
@@ -2878,10 +2893,10 @@ def _ib_job(ctx, entry, view):
     open_it = (f'<a class="btn{"" if again else " primary"}" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
                else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
     bad = job.state in _FAILED
-    tail = str((view.get("tails") or {}).get(job.id) or "")
+    tail = _tail_lines((view.get("tails") or {}).get(job.id))
     # the tail shows whole, so a count of it would count nothing hidden: the head is the name alone
     stopped = (f'<section class="out"><div class="head"><h2>{_ic("term", True)}Where it stopped</h2></div>'
-               f'<pre class="log ended err" tabindex="0">{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
+               f'<pre class="log ended err" tabindex="0">{"".join(_ln(l) for l in tail)}</pre></section>'
                if tail else "")
     # a failed check reads as on the job's page: the sentence, the command and its exit code
     check = (view.get("fails") or {}).get(job.id)

@@ -1628,6 +1628,20 @@ class ListsTest(unittest.TestCase):
         self.assertIn("ls: drafts/: No such file or directory", card)
         self.assertNotIn('class="lines', card)
 
+    def test_the_inbox_stop_card_trims_blank_edges_and_bold_marks(self):
+        # The kept tail is the agent's own markdown: a leading blank line pushed the card's first text a line
+        # lower than the same card on a failed job's page, and '**Checking ...**' kept its markers. Paired '**'
+        # come off; a lone one stays, since logs can hold code.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}  # a failed job leads
+        view["tails"] = {"broke-job": "\n**Checking shared fieldset CSS**\nx = a ** b\ny = a ** b ** c\n\n"}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
+        card = re.search(r'<section class="out">.*?</section>', detail, re.S).group(0)
+        pre = re.search(r'<pre class="log ended err" tabindex="0">(.*?)</pre>', card, re.S).group(1)
+        lines = re.findall(r'<span class="ln[^"]*">(.*?)</span>', pre)
+        # a spaced ** is Python's power operator, not bold: a chain of two must not lose both
+        self.assertEqual(lines, ["Checking shared fieldset CSS", "x = a ** b", "y = a ** b ** c"])
+        self.assertFalse(lines[0].startswith("**"))
+
     def test_a_running_job_says_how_far_along_its_log_says_it_is(self):
         self.assertEqual(dashboard._progress("start\nstep 357: window 357 of 2400\n"), (357, 2400))
         self.assertIsNone(dashboard._progress("1 of 1 done"))

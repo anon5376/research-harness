@@ -3993,7 +3993,7 @@ console.log(JSON.stringify([
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("--on: var(--ef-accent)", dashboard.STYLE)
         for sel in ('input[type="checkbox"]', ".swarm-m input", ".swarm-team input",
-                    ".tm-tog input:checked + .tm-sw"):
+                    ".tm-tog input:checked + .tm-sw", ".tm-use::before"):  # the teams list's 'In use' tick (r30 F8)
             body = rule(sel)
             self.assertIn("var(--on)", body)
             self.assertNotIn("var(--accent)", body)

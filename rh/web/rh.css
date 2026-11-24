@@ -2495,7 +2495,7 @@ dialog.team > header form { margin-left: auto; }
 .tm-p-d { font-size: 12px; color: var(--faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* a status, not a button: white stays for the one primary action */
 .tm-use { font-size: 11px; font-weight: 500; color: var(--muted); line-height: 17px; }
-.tm-use::before { content: "✓"; margin-right: 4px; color: var(--accent); }
+.tm-use::before { content: "✓"; margin-right: 4px; color: var(--on); }
 .tm-new { margin-top: 6px; padding: 9px 10px; text-align: left; border-radius: 9px; color: var(--muted);
   transition: color .16s var(--ease), background .16s var(--ease); }
 .tm-new:hover { color: var(--text); background: rgb(255 255 255 / .05); }

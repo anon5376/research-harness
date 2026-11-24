@@ -16,6 +16,8 @@ DEFAULTS = {
     "supervisor": {"interval": 60},
     # /swarm in the composer: one run per model (Devin's SWE-2 models are free), then a judge keeps the best work
     "swarm": {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "check": ""},
+    # rh mcp --tunnel: OpenAI Secure MCP Tunnel id (Platform > Tunnels) and the tunnel-client binary to run
+    "mcp": {"tunnel_id": "", "tunnel_client": "tunnel-client"},
     "repo": {"path": str(REPO)},
 }
 

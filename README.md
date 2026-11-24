@@ -42,7 +42,7 @@ bin/rh serve    # opens the app on 127.0.0.1, token-protected
 - **coding jobs on your Mac.** Pick Codex, Claude or Devin and describe what you want. The agent works on a throwaway clone of your repo, so your actual repo is never touched. You get its answer and a `changes.patch` to read before you keep anything.
 - **`/swarm`.** Type `/swarm` before a brief and the same job runs on several models at once. A judge model then reads every run and keeps the best one. By default it uses Devin's SWE-2 models, which are free.
 - **cloud jobs.** Send a job to Codex cloud. Its patch comes back, the acceptance check runs locally, and `rh land` commits it to a local branch `cloud/<job>`.
-- **GPT Pro chats.** For questions that need GPT Pro on the web. No API: copy the prompt, ask ChatGPT, paste the reply back. That's it.
+- **GPT Pro chats.** For questions that need GPT Pro on the web. No API: copy the prompt, ask ChatGPT, paste the reply back. Or skip the copying: `rh mcp --tunnel` lets GPT Pro read the job and your repo itself through OpenAI's MCP tunnel ([setup](docs/gpt-pro-mcp.md)).
 - **one supervisor, one ledger.** One loop launches everything and owns stop and pause. Every job, event and receipt lands in one SQLite file, and `rh status` shows the whole picture.
 - **clear endings.** Every job ends as exactly one of `done`, `failed`, `blocked`, `capacity`, `truncated`, `aborted`, `no_result` or `cancelled`, with a receipt.
 - **an inbox for you.** Anything only a human should do goes to `rh inbox` with the exact step.
@@ -70,6 +70,7 @@ bin/rh job cancel <job> --reason TEXT
 bin/rh supervise                 # the check loop on its own, one per $RH_HOME
 bin/rh land <job>                # commit a done cloud job's diff on branch cloud/<job> (never pushes)
 bin/rh chat reply <job> <file>   # paste ChatGPT's reply into a GPT Pro job
+bin/rh mcp --tunnel              # let GPT Pro in ChatGPT read jobs and repo files (docs/gpt-pro-mcp.md)
 bin/rh improve                   # let an agent improve this repo, kept on local branches
 bin/rh lease run --what build -- make   # heavy local steps take turns
 bin/rh doctor                    # is everything the harness needs healthy?

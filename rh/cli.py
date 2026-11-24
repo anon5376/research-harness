@@ -101,6 +101,10 @@ def main(argv=None):
     c.add_argument("id")
     c.add_argument("file", help="a UTF-8 reply file, or - for stdin")
 
+    p = sub.add_parser("mcp", help="MCP server over stdio so GPT Pro in ChatGPT can read and answer gpt-chat jobs; "
+                       "run it through OpenAI's tunnel-client (docs/gpt-pro-mcp.md)")
+    p.add_argument("--tunnel", action="store_true", help="run tunnel-client with this server as its stdio command")
+
     p = sub.add_parser("land", help="commit a done cloud job's diff on local branch cloud/<job> (never pushes)")
     p.add_argument("id")
 
@@ -225,6 +229,11 @@ def cmd_chat(args, cfg):
         chat.save_reply(cfg, led, args.id, text, time.time())
         print(f"saved reply for {args.id}; done")
     return 0
+
+
+def cmd_mcp(args, cfg):
+    from rh import mcp
+    return mcp.run_tunnel(cfg) if args.tunnel else mcp.run(cfg)
 
 
 def _recent(jobs, now):
@@ -637,4 +646,4 @@ def cmd_config(args, cfg):
 COMMANDS = {"job": cmd_job, "goal": cmd_goal, "status": cmd_status, "inbox": cmd_inbox, "stop": cmd_stop, "resume": cmd_resume,
             "supervise": cmd_supervise, "cloud": cmd_cloud, "land": cmd_land, "env": cmd_env, "doctor": cmd_doctor,
             "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve,
-            "seats": cmd_seats, "chat": cmd_chat, "improve": cmd_improve}
+            "seats": cmd_seats, "chat": cmd_chat, "improve": cmd_improve, "mcp": cmd_mcp}

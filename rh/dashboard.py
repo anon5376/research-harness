@@ -404,6 +404,11 @@ def _clock(timestamp, now):
     return f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
 
 
+def _hm(timestamp):
+    t = time.localtime(timestamp)
+    return f"{t.tm_hour:02d}:{t.tm_min:02d}"
+
+
 def _date(now):
     t = time.localtime(now)
     return f"{_DAYS[t.tm_wday]} {t.tm_mday} {_MONTHS[t.tm_mon - 1]}{_SEP_HTML}{t.tm_hour:02d}:{t.tm_min:02d}"
@@ -1575,21 +1580,24 @@ def _earlier_rows(jobs, ctx):
     """The Earlier group's rows in their listed order: one quiet heading before the first row of each calendar
     day — 'Yesterday' for the day before today's, else the day `_clock` writes — while every row's time cell
     stays empty and its title keeps the full date and time. A row with no time takes no heading."""
-    yn = time.localtime(_midnight(ctx["now"]) - 43200)
-    ykey = (yn.tm_year, yn.tm_yday)
     out, day = [], None
     for job in jobs:
         since = job.since()
         if since is not None:
-            t = time.localtime(since)
-            key = (t.tm_year, t.tm_yday)
+            key, label = _day_of(since, ctx["now"])
             if key != day:
                 day = key
-                label = "Yesterday" if key == ykey else f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
-                out.append(_row(f"day:{t.tm_year}-{t.tm_mon}-{t.tm_mday}", f"<span>{label}</span>", cls="day",
-                                attrs=' role="presentation"'))
+                out.append(_row(f"day:{key}", f"<span>{label}</span>", cls="day", attrs=' role="presentation"'))
         out.append(job.item(earlier=True))
     return out
+
+
+def _day_of(timestamp, now):
+    """The calendar day a time falls on, as a key and as Earlier heads it: 'Yesterday', else '22 Nov'."""
+    t, y = time.localtime(timestamp), time.localtime(_midnight(now) - 43200)
+    key = f"{t.tm_year}-{t.tm_mon}-{t.tm_mday}"
+    yesterday = (t.tm_year, t.tm_yday) == (y.tm_year, y.tm_yday)
+    return key, "Yesterday" if yesterday else f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
 
 
 def _job_list(jobs, stop_rows, ctx):
@@ -3314,9 +3322,13 @@ def _palette(jobs, ctx, keys):
     quiet = {g for g, w in words.items() if g in ("ended", "earlier") and len(w) == 1}
     rows, at = [], None
     for j in sorted(jobs, key=lambda j: order[group(j)]):
-        if group(j) != at:
-            at = group(j)
-            rows.append(f'<p class="p-sec">{names[at]}</p>')
+        # Earlier is headed by day, as the sidebar heads it (r33 F5); a row with no time keeps the group's name
+        day = _day_of(j.since(), ctx["now"]) if group(j) == "earlier" and j.since() else None
+        key = (f"day:{day[0]}" if day else at if group(j) == "earlier" and str(at).startswith("day:")
+               else group(j))
+        if key != at:
+            at = key
+            rows.append(f'<p class="p-sec">{day[1] if day else names[group(j)]}</p>')
         hue = ("red" if j.state in _FAILED else "amber") if group(j) == "needs" else None
         same = group(j) in quiet
         one = " one" if same and not j.dup else ""  # name and time only: one line on a phone too
@@ -3331,7 +3343,8 @@ def _palette(jobs, ctx, keys):
                     + '</span>'
                     # the time the sidebar shows, in a cell of its own on the title line at every width, so every
                     # row's time shares one edge and runs of one brief tell apart at a glance
-                    + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
+                    + (f'<span class="p-when mono num">{_hm(j.since()) if day else _clock(j.since(), ctx["now"])}'
+                       '</span>' if j.since() else "")
                     + f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:

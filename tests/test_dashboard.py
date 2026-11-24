@@ -3347,6 +3347,34 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="st t-red"', row)
         self.assertIn('data-tone="bad"', row)
 
+    def test_each_earlier_day_is_a_group_in_the_sidebar_and_in_the_palette(self):
+        # r33 F3: a second day's heading sat on the row above it while 'Yesterday' had the group gap; every day
+        # heading is a group heading's 24px box, and a later one sits 16px down, as the groups do. F5: the palette
+        # still said 'Earlier' and dated each row; it heads its days as the sidebar does and keeps the clock time,
+        # which tells runs of one day apart.
+        view = live_view()
+        midnight = dashboard._midnight(NOW)
+        stamps = {"earlier-am": midnight - 5400, "earlier-pm": midnight - 9000, "earlier-old": midnight - 216000}
+        view["recent"] += [{"id": jid, "state": "done", "paused": False, "detail": "", "external_id": None}
+                           for jid in stamps]
+        view["meta"] = {"finished-job": {"kind": "local-shell", "updated": NOW - 600},
+                        **{jid: {"kind": "local-shell", "updated": ts} for jid, ts in stamps.items()}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertIn(".lane .s-g-earlier .rows > .day { padding-block: 2px; }", dashboard.STYLE)
+        self.assertIn(".lane .s-g-earlier .rows > .day:not(:first-child) { margin-top: 16px; }", dashboard.STYLE)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        old_day = dashboard._clock(stamps["earlier-old"], NOW)
+        secs = re.findall(r'<p class="p-sec">([^<]+)</p>', pal)
+        self.assertNotIn("Earlier", secs)
+        self.assertEqual(secs[secs.index("Yesterday"):secs.index("Yesterday") + 2], ["Yesterday", old_day])
+        for jid, ts in stamps.items():
+            row = re.search(rf'<a class="p-row[^"]*" role="option" data-id="{jid}".*?</a>', pal, re.S).group(0)
+            t = time.localtime(ts)
+            self.assertIn(f'<span class="p-when mono num">{t.tm_hour:02d}:{t.tm_min:02d}</span>', row)
+        # each row sits under its own day
+        self.assertLess(pal.index('data-id="earlier-pm"'), pal.index(f'<p class="p-sec">{old_day}</p>'))
+        self.assertLess(pal.index(f'<p class="p-sec">{old_day}</p>'), pal.index('data-id="earlier-old"'))
+
     def test_the_earlier_group_heads_each_day_and_keeps_the_time_on_the_title(self):
         # A '24 Nov' down the sidebar's right edge on every Earlier row says nothing new: each day's first row
         # gets one quiet heading ('Yesterday' for the day before today's, the day itself for older ones), the

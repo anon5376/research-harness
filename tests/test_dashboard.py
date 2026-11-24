@@ -1468,6 +1468,25 @@ class ListsTest(unittest.TestCase):
         for part in parts[1:]:
             self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')
 
+    def test_a_job_past_its_limit_says_when_it_last_wrote_output(self):
+        # Past its limit, the question is whether it still works or hangs (chat-on-steroids' "why is it stuck"):
+        # the line says when its output last changed, right after the limit, and keeps ticking on the live page.
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["job"]["started"] = NOW - 3 * 3600
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 720
+        status = lambda page: re.search(r'<span class="job-result-status sl">(.*?)</span></span>(?:</p>|<progress)',  # noqa: E731
+                                        page, re.S).group(1)
+        parts = status(dashboard.render(view, NOW, token=TOKEN)).split("<wbr>")
+        self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
+                         ["Past its 2 h limit", "·last output 12 min ago"])
+        self.assertIn('data-pre="last output "', parts[1])
+        self.assertIn(f'data-t="{NOW - 720}"', parts[1])
+        # a running job within its limit is not asked that: its line stays as it was
+        view["open"]["job"]["state"] = "running"
+        self.assertNotIn("last output", dashboard.render(view, NOW, token=TOKEN))
+
 
 class DashboardTest(unittest.TestCase):
     def test_detail_is_escaped(self):

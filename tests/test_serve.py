@@ -910,6 +910,24 @@ class ServeTest(unittest.TestCase):
         self.assertNotIn("x &lt;b&gt;</textarea>", page)
         self.assertNotIn('value="fine-job"', page)
 
+    def test_a_stalled_jobs_page_says_when_its_output_last_changed(self):
+        spec = contract.normalize({"id": "stuck-two", "kind": "local-shell", "brief": "Index.", "command": ["true"],
+                                   "timeout_min": 60})
+        with self.ledger() as led:
+            led.add_job(spec)
+            for step in ("ready", "launching", "running"):
+                led.set_state("stuck-two", step)
+            led.set_state("stuck-two", "stalled", "no finish after 60 min")
+        log = self.home / "jobs" / "stuck-two" / "out.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("indexing\n", encoding="utf-8")
+        then = time.time() - 600
+        os.utime(log, (then, then))
+        code, _, page = self.request("/job/stuck-two")
+        self.assertEqual(code, 200)
+        self.assertRegex(page, r'data-t="%d(\.\d+)?" data-tk="[^"]*" data-pre="last output ">last output 10 min ago'
+                         % int(then))
+
     def test_cancel_only_stops_a_job_that_has_not_started_or_has_stalled(self):
         self.local_job("queued-one", "ready")
         self.local_job("running-one", "running")

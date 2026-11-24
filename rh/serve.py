@@ -1107,6 +1107,11 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     self.page({"open": {"id": jid, "job": None}}, 404)
                     return
                 shown["log"], shown["log_cut"] = _log(cfg, jid)
+                if shown["job"]["state"] == "stalled":  # past its limit: is it still writing, or quiet?
+                    try:
+                        shown["log_at"] = (Path(cfg["home"]) / "jobs" / jid / "out.log").stat().st_mtime
+                    except OSError:
+                        pass
                 if shown["log_cut"] and shown["job"]["state"] not in (*dashboard._PRE, *dashboard._LIVE):
                     shown["log_total"] = _log_total(cfg, jid)  # a finished log no longer grows: name its length
                 if shown["job"]["kind"] == "gpt-chat":

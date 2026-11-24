@@ -2425,6 +2425,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if late:  # past its limit, said once, with the limit (the line under it is left out)
         limit = spec.get("timeout_min")
         status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word)]
+        if _number(opened.get("log_at")):  # whether it still works or hangs: when its output last changed
+            status_line.append(_when(opened["log_at"], now, "j:quiet", pre="last output "))
     elif swarming:
         pass  # how many runs have finished is said once, by the Swarm card's head beside its bar
     elif check_rows and not all(value is True for value in check_values) or len(check_values) < len(check_rows):

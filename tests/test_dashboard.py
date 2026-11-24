@@ -208,16 +208,24 @@ class ListsTest(unittest.TestCase):
         self.assertEqual(dashboard.answer_head(
             "I've read `rh/gitx.py`, its callers (`collect.py`, `cli.py`) and the tests. One line stands out.\n\n"
             "**Bug — `rh/gitx.py:59`, in `commit_branch`:**\n```python\ngit(worktree, \"checkout\")\n```\n"
-            "**Triggering state:** land."), "rh/gitx.py, in commit_branch")
+            "**Triggering state:** land."), "Bug in rh/gitx.py in commit_branch")
         self.assertEqual(dashboard.answer_head(
             "Read `rh/privacy.py` and `tests/test_privacy.py` fully, plus the hook.\n"
             "**Bug: `rh/privacy.py:82` — the leading `\\b` in `_ACCOUNT`.**\nInput: x"),
-            "the leading \\b in _ACCOUNT")
+            "Bug in rh/privacy.py: the leading \\b in _ACCOUNT")
         self.assertEqual(dashboard.answer_head(
             "Fair enough — the code path is clear from reading anyway.\n**Bug: `rh/collect.py:60`** — "
-            "`raw = rp.read_text()`"), "rh/collect.py")  # a line of code after the label is no name
+            "`raw = rp.read_text()`"), "Bug in rh/collect.py")  # a line of code after the path is no name
         self.assertEqual(dashboard.answer_head("```python\nx = 1\n```\nFixed the loop"), "Fixed the loop")
-        self.assertEqual(dashboard.answer_head("**Bug:** `rh/oslock.py:20` — `fd = os.open(path, 0)`"), "rh/oslock.py")
+        self.assertEqual(dashboard.answer_head("**Bug:** `rh/oslock.py:20` — `fd = os.open(path, 0)`"), "Bug in rh/oslock.py")
+        # critic r26 F1 (high): a name never starts with a path or a lowercase fragment
+        self.assertEqual(dashboard.answer_head("**Bug:** `rh/contract.py` lines 166–175 (the `after` loop in `preflight`)."),
+                         "Bug in rh/contract.py lines 166–175 (the after loop in preflight)")
+        self.assertEqual(dashboard.answer_head("the label is renamed"), "The label is renamed")
+        # a code name keeps its case: capitalising it would name something else
+        self.assertEqual(dashboard.answer_head("`_recent` counts each swarm once"), "_recent counts each swarm once")
+        self.assertEqual(dashboard.answer_head("`commit_branch` lands on a detached HEAD"),
+                         "commit_branch lands on a detached HEAD")
         # an imperative that starts with Read or Right is what was done, and still names the run
         self.assertEqual(dashboard.answer_head("**Read RESULT.json as bytes so non-UTF-8 files end failed.**"),
                          "Read RESULT.json as bytes so non-UTF-8 files end failed")
@@ -248,7 +256,7 @@ class ListsTest(unittest.TestCase):
         # and what is left starts as a sentence does (critic r10 F3)
         self.assertEqual(dashboard.answer_head("Done — renamed the label to Run"), "Renamed the label to Run")
         self.assertEqual(dashboard.answer_head("Done. · fixed it"), "Fixed it")
-        self.assertEqual(dashboard.answer_head("rh/serve.py — x"), "x")  # no status word stripped: left as written
+        self.assertEqual(dashboard.answer_head("rh/serve.py — x"), "X")  # the words after a lone path, in sentence case
         # a label is cut by the list's ellipsis, which would cut a line number to a false ':1…': the number goes whole
         self.assertEqual(dashboard.answer_head("The label is renamed at rh/dashboard.py:1623"),
                          "The label is renamed at rh/dashboard.py")

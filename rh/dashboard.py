@@ -702,6 +702,9 @@ _SELF_REMARK = re.compile(r"(I|We)\s+(chose|kept|picked|took|went with|combined)
 _PREAMBLE = re.compile(r"(?:I(?:['’]ve| have)?\s+(?:read|reviewed|looked|went|traced|checked|inspected)\b"
                        r"|Read\b.*\b(?:fully|in full|plus)\b"
                        r"|(?:Fair enough|Sure|Got it|Understood|Alright|Right)(?:[.,!:;]|\s+[—–-]))", re.I)
+_FINDING = ("bug", "issue", "problem", "finding", "cause", "root cause")  # a heading label for what a run found
+_PATH_LEAD = re.compile(r"[\w.-]*/[\w./-]+|[\w-]+\.(?:py|js|ts|css|html|md|toml|json|sh|txt|ya?ml)\b")
+_CODE = re.compile(r"[\w.\[\]]+\s*=[^=]|\w+\(")  # an assignment or a call: a line of code, not words
 _NO_FINAL = "Devin ended its turn without a final message"  # rh/agent.py writes it, in italics, as the answer
 
 
@@ -736,14 +739,25 @@ def answer_head(text):
             break
     head, *rest = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)
     # "rh/dashboard.py — X did Y": a lone label; the words name it. "Bug: x.py:82 — the \\b in X": two labels in a row
+    if rest and head.strip().lower() in _FINDING and _PATH_LEAD.match(rest[0].strip()):
+        # "Bug: x.py:82 — what" names the run "Bug in x.py: what", so no name starts with a path (critic r26 F1)
+        where, *what = re.split(r"\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)
+        where = re.sub(r",\s+in\s+", " in ", _LINE_NO.sub(r"\1", where).strip())
+        head = f"{head.strip().capitalize()} in {where}"
+        said = re.split(r"(?<=[.!?])\s", what[0].strip(), maxsplit=1)[0] if what else ""
+        if said and not _CODE.match(said):  # a line of code after the path is no name
+            head += ": " + said
+        rest = []
     # A line of code after the label ("rh/oslock.py:20 — fd = os.open(…)") is no name: the label stays.
     while rest and not re.search(r"\s", head.strip()):
         nxt, *after = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)
-        if re.match(r"[\w.\[\]]+\s*=[^=]|\w+\(", nxt.strip()):
+        if _CODE.match(nxt.strip()):
             break
         head, rest = nxt, after
     # a label gets cut by the list's ellipsis, which would leave a false ':1…' of a line number: the number goes whole
     line = _LINE_NO.sub(r"\1", head).strip().rstrip(".")
+    if re.match(r"[a-z]+(?:\s|$)", line):  # a plain lowercase word starts a sentence; a code name keeps its case
+        line = line[0].upper() + line[1:]
     if len(line) > 100:
         line = line[:98].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
     return line

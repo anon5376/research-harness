@@ -712,7 +712,15 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("settled today", text(top))
         settled = {**live_view(), "settled": [{"id": 90, "job": "live-job", "kind": "question", "body": "Which?",
                                                "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
-        self.assertIn("1 settled today", text(pane(inbox(settled))))
+        # r24 F3: 'N settled today' beside 'N need you' was a second counter in the bar; the Settled today section's
+        # head and its rows already say it. The bar keeps the one count it shares with the sidebar badge.
+        busy = pane(inbox(settled))
+        top = re.search(r'<span class="top-meta mono">.*?</span></span>', busy, re.S).group(0)
+        self.assertNotIn("settled", text(top))
+        self.assertIn("Settled today", text(busy))
+        # r24 F1: a settled row steps back as a unit: its reason and id lines sit a step under its grey title
+        for sel in (".ib.done .ib-s", ".ib.done .ib-id"):
+            self.assertIn("color: #737a8a", dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0])
 
     def test_the_swarm_line_opens_the_swarms_models(self):
         # r19 F3: in swarm mode the model picker stepped aside for grey text, so the one row of controls had a line

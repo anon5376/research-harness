@@ -2893,8 +2893,7 @@ def _inbox_pane(view, ctx, feedback):
     tabbar = f'<div class="tabs" role="tablist" aria-label="Filter">{"".join(tabs)}</div>' if tabbed else ""
     top = _top('<h1 tabindex="-1">Inbox</h1>'
                     f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>'
-                    + (f'<span class="settled">{_SEP_HTML}<span class="num">{len(settled)}</span> settled today</span>'
-                       if settled else "") + '</span>')
+                    '</span>')  # one count, the sidebar badge's: the Settled today section says the rest
     # alone, the group's name repeats the top bar's count: it stays for a screen reader only
     lists = (_section("ib-wait", "Needs you" if done else '<span class="vh">Needs you</span>',
                       _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',

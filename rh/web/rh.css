@@ -571,6 +571,9 @@ a.ib:hover { background: var(--surface); }
 .ib.done { padding-block: 8px; }
 .ib.done .ib-ic { color: var(--faint); opacity: .6; }
 .ib.done .ib-t { color: #8b92a3; font-weight: 400; }
+.ib.done .ib-s { color: #737a8a; }  /* reason and id a step under the title, never brighter than it */
+.ib.done .ib-id { color: #737a8a; }
+.ib.done .ib-s .mono { color: inherit; }
 .ibx[data-show] .ib-li:not(.settled) { display: none; }
 .ibx[data-show="question"] .ib-li[data-kind="question"], .ibx[data-show="launch"] .ib-li[data-kind="launch"],
 .ibx[data-show="patch"] .ib-li[data-kind="patch"], .ibx[data-show="failed"] .ib-li[data-kind="failed"],

@@ -1133,8 +1133,8 @@ class _Job:
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
         and the one control it offers. In Needs you the ring is amber, or red for a failure; a failure repeated by
         `runs` runs of its brief is one row, for its newest run, and one already run again draws quieter. In
-        Earlier the day's heading says when it ended, so the time cell stays empty and the row's title keeps the
-        full date and time."""
+        Earlier the day's heading says the date, so the time cell keeps the clock time, as every ended row does
+        (r35 F6), and the row's title keeps the full date and time."""
         ctx = self.ctx
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
@@ -1144,7 +1144,7 @@ class _Job:
         if earlier and since is not None:
             t = time.localtime(since)
             tip = f' title="{_text(when)}{_SEP}{t.tm_hour:02d}:{t.tm_min:02d}"'
-            when = ""
+            when = _hm(since)
         cells = (f'{_ring("env" if self.native else self.state, hue, self.kind, self.past)}'
                  f'<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'

@@ -3441,7 +3441,8 @@ class DashboardTest(unittest.TestCase):
     def test_the_earlier_group_heads_each_day_and_keeps_the_time_on_the_title(self):
         # A '24 Nov' down the sidebar's right edge on every Earlier row says nothing new: each day's first row
         # gets one quiet heading ('Yesterday' for the day before today's, the day itself for older ones), the
-        # time cell stays empty so the columns still line up, and the row's title keeps the full date and time.
+        # time cell keeps the clock time (r35 F6: an empty slot under a day broke the column every other ended
+        # group fills), and the row's title keeps the full date and time.
         # A row with no time takes no heading, and every other group's rows are as they were.
         view = live_view()
         midnight = dashboard._midnight(NOW)
@@ -3463,8 +3464,8 @@ class DashboardTest(unittest.TestCase):
         self.assertLess(at(f"<span>{old_day}</span>"), at('data-key="job:earlier-old"'))
         for jid, ts in stamps.items():
             row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', earlier, re.S).group(0)
-            self.assertIn('<span class="time mono num"></span>', row)
             t = time.localtime(ts)
+            self.assertIn(f'<span class="time mono num">{t.tm_hour:02d}:{t.tm_min:02d}</span>', row)
             title = f'{dashboard._clock(ts, NOW)} · {t.tm_hour:02d}:{t.tm_min:02d}'
             self.assertRegex(row, rf'<a class="item"[^>]*title="{re.escape(title)}"')
         # the days replace the group's own heading on screen, so it never reads 'Earlier' over 'Yesterday'

@@ -255,7 +255,7 @@ def _job_folder(cfg, spec):
 
 def _inbox(folder):
     """What the owner sent a job's agent and what became of each, oldest first, for its page: [{id, mode, text,
-    state}], mode steer or queue, state as the agent marked it (steered, queued, sent, removed, dropped) or waiting
+    state}], mode steer, queue or stop, state as the agent marked it (steered, queued, sent, stopped, removed, dropped) or waiting
     until it reads it. A row's edit or removal shows at once while its message still waits, and once the agent says
     it applied; one it dropped (the message had gone) changes nothing."""
     try:
@@ -276,7 +276,7 @@ def _inbox(folder):
         if not isinstance(m, dict) or not m.get("id"):
             continue
         mid, mode, text = str(m["id"]), m.get("mode"), str(m.get("text") or "")
-        if mode in ("steer", "queue"):
+        if mode in ("steer", "queue", "stop"):
             by[mid] = {"id": mid, "mode": mode, "text": text, "state": str(marks.get(mid) or "waiting")}
             out.append(by[mid])
             continue

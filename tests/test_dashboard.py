@@ -2448,6 +2448,15 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn('data-region="j-up-next"', page)
         self.assertIn('<span class="um-t">use tabs</span>', page)
         self.assertRegex(text(page), "the docs.{0,3}Not sent: the run ended first")
+        # a Stop reads where it was asked, as T3 Code's lifecycle rows do: requested until the agent acts, then done
+        done["open"]["inbox"].append({"id": "f" * 12, "mode": "stop", "text": "", "state": "stopped"})
+        said = re.search(r'data-region="j-said".*?</section>', pane(dashboard.render(done, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<p class="talk-stop">', said)
+        self.assertTrue(text(said).endswith("You stopped the run"), text(said))
+        view["open"]["inbox"] = [{"id": "f" * 12, "mode": "stop", "text": "", "state": "waiting"}]
+        said = re.search(r'data-region="j-said".*?</section>', pane(dashboard.render(view, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn("Interrupt requested", text(said))
+        self.assertNotIn("user-message", said)  # a Stop is not a message: no bubble, no Up next row
 
     def test_an_agents_answer_reads_as_its_message(self):
         # An answer that is not shown as a message from the agent that ran, or that loses its text, must fail.

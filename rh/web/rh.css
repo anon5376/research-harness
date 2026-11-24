@@ -2908,6 +2908,8 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
   color: var(--muted); font-size: 11px; }
 .user-message.sending, .talk-dropped .user-message { opacity: .6; }
 .um-note { margin: 4px 0 0; color: var(--faint); font-size: 12px; text-align: right; }
+.talk-stop { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
+.talk-stop .ic { color: var(--red); }
 @media (max-width: 600px) {
   .talk-hint, .un-editing, .un-steer span { display: none; }
   .up-next { margin: 0 8px; }

@@ -774,7 +774,7 @@ class ServeTest(unittest.TestCase):
         got = self.serve._inbox(folder)
         self.assertEqual([(m["text"], m["mode"], m["state"]) for m in got],
                          [("use tabs", "steer", "steered"), ("the docs, briefly", "queue", "queued"),
-                          ("the tests", "queue", "removed"), ("sent already", "queue", "sent")])
+                          ("the tests", "queue", "removed"), ("sent already", "queue", "sent"), ("", "stop", "waiting")])
         self.assertEqual(self.serve._inbox(self.home / "runs" / "none"), [])
 
     def test_the_owner_can_steer_queue_or_stop_a_running_claude_job(self):

@@ -1728,6 +1728,10 @@ def _talk_said(talk):
         state = m.get("state")
         if state == "removed" or (m.get("mode") == "queue" and state in ("waiting", "queued")):
             continue
+        if m.get("mode") == "stop":  # not a message: a line where it was asked, as T3 Code's lifecycle rows
+            word = "Interrupt requested" if state == "waiting" else "You stopped the run"
+            out.append(f'<p class="talk-stop">{_ic("square", True)}{word}</p>')
+            continue
         said = f'<span class="um-t">{_text(_reflow(str(m.get("text") or "")))}</span>'
         if state == "steered":
             tip = _STEER_TIPS.get(m.get("mode"), _STEER_TIPS["steer"])

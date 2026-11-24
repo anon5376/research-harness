@@ -1596,7 +1596,7 @@ def _item_row(ctx, item):
 
 def _earlier_rows(jobs, ctx):
     """The Earlier group's rows in their listed order: one quiet heading before the first row of each calendar
-    day — 'Yesterday' for the day before today's, else the day `_clock` writes — while every row's time cell
+    day — its date, as `_clock` writes a day — while every row's time cell
     stays empty and its title keeps the full date and time. A row with no time takes no heading."""
     out, day = [], None
     for job in jobs:
@@ -1611,11 +1611,11 @@ def _earlier_rows(jobs, ctx):
 
 
 def _day_of(timestamp, now):
-    """The calendar day a time falls on, as a key and as Earlier heads it: 'Yesterday', else '22 Nov'."""
-    t, y = time.localtime(timestamp), time.localtime(_midnight(now) - 43200)
-    key = f"{t.tm_year}-{t.tm_mon}-{t.tm_mday}"
-    yesterday = (t.tm_year, t.tm_yday) == (y.tm_year, y.tm_yday)
-    return key, "Yesterday" if yesterday else f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
+    """The calendar day a time falls on, as a key and as Earlier heads it: the date, '24 Nov', in the words the
+    rows' stamps use; 'Ended today' stays the one relative label (r34 F10: 'Yesterday' beside '24 Nov' stamps read
+    as two different days)."""
+    t = time.localtime(timestamp)
+    return f"{t.tm_year}-{t.tm_mon}-{t.tm_mday}", f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
 
 
 def _job_list(jobs, stop_rows, ctx):

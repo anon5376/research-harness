@@ -766,7 +766,7 @@ html[data-live-app] :is(.when, .mono:not(code, pre, input, textarea), .coord-lin
 .lane .group .head h3 { color: var(--faint); font-size: 12px; }
 .lane .day { padding: 4px 7px 2px; border: 0; color: var(--faint); font-size: 12px; }
 /* the days are Earlier's headings: its own 'Earlier' stays for a screen reader only, and the first day takes its
-   place, so the group never reads 'Earlier' over 'Yesterday' (r32 F6) */
+   place, so the group never reads 'Earlier' over '24 Nov' (r32 F6) */
 .lane .s-g-earlier:has(.day) > .head { position: absolute; width: 1px; height: 1px; overflow: hidden;
   clip-path: inset(50%); white-space: nowrap; }
 /* every day is a group: a group heading's 24px box, and a later day 16px down as the groups sit (r33 F3) */

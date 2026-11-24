@@ -3425,7 +3425,9 @@ class DashboardTest(unittest.TestCase):
         old_day = dashboard._clock(stamps["earlier-old"], NOW)
         secs = re.findall(r'<p class="p-sec">([^<]+)</p>', pal)
         self.assertNotIn("Earlier", secs)
-        self.assertEqual(secs[secs.index("Yesterday"):secs.index("Yesterday") + 2], ["Yesterday", old_day])
+        yday = dashboard._clock(stamps["earlier-am"], NOW)  # r34 F10: a date, as the row stamps say it
+        self.assertNotIn("Yesterday", secs)
+        self.assertEqual(secs[secs.index(yday):secs.index(yday) + 2], [yday, old_day])
         for jid, ts in stamps.items():
             row = re.search(rf'<a class="p-row[^"]*" role="option" data-id="{jid}".*?</a>', pal, re.S).group(0)
             t = time.localtime(ts)
@@ -3451,9 +3453,9 @@ class DashboardTest(unittest.TestCase):
         earlier = re.search(r'<section class="s-g-earlier group".*?</section>', page, re.S).group(0)
         old_day = dashboard._clock(stamps["earlier-old"], NOW)
         self.assertEqual(re.findall(r'<li class="day"[^>]*><span>([^<]+)</span></li>', earlier),
-                         ["Yesterday", old_day])
+                         [dashboard._clock(stamps["earlier-am"], NOW), old_day])  # r34 F10: dates, not 'Yesterday'
         at = lambda needle: earlier.index(needle)  # noqa: E731
-        self.assertLess(at("<span>Yesterday</span>"), at('data-key="job:earlier-am"'))
+        self.assertLess(at(f"<span>{dashboard._clock(stamps['earlier-am'], NOW)}</span>"), at('data-key="job:earlier-am"'))
         self.assertLess(at('data-key="job:earlier-am"'), at('data-key="job:earlier-pm"'))
         self.assertLess(at('data-key="job:earlier-pm"'), at(f"<span>{old_day}</span>"))
         self.assertLess(at(f"<span>{old_day}</span>"), at('data-key="job:earlier-old"'))

@@ -2973,18 +2973,25 @@ def _palette(jobs, ctx, keys):
     order = {"needs": 0, "live": 1, "next": 2, "ended": 3, "earlier": 4, "folded": 5}
     names = {"needs": "Needs you", "live": "Live", "next": "Up next", "ended": "Ended today", "earlier": "Earlier",
              "folded": "Earlier runs of what needs you"}
+    # a finished group whose rows all share one state word says it by its heading and rings, not on every row (r26 F3)
+    words = {}
+    for j in jobs:
+        words.setdefault(group(j), set()).add(j.word)
+    quiet = {g for g, w in words.items() if g in ("ended", "earlier") and len(w) == 1}
     rows, at = [], None
     for j in sorted(jobs, key=lambda j: order[group(j)]):
         if group(j) != at:
             at = group(j)
             rows.append(f'<p class="p-sec">{names[at]}</p>')
         hue = ("red" if j.state in _FAILED else "amber") if group(j) == "needs" else None
-        rows.append(f'<a class="p-row" role="option" data-id="{_text(j.id)}" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state, hue, j.kind, j.past)}</span>'
+        same = group(j) in quiet
+        one = " one" if same and not j.dup else ""  # name and time only: one line on a phone too
+        rows.append(f'<a class="p-row{one}" role="option" data-id="{_text(j.id)}" href="{_url(ctx, "/job/" + j.id)}" '
+                    f'data-nav><span class="p-ic">{_ring(j.state, hue, j.kind, j.past)}</span>'
                     # as the sidebar names it: when names clash the id leads and the shared name moves to the grey
                     # line, which leads with the state so states form one column
                     + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'
-                    f'<span class="p-s"><span class="p-w">{_text(j.word)}</span>'
+                    + '<span class="p-s">' + ("" if same else f'<span class="p-w">{_text(j.word)}</span>')
                     # the time the sidebar shows, so runs of one brief tell apart at a glance
                     + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
                     # no id or slug here (typing one still finds the row, by its data-id); only a clash names both

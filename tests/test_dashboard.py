@@ -3116,7 +3116,7 @@ console.log(JSON.stringify([
         needs = pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]
 
         def ring(jid, src=pal):
-            row = re.search(rf'<a class="p-row" role="option" data-id="{jid}"[^>]*>.*?</a>', src, re.S).group(0)
+            row = re.search(rf'<a class="p-row(?: one)?" role="option" data-id="{jid}"[^>]*>.*?</a>', src, re.S).group(0)
             return re.search(r'<span class="p-ic">(.*?)</span>', row, re.S).group(1)
         self.assertIn('class="st t-amber"', ring("live-job", needs))  # running, waiting on an answer
         self.assertIn('class="st t-red"', ring("broke-job", needs))  # a failure that needs you
@@ -4175,6 +4175,21 @@ console.log(JSON.stringify([
                      "overflow: hidden"):
             self.assertIn(rule, meta)
         self.assertNotIn("text-overflow", meta)
+
+    def test_a_palette_group_of_one_state_does_not_repeat_its_word(self):
+        # critic r26 F3: every Ended today row said 'Done ·' under a heading that already says they ended, beside the
+        # done ring, on two lines on a phone. A group whose rows all share one state word drops it and is one line.
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        done = re.search(r'<a class="p-row one" role="option" data-id="finished-job"[^>]*>.*?</a>', pal, re.S)
+        self.assertIsNotNone(done, "the Ended today row is a one-line row")
+        self.assertNotIn('class="p-w"', done.group(0))
+        # a group of mixed states keeps each word: it is what tells them apart
+        mixed = re.search(r'<a class="p-row" role="option" data-id="broke-job"[^>]*>.*?</a>', pal, re.S).group(0)
+        self.assertIn('<span class="p-w">Failed</span>', mixed)
+        phone = dashboard.STYLE.split("@media (max-width: 600px) {\n  .p-row {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".p-row.one { grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto;", phone)
+        self.assertIn(".p-row.one .p-s { grid-column: 3;", phone)
 
     def test_on_a_phone_the_clashing_names_brief_leaves_the_grey_line(self):
         # Two listed jobs that share a name tell their palette rows apart with the shared name on the grey line,

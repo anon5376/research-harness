@@ -1647,6 +1647,10 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
   .p-row .p-ic { grid-row: 1 / span 2; }
   .p-row .p-s { grid-column: 2; justify-content: flex-start; }
   .p-row .p-a { display: none; }
+  /* A row of a one-state group carries only its time: name left, time right, one line. */
+  .p-row.one { grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto; min-height: 44px; }
+  .p-row.one .p-ic { grid-row: auto; }
+  .p-row.one .p-s { grid-column: 3; }
 }
 /* Text scrolled up out of a job's thread dissolves under its head instead of being cut through its letters. */
 .jd-scroll.scrolled { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }

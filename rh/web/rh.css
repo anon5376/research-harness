@@ -2253,7 +2253,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .c-strip.has-repo .compose-title { letter-spacing: -.01em; }
 /* The title is the folder a job on this machine works in: the name and a quiet chevron that turns down while its menu is
    open; the menu drops centred under it on the popovers' surface, rows as the model picker's. */
-.compose-intro { position: relative; }
+.folder-pick { position: relative; display: grid; justify-items: center; }
 .folder-btn { display: inline-flex; align-items: center; gap: 8px; max-width: min(560px, 90vw); padding: 2px 6px 2px 12px;
   border: 0; border-radius: 12px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit;
   text-shadow: inherit; cursor: pointer; transition: background .15s var(--ease); }

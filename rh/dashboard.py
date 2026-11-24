@@ -1997,8 +1997,9 @@ def _folder_title(ctx, current):
         f'<span class="fm-n">{_text(fname)}</span>'
         f'<span class="fm-p">{_text("~" + path[len(home):] if path.startswith(home + "/") else path)}</span>'
         f'{_ic("check", True)}</button>' for path, fname in ctx["folders"])
-    return (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(name)}">'
-            f'<button type="button" class="folder-btn" aria-haspopup="menu" aria-expanded="false" '
+    # the title and its menu share one box the title's size, so the menu opens off the title on any layout
+    return (f'<div class="folder-pick"><h1 class="compose-title" id="compose-title" tabindex="-1" '
+            f'data-repo="{_text(name)}"><button type="button" class="folder-btn" aria-haspopup="menu" aria-expanded="false" '
             f'aria-controls="folder-menu" title="{_text(current)}" data-home="{_text(ctx["repo_path"])}">'
             f'<span class="fb-name">{_text(name)}</span>'
             f'{_ic("chev", True)}</button><span class="ct-research">What should we find out?</span></h1>'
@@ -2008,7 +2009,7 @@ def _folder_title(ctx, current):
             '<span class="fm-n">Choose folder…</span></button>'
             '<label class="fm-path" hidden><input type="text" class="mono" aria-label="Path to a git folder" '
             'placeholder="~/Projects/app" autocomplete="off" spellcheck="false">'
-            '</label></div>')
+            '</label></div></div>')
 
 
 def _compose_strip(ctx, view, focus=False):

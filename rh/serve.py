@@ -1135,6 +1135,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                                 except (OSError, ValueError):
                                     continue
                                 shown[key] = value.get("kept") if key == "swarm_kept" and isinstance(value, dict) else value
+                                if key == "swarm_kept" and isinstance(value, dict):
+                                    check = value.get("check")
+                                    if isinstance(check, str) and check:
+                                        shown["swarm_final"] = check  # the kept tree's own check, when it ran
                             skip += (name,)
                     shown["files"], shown["peek"] = _files(root, skip=skip)
                 if shown["job"].get("spec", {}).get("after_any"):  # a swarm judge: each run's diff size

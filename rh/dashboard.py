@@ -2267,12 +2267,13 @@ def _swarm_again(ctx, runs):
             '<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button></form>')
 
 
-def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
+def _swarm_card(ctx, runs, checks=None, kept=None, stats=None, final=None):
     """A swarm's runs on its judge's page: each run's model, state, time, diff size, check verdict and first
-    answer line, linked to its page."""
+    answer line, linked to its page; a judge that combined them gets the kept work's check verdict in the head."""
     now, items = ctx["now"], []
     checks = checks if isinstance(checks, dict) else {}
     stats = stats if isinstance(stats, dict) else {}
+    final = final if isinstance(final, str) else ""
     for rid in runs:
         m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
         st = ctx["states"].get(rid) or "waiting"
@@ -2310,8 +2311,12 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
     if ended < n:  # while a run still works, the head says how far along the swarm is, and draws it
         side = (f'{ended} of {n} finished<span class="sw-bar" role="progressbar" aria-label="Runs finished" aria-valuemin="0" '
                 f'aria-valuemax="{n}" aria-valuenow="{ended}" style="--p:{ended / n:.0%}"></span>')
-    else:  # ended: the rows below show how many; the head says only that the judge combined them, when it did
+    else:  # ended: the rows below show how many; the head says the judge combined them, when it did, and the kept work's check
         side = "Combined" if kept == "combined" else ""
+        if kept == "combined" and final:  # the combined tree's check, as a row wears it
+            ok = final == "passed"
+            side += _SEP_HTML + (f'<span class="sw-c{"" if ok else " bad"}">'
+                                 f'{"Check passed" if ok else "Check failed"}</span>')
         again = _swarm_again(ctx, runs) if ctx["live"] else ""
     body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{side}</span>{again}</div>'
             f'<ul class="sw-runs">{"".join(items)}</ul>')
@@ -2467,7 +2472,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else "job-result"))
     if runs:
         work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept"),
-                                opened.get("swarm_stats")))
+                                opened.get("swarm_stats"), final=opened.get("swarm_final")))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     chat_dock = ""

@@ -853,6 +853,37 @@ class ServeTest(unittest.TestCase):
                       rows["w1"])
         self.assertNotIn("sw-d", rows["w2"])
 
+    def test_a_swarms_judge_page_carries_the_kept_results_check(self):
+        # A judge's swarm-result.json can carry the harness's check on what it kept: when the judge combined runs,
+        # the page data's swarm_final holds it and the Swarm card's head reads 'Combined · Check passed/failed'.
+        for jid, after, after_any in (("swarm-fix.w1", [], False), ("swarm-fix.w2", [], False),
+                                      ("swarm-fix.best", ["swarm-fix.w1", "swarm-fix.w2"], True)):
+            spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Fix the typo.",
+                                       "command": ["true"], "after": after, "after_any": after_any})
+            with self.ledger() as led:
+                led.add_job(spec)
+                for step in ("ready", "launching", "running"):
+                    led.set_state(jid, step)
+                led.finish(jid, "done", {"route": "local-shell", "checks": [], "model_requested": None,
+                                         "model_served": None, "ended": time.time(), "detail": "ok"})
+        run = self.home / "runs" / "swarm-fix.best"
+        run.mkdir(parents=True)
+        head = lambda page: re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>',  # noqa: E731
+                                      page, re.S).group(1)
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "combined", "check": "passed"}),
+                                               encoding="utf-8")
+        code, _, page = self.request("/job/swarm-fix.best")
+        self.assertEqual(code, 200)
+        self.assertIn("Combined" + dashboard._SEP_HTML + '<span class="sw-c">Check passed</span>', head(page))
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "combined", "check": "failed: exit 1"}),
+                                               encoding="utf-8")
+        page = self.request("/job/swarm-fix.best")[2]
+        self.assertIn('<span class="sw-c bad">Check failed</span>', head(page))
+        # a result the harness never checked leaves the head's 'Combined' to say it alone
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "combined"}), encoding="utf-8")
+        page = self.request("/job/swarm-fix.best")[2]
+        self.assertNotIn('class="sw-c', head(page))
+
     def test_refused_new_job_returns_to_the_form_with_the_draft(self):
         cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},
                  {"id": "bad-quote", "kind": "local-shell", "brief": "x <b>", "command": "echo 'open"},

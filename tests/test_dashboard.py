@@ -626,6 +626,35 @@ class ListsTest(unittest.TestCase):
         self.assertNotIn("sw-again", card(page))
         self.assertNotIn('data-k="w"', page)
 
+    def test_a_combined_swarms_head_carries_the_final_trees_check(self):
+        # When the judge combined its runs there is no one run's row to carry the check the harness ran on the
+        # combined tree, so the head's 'Combined' does, in the same chip a row uses; a result the harness never
+        # checked leaves 'Combined' to say it alone.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix", "timeout_min": 90}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                            "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "fix.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"]["swarm_kept"] = "combined"
+        head = lambda page: re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>',  # noqa: E731
+                                      page, re.S).group(1)
+        done["open"]["swarm_final"] = "passed"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn("Combined" + dashboard._SEP_HTML + '<span class="sw-c">Check passed</span>', head(page))
+        done["open"]["swarm_final"] = "failed: exit 1"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn("Combined" + dashboard._SEP_HTML + '<span class="sw-c bad">Check failed</span>', head(page))
+        del done["open"]["swarm_final"]
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn('<span class="lines">Combined</span>', head(page))
+        self.assertNotIn('class="sw-c', head(page))
+
     def test_an_answers_attachments_open_from_one_side(self):
         # Under an answer the file row opened from a trailing 'Preview ›' and the folded Output below it from a
         # leading '›', 24px apart, so they read as unrelated (critic r10 F6). Folded, Output is a row like the file's,

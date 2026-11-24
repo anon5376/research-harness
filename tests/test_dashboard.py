@@ -878,11 +878,13 @@ class ListsTest(unittest.TestCase):
         self.assertIn("margin: 0 -8px", row)  # the hover fill keeps an inset; the text sits on the sheet's edge
         self.assertIn("line-height: 16px", rule(".settings .swarm-g"))
         self.assertIn("padding: 6px 0 2px", rule(".settings .swarm-g"))
-        # the check row under the ticks is plain too, as the Judge row above them is: the section has no inner boxes
+        # the Judge and 'Check each run' rows under the ticks are plain too, on the same sheet edge: the section has
+        # no inner boxes and no hairline (that line is panel chrome, kept for the composer's popover)
         check = rule(".settings .swarm-opts")
         for spec in ("padding: 0", "border: 0", "background: none"):
             self.assertIn(spec, check)
         self.assertIn("padding: 0", rule(".settings .swarm-opts > .swarm-judge"))
+        self.assertIn("border-top: 0", rule(".settings .swarm-opts > .swarm-judge + .swarm-judge"))
         self.assertIn("padding-left: 0", rule(".settings .swarm-opts + .set-hint"))
         legend = rule(".settings fieldset:has(.tint-choices) > legend")
         for spec in ("float: left", "line-height: 24px"):
@@ -955,31 +957,40 @@ class ListsTest(unittest.TestCase):
 
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
-        # Judge and Check each run as two loose rows under the model ticks, and a hint that starts at the label's
-        # edge instead of under the field it explains, must fail: they sit in a second panel like the models',
-        # one 44px row each with a hairline between, and the hint drops 8px under the panel, indented to the
-        # rows' text: panel 1px border + 4px padding + the rows' 10px, the edge the model rows' group labels use.
+        # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the
+        # composer's line is 'SWE-2 Max, Flash · judge: Max': the sheet must follow that order — the tick groups,
+        # then one group holding the Judge row and the 'Check each run' row, then the hint. A Judge above the ticks,
+        # two .swarm-opts groups, or a check row before the judge must fail.
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
                                                           "choices": ["swe-2-max", "swe-2-high"]}}, NOW, token=TOKEN)
-        # r20 F1: under a long tick list the Judge sat below the modal's fold, so the swarm's second choice was not
-        # seen. The Judge is its own one-row panel under the description, above the ticks; the check stays under
-        # them with its hint.
-        groups = re.findall(r'<div class="swarm-opts">(.*?)</div>', page, re.S)
-        self.assertEqual(len(groups), 2)
-        self.assertIn('name="judge"', groups[0])
-        self.assertNotIn('name="check"', groups[0])
-        self.assertIn('name="check"', groups[1])
         form = re.search(r'<form action="/settings/swarm".*?</form>', page, re.S).group(0)
-        self.assertLess(form.index('name="judge"'), form.index('class="swarm-models"'))
-        self.assertLess(form.index('class="swarm-models"'), form.index('name="check"'))
-        self.assertIn("margin-bottom: 12px", rule0(".swarm-opts:has(+ .swarm-models)"))
-        # r21 F7: the Judge's one row boxed in its own card read as a second list beside the ticks; it is a plain 40px
-        # row on the sheet's text edge, so the section has one container
-        judge = rule0(".swarm-opts:has(+ .swarm-models)")
-        for spec in ("padding: 0", "border: 0", "background: none"):
-            self.assertIn(spec, judge)
-        for spec in ("min-height: 40px", "padding: 0"):
-            self.assertIn(spec, rule0(".swarm-opts:has(+ .swarm-models) > .swarm-judge"))
+        self.assertLess(form.index('class="swarm-models"'), form.index('name="judge"'))
+        self.assertLess(form.index('name="judge"'), form.index('name="check"'))
+        groups = re.findall(r'<div class="swarm-opts">(.*?)</div>', form, re.S)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(groups[0].count('class="swarm-judge"'), 2)
+        for name in ('name="judge"', 'name="check"'):
+            self.assertIn(name, groups[0])
+        # the group sits on the sheet like the ticks — no inner boxes — and its rows keep the sheet's text edge:
+        # 24px under the last tick row, the check row 16px under the Judge, and no hairline, which is panel chrome
+        self.assertIn("margin-bottom: 0", rule0(".settings .swarm-models"))  # the 24px is the gap, not 24 + 14
+        opts = rule0(".settings .swarm-opts")
+        for spec in ("margin-top: 24px", "padding: 0", "border: 0", "background: none"):
+            self.assertIn(spec, opts)
+        self.assertIn("padding: 0", rule0(".settings .swarm-opts > .swarm-judge"))
+        gap = rule0(".settings .swarm-opts > .swarm-judge + .swarm-judge")
+        for spec in ("margin-top: 16px", "border-top: 0"):
+            self.assertIn(spec, gap)
+        # both controls are the same 60% column, so their left edges line up
+        self.assertIn("width: 60%", rule0(".swarm-sel"))
+        self.assertIn("width: 60%", rule0('.swarm-judge input[type="text"]'))
+        # the composer's popover keeps its own order and box: its ticks, then the Judge row in .swarm-opts in-pop
+        pop = re.search(r'<div class="swarm-pop">(.*?)</div></details>', page, re.S).group(1)
+        self.assertLess(pop.index('class="swarm-models"'), pop.index('class="swarm-opts in-pop"'))
+        self.assertIn('name="judge"', pop)
+        self.assertNotIn('name="check"', pop)
+        # the rules that pinned the Judge above the ticks are gone
+        self.assertNotIn("swarm-opts:has(+ .swarm-models)", dashboard.STYLE)
         # the sheet's body ends 24px under its last row and fades at its foot while more lies below
         self.assertIn("padding: 0 24px 24px", rule0(".settings-body"))
         self.assertIn("transparent", rule0(".settings-body.more"))
@@ -988,17 +999,18 @@ class ListsTest(unittest.TestCase):
         # r20 F6: the sheet's title is a level above its 13px section heads, sized as the Inbox detail title
         self.assertIn("font-size: 17px", rule0(".settings h2"))
         self.assertIn('</div><p class="set-hint">The harness runs it', page)
-        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
-        panel = rule(".swarm-opts")
+        # the popover's .swarm-opts keeps the panel chrome: a bordered box of 44px rows split by a hairline, the
+        # hint 8px under it at 12px #9aa0ad indented to the rows' text
+        panel = rule0(".swarm-opts")
         for spec in ("border-radius: 10px", "background: rgb(255 255 255 / .03)",
                      "border: 1px solid rgb(255 255 255 / .06)"):
             self.assertIn(spec, panel)
         for spec in ("min-height: 44px", "padding: 0 10px"):
-            self.assertIn(spec, rule(".swarm-opts > .swarm-judge"))
+            self.assertIn(spec, rule0(".swarm-opts > .swarm-judge"))
         self.assertIn("border-top: 1px solid rgb(255 255 255 / .06)",
-                      rule(".swarm-opts > .swarm-judge + .swarm-judge"))
+                      rule0(".swarm-opts > .swarm-judge + .swarm-judge"))
         for spec in ("margin-top: 8px", "font-size: 12px", "color: #9aa0ad", "padding-left: 15px"):
-            self.assertIn(spec, rule(".swarm-opts + .set-hint"))
+            self.assertIn(spec, rule0(".swarm-opts + .set-hint"))
         self.assertNotIn(".settings .swarm-judge + .swarm-judge", dashboard.STYLE)
         self.assertNotIn(".swarm-judge + .set-hint", dashboard.STYLE)
 

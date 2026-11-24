@@ -1557,7 +1557,7 @@ class ListsTest(unittest.TestCase):
         view["fails"] = {r["id"]: ["make test", 2, ""] for r in view["recent"] if r["state"] in dashboard._FAILED}
         self.assertTrue(view["fails"])
         detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
-        self.assertIn('<p class="fail-c"><code>make test</code><span class="exit mono">exit 2</span></p>', detail)
+        self.assertIn('<p class="fail-c"><code>make test</code></p>', detail)
         self.assertIn("The command exited with code 2", text(detail))
         # without a recorded check the one-line headline stays
         # an agent run names its CLI and model, never the agent.py line that carries the whole brief
@@ -4481,8 +4481,8 @@ console.log(JSON.stringify({
         fail = re.search(r'<section class="s-j-fail".*?</section>', body, re.S).group(0)
         self.assertLess(body.index('class="s-j-fail"'), body.index('class="s-j-brief"'))
         words = lambda h: html.unescape(re.sub(r"<[^>]+>", " ", h)).split()  # noqa: E731
-        # the sentence the Inbox uses too, then the command and its exit chip
-        self.assertEqual(words(fail), ["The", "command", "exited", "with", "code", "2", "sh", "run.sh", "exit", "2"])
+        # the sentence the Inbox uses too, then the command — the sentence already says the code, no chip repeats it
+        self.assertEqual(words(fail), ["The", "command", "exited", "with", "code", "2", "sh", "run.sh"])
         broke["open"]["receipt"]["checks"] = [{"cmd": "sh run.sh", "exit": 0}, {"cmd": "notes.md exists", "exit": 1}]
         fail = re.search(r'<section class="s-j-fail".*?</section>', dashboard.render(broke, NOW, token=TOKEN), re.S)
         self.assertEqual(words(fail.group(0))[:4], ["The", "done-when", "check", "failed:"])
@@ -4520,6 +4520,20 @@ console.log(JSON.stringify({
         self.assertNotIn('data-region="j-output"', body)
         self.assertEqual(body.count("ls: docs/: No such file or directory"), 1)
         self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
+
+    def test_the_fail_banner_drops_the_exit_chip_the_sentence_already_says(self):
+        # "The command exited with code 2" already says the code, so the red chip under it was a second label
+        # with nothing new; a sentence that says something else keeps the chip as the code's one place.
+        plain = dashboard._fail_banner("failed", {}, ("make test", 2))
+        self.assertIn("The command exited with code 2", text(plain))
+        self.assertIn('<p class="fail-c"><code>make test</code></p>', plain)
+        self.assertNotIn('class="exit', plain)
+        check = dashboard._fail_banner("failed", {"accept": "pytest -q"}, ("pytest -q", 1))
+        self.assertIn("The done-when check failed:", text(check))
+        self.assertIn('<span class="exit mono">exit 1</span>', check)
+        found = dashboard._fail_banner("failed", {}, ("test -s notes.md", 1))
+        self.assertIn("The command failed: notes.md is missing or empty", text(found))
+        self.assertIn('<span class="exit mono">exit 1</span>', found)
 
     def test_a_log_card_counts_only_the_lines_kept_out_of_view(self):
         # critic r26: 'Where it stopped · 2 lines' over the two lines it shows counts nothing hidden. The count

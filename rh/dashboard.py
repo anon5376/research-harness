@@ -2462,11 +2462,12 @@ def _fail_banner(state, spec, bad):
     """What failed, as the job page and the Inbox both say it: the sentence, then the command with its exit code."""
     what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"
     found = _found(bad[0], bad[1])
-    # an exit code says itself: "The command exited with code 1"
-    sentence = (f"{what} exited with code {bad[1]}" if what == "The command" and found == f"it exited with code {bad[1]}"
-                else f"{what} failed: {found}")
+    # an exit code says itself: "The command exited with code 1" — then the chip would only repeat it
+    coded = what == "The command" and found == f"it exited with code {bad[1]}"
+    sentence = f"{what} exited with code {bad[1]}" if coded else f"{what} failed: {found}"
+    chip = "" if coded else f'<span class="exit mono">exit {_text(bad[1])}</span>'
     return (f'<p class="fail-k">{_ring(state)}{_text(sentence)}</p>'
-            f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
+            f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code>{chip}</p>')
 
 
 def _swarm_line(names, judge=""):

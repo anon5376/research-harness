@@ -993,7 +993,7 @@ class ListsTest(unittest.TestCase):
     def test_settings_shows_every_swarm_group_when_it_opens(self):
         # r23 F3: a fourth tick group still started at the sheet's foot, and the ticks sat in a filled, bordered box
         # inside the sheet. In Settings the ticks sit on the sheet (no box), rows are 28px, group heads 24px. The
-        # composer's popover keeps its own box.
+        # composer's popover strips the box too.
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         box = rule(".settings .swarm-models")
         for spec in ("padding: 0", "border: 0", "background: none"):
@@ -1238,7 +1238,7 @@ class ListsTest(unittest.TestCase):
         # both controls are the same 60% column, so their left edges line up
         self.assertIn("width: 60%", rule0(".swarm-sel"))
         self.assertIn("width: 60%", rule0('.swarm-judge input[type="text"]'))
-        # the composer's popover keeps its own order and box: its ticks, then the Judge row in .swarm-opts in-pop
+        # the composer's popover keeps its own order: its ticks, then the Judge row in .swarm-opts in-pop
         pop = re.search(r'<div class="swarm-pop"[^>]*>(.*?)</div></details>', page, re.S).group(1)
         self.assertLess(pop.index('class="swarm-models"'), pop.index('class="swarm-opts in-pop"'))
         self.assertIn('name="judge"', pop)
@@ -3399,6 +3399,31 @@ console.log(JSON.stringify([
         self.assertIn("if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;", dashboard.SCRIPT)
         self.assertIn("bottom: calc(100% + 8px)", rule(".swarm-pop.up"))
         self.assertIn("top: auto", rule(".swarm-pop.up"))
+
+    def test_the_swarm_popover_drops_the_tick_lists_box_and_fades_its_foot(self):
+        # The /swarm popover drew the tick list as a second box inside its own, and a popover capped to the
+        # window cut its last row mid-glyph. The ticks sit on the panel now, stripped the way Settings strips
+        # the same list, and the scroll area fades its last 24px only while more lies below — app.js's place()
+        # and scroll listener wear the class on and off.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        box = rule(".swarm-pop .swarm-models")
+        for spec in ("padding: 0", "border: 0", "border-radius: 0", "background: none"):
+            self.assertIn(spec, box)
+        # the rows keep their padding, so the boxes stay on the team radios' edge: the 4px the list's own
+        # inset used to lend moves onto the list as a margin. The teams' hairline stays the one divider.
+        self.assertIn("margin-left: 4px", box)
+        self.assertIn("border-bottom: 1px solid var(--rule)", rule(".swarm-teams"))
+        # the rows fade into the panel's own fill: a mask faded the opaque panel too, and the composer showed
+        # through its foot
+        fade = rule(".swarm-pop.more::after")
+        for spec in ("position: sticky", "height: 24px", "linear-gradient(rgb(19 24 38 / 0), rgb(19 24 38))"):
+            self.assertIn(spec, fade)
+        self.assertNotIn("mask-image", rule(".swarm-pop"))
+        self.assertNotIn("\n.swarm-pop.more {", dashboard.STYLE)
+        self.assertIn("bubble.classList.toggle('more', bubble.scrollTop + bubble.clientHeight "
+                      "< bubble.scrollHeight - 2)", dashboard.SCRIPT)
+        self.assertIn("if (body.matches('.swarm-pop')) fadeLong(body);", dashboard.SCRIPT)
+        self.assertIn("t.classList.contains('swarm-pop')) fadeLong(t);", dashboard.SCRIPT)
 
     def test_test_when_done_wears_a_flask_not_a_tick(self):
         # The row's value often reads "Don't test", and everywhere else a tick means done or passed. The row

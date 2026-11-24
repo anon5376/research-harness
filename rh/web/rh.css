@@ -2119,7 +2119,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .swarm-opts > .swarm-judge + .swarm-judge { border-top: 1px solid rgb(255 255 255 / .06); }
 .swarm-g { margin: 0; padding: 8px 10px 4px; font-size: 11px; color: var(--faint); }
 /* In Settings the ticks sit on the sheet, not in a box inside it, at 28px rows under 24px heads, so every group shows
-   when the sheet opens; the composer's popover keeps its box. The Colour swatches take their own line under the
+   when the sheet opens; the composer's popover strips the box too. The Colour swatches take their own line under the
    legend, as the wallpapers do. */
 .settings .swarm-models { margin-bottom: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .settings .swarm-m { min-height: 28px; gap: 8px; padding: 0 8px; margin: 0 -8px; border-radius: 6px; }
@@ -2197,11 +2197,19 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
      so any see-through let the title behind it show crisp through the list */
   background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38);
   box-shadow: 0 16px 40px rgb(0 0 0 / .55); color: var(--text); font-size: 13px; }
-.swarm-pop > .swarm-models { display: block; }
+/* The ticks sit on the popover's panel as they do on Settings' sheet — no box inside the box — with the rows'
+   own padding kept, so the 4px the list's inset used to lend its rows moves onto the list and the boxes stay
+   on the team radios' edge. */
+.swarm-pop .swarm-models { margin-left: 4px; padding: 0; border: 0; border-radius: 0; background: none; }
 /* app.js's place() caps it to what shows of the window and opens it over the line when the room is above */
 .swarm-pop.up { top: auto; bottom: calc(100% + 8px); }
 .swarm-pop.right { left: auto; right: -8px; }
 .swarm-pop > .swarm-opts { display: block; margin-top: 6px; }
+/* While it can still scroll down its foot fades instead of cutting a row mid-glyph; place() and the scroll
+   listener wear the class only while more lies below. The rows fade into the panel's own fill, never to
+   transparent: a mask would fade the opaque panel too and show the composer through it. */
+.swarm-pop.more::after { content: ""; position: sticky; bottom: -6px; display: block; height: 24px; margin: -24px -6px -6px;
+  background: linear-gradient(rgb(19 24 38 / 0), rgb(19 24 38)); pointer-events: none; }
 @media (prefers-reduced-motion: reduce) { .swarm-pick > summary { transition: none; } }
 /* On a phone the models line is a glyph-only ghost button beside the chip — its words stay hidden, the chevron
    stays — with a 44px touch area drawn past its edges; the popover is a sheet above the composer, which sits at

@@ -1279,6 +1279,7 @@ function place(d) {
   const body = $(':scope > .opts-body, :scope > .swarm-pop', d), s = $('summary', d);
   if (!body || !s) return;
   body.classList.remove('up', 'right'); body.style.maxHeight = ''; body.style.top = ''; body.style.bottom = '';
+  if (body.matches('.swarm-pop')) fadeLong(body);  // a phone's sheet keeps its css cap, so it reads once, here
   if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;
   let room = { top: 0, right: innerWidth, bottom: innerHeight, left: 0 };
   for (let el = d.parentElement; el && el !== document.body; el = el.parentElement) {
@@ -1295,6 +1296,7 @@ function place(d) {
                         bottom: Math.max(at.bottom, glass.bottom + 2)} : at;
   const p = placePop(from, room, body.offsetWidth, body.scrollHeight, 6);
   body.classList.toggle('up', p.up); body.classList.toggle('right', p.right); body.style.maxHeight = p.max + 'px';
+  if (body.matches('.swarm-pop')) fadeLong(body);  // and again against the cap just set
   if (glass && cb) {  // top and bottom count from the positioned box's padding edge, inside its border
     const c = cb.getBoundingClientRect(), inTop = c.top + cb.clientTop, inBottom = inTop + cb.clientHeight;
     if (p.up) body.style.bottom = (inBottom - glass.top + 8) + 'px'; else body.style.top = (glass.bottom + 8 - inTop) + 'px';
@@ -1996,6 +1998,7 @@ document.addEventListener('scroll', e => {
   else if (t.matches('pre.log[data-follow]')) fadeTop(t);
   else if (t.classList.contains('jd-scroll')) t.classList.toggle('scrolled', t.scrollTop > 2);
   else if (t.classList.contains('settings-body')) sheetEdges(t);
+  else if (t.classList.contains('swarm-pop')) fadeLong(t);
 }, true);
 // the settings sheet's body fades under its head once scrolled, and at its foot while more lies below
 function sheetEdges(t) {

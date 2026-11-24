@@ -148,7 +148,8 @@ function sync() {
       h('input', {type: 'radio', name: 'active', value: id, form, checked: id === active, 'data-says': says}),
       h('span', {class: 'swarm-team-n'}, name), h('span', {class: 'swarm-team-d'}, sub))), edit || '');
     const pop = pick.closest('.swarm-pop');
-    if (pop) pop.dataset.team = active === 'quick' ? 'quick' : 'preset';
+    if (pop) { pop.dataset.team = active === 'quick' ? 'quick' : 'preset';
+               pop.classList.toggle('more', pop.scrollTop + pop.clientHeight < pop.scrollHeight - 2); }
     const says = $('[data-swarm-says]');
     const chosen = rows.find(r => r[0] === active);
     if (says && chosen && active !== 'quick') line(says, chosen[3]);
@@ -164,7 +165,8 @@ document.addEventListener('change', async e => {
   const r = await fetch(form.action, {method: 'POST', body}).catch(() => null);
   if (!r || !r.ok) { t.checked = false; return; }
   const pop = t.closest('.swarm-pop');
-  if (pop) pop.dataset.team = t.value === 'quick' ? 'quick' : 'preset';
+  if (pop) { pop.dataset.team = t.value === 'quick' ? 'quick' : 'preset';
+             pop.classList.toggle('more', pop.scrollTop + pop.clientHeight < pop.scrollHeight - 2); }
   const says = $('[data-swarm-says]');
   if (says) line(says, t.dataset.says || '');
   if (data()) { T.data.presets.active = t.value; for (const b of $$('[data-team-name]'))

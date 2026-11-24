@@ -36,20 +36,21 @@ def save_reply(cfg, led, job_id: str, text: str, now: float) -> None:
         raise ValueError("a reply must not be empty")
     dest = reply_path(cfg, job_id)
     dest.parent.mkdir(parents=True, exist_ok=True)
+    detail = re.split(r"(?<=[.!?])\s+", text.strip(), maxsplit=1)[0][:200]
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", newline="", dir=dest.parent,
                                          prefix=".reply-", suffix=".tmp", delete=False) as file:
             tmp = Path(file.name)
             file.write(text)
-        tmp.replace(dest)
+        # The reply takes its place inside the finishing transaction: a second caller that also saw the job waiting
+        # fails on the state change before it gets here, and a failed rename leaves the job waiting.
+        led.finish(job_id, "done", {"route": "chat", "checks": [],
+                   "model_requested": job["spec"]["model"]["requested"], "model_served": None,
+                   "ended": now, "detail": detail}, also=lambda: tmp.replace(dest))
     finally:
         if tmp is not None:
             tmp.unlink(missing_ok=True)
-    detail = re.split(r"(?<=[.!?])\s+", text.strip(), maxsplit=1)[0][:200]
-    led.finish(job_id, "done", {"route": "chat", "checks": [],
-               "model_requested": job["spec"]["model"]["requested"], "model_served": None,
-               "ended": now, "detail": detail})
     led.event("reply", job_id, chars=len(text))
     for item in led.inbox():
         if item["kind"] == "chat" and item["job"] == job_id:

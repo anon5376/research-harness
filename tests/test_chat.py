@@ -13,7 +13,7 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 
 from rh import chat, cli, config, contract, serve
-from rh.ledger import Ledger
+from rh.ledger import Ledger, LedgerError
 from rh.supervisor import Supervisor
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -214,6 +214,25 @@ class ChatTest(unittest.TestCase):
                 chat.save_reply(self.cfg, self.led, "chat-job", "Complete reply.", now=123.0)
         self.assertEqual(self.snapshot("chat-job"), before)
         self.assertEqual(list(chat.reply_path(self.cfg, "chat-job").parent.iterdir()), [])
+
+    def test_a_second_reply_racing_the_first_never_replaces_it(self):
+        # Two callers both saw the job waiting; the first saved its reply. The second must fail without touching it.
+        self.handoff()
+        waiting = self.led.job("chat-job")
+        chat.save_reply(self.cfg, self.led, "chat-job", "First answer.", now=123.0)
+
+        class Stale:  # the ledger as the second caller saw it, before the first finished
+            def __getattr__(_, name):
+                return getattr(self.led, name)
+
+            def job(_, job_id):
+                return waiting
+
+        with self.assertRaises(LedgerError):
+            chat.save_reply(self.cfg, Stale(), "chat-job", "Second answer.", now=124.0)
+        self.assertEqual(chat.read_reply(self.cfg, "chat-job"), "First answer.")
+        self.assertEqual(self.led.receipt("chat-job")["detail"], "First answer.")
+        self.assertEqual([p.name for p in chat.reply_path(self.cfg, "chat-job").parent.iterdir()], ["reply.md"])
 
     def test_saved_reply_records_the_supplied_end_time(self):
         self.handoff()

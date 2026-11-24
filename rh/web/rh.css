@@ -2264,10 +2264,13 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .folder-btn:hover, .folder-btn[aria-expanded="true"] { background: rgb(255 255 255 / .07); }
 .folder-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .fb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.folder-btn .ic { flex: none; width: 18px; height: 18px; color: var(--muted); transform: rotate(90deg);
+/* r30 F1: a control, not a page title: the folder glyph leads, the chevron is drawn at a size that reads */
+.fb-glyph { display: inline-flex; flex: none; color: var(--muted); }
+.fb-glyph .ic { width: 22px; height: 22px; }
+.folder-btn > .ic { flex: none; width: 24px; height: 24px; margin-left: -4px; color: var(--muted); transform: rotate(90deg);
   transition: transform .2s var(--ease), color .15s var(--ease); }
-.folder-btn:hover .ic { color: var(--text); }
-.folder-btn[aria-expanded="true"] .ic { transform: rotate(-90deg); }
+.folder-btn:hover > .ic, .folder-btn:hover .fb-glyph { color: var(--text); }
+.folder-btn[aria-expanded="true"] > .ic { transform: rotate(-90deg); }
 .ct-research, html[data-mode="research"] .folder-btn { display: none; }
 html[data-mode="research"] .ct-research { display: inline; }
 .folder-menu { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 90; display: flex; flex-direction: column;
@@ -2288,14 +2291,15 @@ html[data-mode="research"] .ct-research { display: inline; }
 .fm-n { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fm-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint);
   font-size: 12px; }
-.fm-row > .ic:last-child { visibility: hidden; width: 14px; height: 14px; color: rgb(255 255 255 / .8); }
-.fm-row[aria-checked="true"] > .ic:last-child { visibility: visible; }
+.fm-row > .ic:last-child { visibility: hidden; width: 14px; height: 14px; }
+.fm-row[aria-checked="true"] > .ic:last-child { visibility: visible; color: var(--on); }  /* the next job's folder */
+.fm-def { flex: none; color: var(--faint); font-size: 11px; }  /* the configured repository */
 .fm-choose .fm-n { max-width: none; }
 .fm-rule { height: 1px; margin: 4px 2px; background: rgb(255 255 255 / .07); }
 .fm-path { display: block; padding: 4px 2px 2px; }
 .fm-path[hidden] { display: none; }
 .fm-path input { width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
-@media (prefers-reduced-motion: reduce) { .folder-menu { animation: none; } .folder-btn .ic { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .folder-menu { animation: none; } .folder-btn > .ic { transition: none; } }
 /* One quiet line under the composer names the keys it answers to; while the brief holds text it steps aside but
    keeps its room, so the page does not jump. */
 .compose-hint { margin: 16px 0 0; font: 12px var(--ui); color: #6e7383; text-align: center;

@@ -1991,17 +1991,21 @@ def _folder_title(ctx, current):
     takes only a git working tree; cloud jobs stay on the configured repository."""
     name = Path(current).name if current else "Choose a folder"  # none configured: the menu is how to pick one
     home = str(Path.home())
+
+    def where(path):  # the folder's parent, as ~/Projects: its own name is already the row's name
+        parent = str(Path(path).parent)
+        return "~" + parent[len(home):] if parent == home or parent.startswith(home + "/") else parent
     rows = "".join(
         f'<button type="button" class="fm-row" role="menuitemradio" aria-checked="{str(path == current).lower()}" '
         f'data-folder="{_text(path)}" title="{_text(path)}">{_ic("folder", True)}'
-        f'<span class="fm-n">{_text(fname)}</span>'
-        f'<span class="fm-p">{_text("~" + path[len(home):] if path.startswith(home + "/") else path)}</span>'
-        f'{_ic("check", True)}</button>' for path, fname in ctx["folders"])
+        f'<span class="fm-n">{_text(fname)}</span><span class="fm-p">{_text(where(path))}</span>'
+        + ('<span class="fm-def">Default</span>' if path == ctx["repo_path"] else "")
+        + f'{_ic("check", True)}</button>' for path, fname in ctx["folders"])
     # the title and its menu share one box the title's size, so the menu opens off the title on any layout
     return (f'<div class="folder-pick"><h1 class="compose-title" id="compose-title" tabindex="-1" '
             f'data-repo="{_text(name)}"><button type="button" class="folder-btn" aria-haspopup="menu" aria-expanded="false" '
             f'aria-controls="folder-menu" title="{_text(current)}" data-home="{_text(ctx["repo_path"])}">'
-            f'<span class="fb-name">{_text(name)}</span>'
+            f'<span class="fb-glyph">{_ic("folder", True)}</span><span class="fb-name">{_text(name)}</span>'
             f'{_ic("chev", True)}</button><span class="ct-research">What should we find out?</span></h1>'
             f'<div class="folder-menu" id="folder-menu" role="menu" aria-label="Working folder" hidden>'
             f'<p class="fm-head">Work in</p>{rows}<span class="fm-rule" role="separator"></span>'

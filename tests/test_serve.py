@@ -206,7 +206,7 @@ class ServeTest(unittest.TestCase):
         for group in ("Needs you", "Live", "Up next", "Ended today"):
             self.assertIn(f">{group}</h3>", page)
         self.assertRegex(page, r'id="compose-title" tabindex="-1" data-repo="[^"]+"><button type="button" '
-                               r'class="folder-btn"[^>]*><span class="fb-name">[^<]+</span>')  # the repository heads it
+                               r'class="folder-btn"[^>]*>.*?<span class="fb-name">[^<]+</span>')  # the repository heads it
         self.assertIn('data-mode="coding"', page)
         self.assertIn('data-mode="research"', page)
         self.assertIn('/actions?t=serve-test-key', page)

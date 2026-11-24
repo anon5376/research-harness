@@ -3815,6 +3815,25 @@ console.log(JSON.stringify([
             self.assertIn(want, folded)
         self.assertIn("13px", folded)
 
+    def test_the_folder_title_reads_as_a_control_and_its_menu_names_the_default(self):
+        # r30 F1, F7: a folder picker drawn as a bare page title (no glyph, a faint chevron, no hover shape), rows
+        # that repeat the folder's name in its path, a white tick, or no sign of which folder is the configured
+        # one, must fail.
+        view = {**live_view(), "new": True, "workspace": {"repo": "rh", "branch": "main"}, "repo_path": "/w/rh",
+                "folders": [["/w/other", "other"], ["/w/rh", "rh"]]}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        button = page.split('class="folder-btn"', 1)[1].split("</button>", 1)[0]
+        self.assertLess(button.index("<svg"), button.index('class="fb-name"'))  # the folder glyph leads the name
+        menu = page.split('class="folder-menu"', 1)[1].split("</div>", 1)[0]
+        rows = dict(re.findall(r'data-folder="([^"]+)"[^>]*>(.*?)</button>', menu))
+        self.assertIn('<span class="fm-p">/w</span>', rows["/w/other"])  # the parent only, not the name again
+        self.assertIn("Default", rows["/w/rh"])
+        self.assertNotIn("Default", rows["/w/other"])
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("var(--on)", rule('.fm-row[aria-checked="true"] > .ic:last-child'))
+        self.assertIn("background", rule(".folder-btn:hover, .folder-btn[aria-expanded=\"true\"]"))
+        self.assertIn("var(--muted)", rule(".fb-glyph"))
+
     def test_the_palette_has_a_way_out_without_a_keyboard(self):
         # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.
         pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(live_view(), NOW, token=TOKEN), re.S).group(0)

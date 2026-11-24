@@ -44,7 +44,7 @@ def _roles():
     return [{"id": "lead", "name": "Lead", "prompt": LEAD_PROMPT,
              "models": ["gpt-6.2-astra", "claude-opus-5-5", "claude-fable-5-2", "gpt-6.1-sol", "swe-2-max"]},
             {"id": "manager", "name": "Manager", "prompt": MANAGER_PROMPT,
-             "models": ["gpt-6.2-sol", "claude-opus-5-5", "gpt-6.1-sol", "swe-2-max"]},
+             "models": ["gpt-6.2-sol", "claude-opus-5-5", "gpt-6.1-sol", "swe-2-max", "swe-2-high"]},
             {"id": "worker", "name": "Worker", "prompt": WORKER_PROMPT,
              "models": ["swe-2-max", "swe-2-high", "swe-2-flash-high", "claude-sonnet-5-5", "gpt-6.1-terra"]}]
 

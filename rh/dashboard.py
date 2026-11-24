@@ -17,11 +17,13 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
+from rh import hierarchy
+
 # The look and the client ship beside this module; rh serve sends the fonts from rh/web/fonts (see FONTS).
 _WEB = Path(__file__).with_name("web")
 STYLE = (_WEB / "rh.css").read_text(encoding="utf-8")
 # bg.js draws the halftone field; it rides in front of app.js so /app.js stays the one script.
-SCRIPT = (_WEB / "bg.js").read_text(encoding="utf-8") + "\n" + (_WEB / "app.js").read_text(encoding="utf-8")
+SCRIPT = "\n".join((_WEB / name).read_text(encoding="utf-8") for name in ("bg.js", "app.js", "team.js", "live.js"))
 # A live page compares this with each page it fetches and reloads when they differ, so a restarted server never
 # pours new markup into a page still wearing the old stylesheet and script.
 BUILD = format(zlib.crc32((STYLE + SCRIPT).encode("utf-8")), "08x")
@@ -1764,12 +1766,18 @@ def _model_picker(policy, kind, draft, only=False):
     return worker_picker
 
 
+def _gpt_name(m):
+    """A GPT model the table does not know yet, in the table's words: gpt-6.2-astra is GPT-6.2 Astra."""
+    found = re.fullmatch(r"gpt-(\d+(?:\.\d+)?)-([a-z]+(?:-[a-z]+)*)", m)
+    return f"GPT-{found.group(1)} {found.group(2).replace('-', ' ').title()}" if found else m
+
+
 def _names(models):
     """Model names in words: "SWE-2 Max", "SWE-2 Max and SWE-2 Flash", "A, B and C"."""
     # a Fusion model is named by its pair, as the picker names it: which lead and which sidekick run
     names = [" + ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part)
                         for part in m.removeprefix("fusion-").split("-sidekick-")) if m.startswith("fusion-")
-             else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, m)) for m in models]
+             else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, _gpt_name(m))) for m in models]
     return " and ".join(names) if len(names) < 3 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
@@ -1824,6 +1832,7 @@ def _swarm_rows(swarm, form=""):
 
 
 _SWARM_PICK = "swarm-pick-f"
+_TEAM_PICK = "team-pick-f"
 
 
 def _swarm_note(ctx):
@@ -1838,14 +1847,33 @@ def _swarm_note(ctx):
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
             '×</button></span>')
     ran, judged = _swarm_line([_names([m]) for m in models], _names([judge])).rsplit(" · ", 1)
-    says = f'{_text(ran)}{_SEP_HTML}{_text(judged)}'
+    quick_says = f'{_text(ran)}{_SEP_HTML}{_text(judged)}'
+    team = _active_team(swarm)
+    says = (f'{_text(team["name"])}{_SEP_HTML}{_team_size(team)} agents' if team else quick_says)
     if ctx["live"] and swarm.get("choices"):
         boxes, judge_row = _swarm_rows(swarm, _SWARM_PICK)
+        teams = ""
+        if swarm.get("team_models"):  # the teams Settings keeps, picked here; Quick swarm is the ticks below
+            data = _team_presets(swarm)
+            # each radio carries its line as plain text, 'A · B'; team.js puts the dot back as the page draws it
+            rows = [("quick", "Quick swarm", "the models ticked below", f"{ran} · {judged}")] + [
+                (p["id"], p["name"], f'{_team_size(p)} agents, {"layers" if p.get("shape") == "vertical" else "side by side"}',
+                 f'{p["name"]} · {_team_size(p)} agents')
+                for p in data["presets"] if isinstance(p, dict) and p.get("id")]
+            teams = ('<div class="swarm-teams" role="radiogroup" aria-label="Team" data-team-pick>'
+                     + "".join(f'<label class="swarm-team"><input type="radio" name="active" value="{_text(pid)}" '
+                               f'form="{_TEAM_PICK}"{" checked" if pid == (team["id"] if team else "quick") else ""} '
+                               f'data-says="{_text(said)}"><span class="swarm-team-n">{_text(name)}</span>'
+                               f'<span class="swarm-team-d">{_text(sub)}</span></label>'
+                               for pid, name, sub, said in rows)
+                     + f'<button type="button" class="swarm-team-edit" data-team-open>{_ic("swarm", True)}'
+                     'Edit teams</button></div>')
         return (f'<div class="swarm-note" data-swarm-note hidden>{chip}<details class="swarm-pick">'
-                f'<summary aria-label="Swarm models" title="Swarm models"><span class="swarm-says" '
+                f'<summary aria-label="Swarm models" title="Swarm team and models"><span class="swarm-says" '
                 f'data-swarm-says="{_SWARM_PICK}">{says}</span>{_ic("chev", True)}</summary>'
-                f'<div class="swarm-pop"><div class="swarm-models">{boxes}</div>'
-                f'<div class="swarm-opts in-pop">{judge_row}</div></div></details></div>')
+                f'<div class="swarm-pop" data-team="{"quick" if not team else "preset"}">{teams}'
+                f'<div class="swarm-quick"><div class="swarm-models">{boxes}</div>'
+                f'<div class="swarm-opts in-pop">{judge_row}</div></div></div></details></div>')
     return f'<p class="swarm-note" data-swarm-note hidden>{chip}<span class="swarm-says">{says}</span></p>'
 
 
@@ -1856,7 +1884,9 @@ def _swarm_pick_form(ctx):
     if not (ctx["live"] and swarm.get("choices") and swarm.get("models")):
         return ""
     return (f'<form id="{_SWARM_PICK}" action="/settings/swarm" method="post" data-swarm-form hidden>'
-            f'{_hidden(ctx, [("check", swarm.get("check") or "")])}</form>')
+            f'{_hidden(ctx, [("check", swarm.get("check") or "")])}</form>'
+            + (f'<form id="{_TEAM_PICK}" action="/settings/swarm-active" method="post" data-team-pick-form hidden>'
+               f'{_hidden(ctx, [])}</form>' if swarm.get("team_models") else ""))
 
 
 def _composer(ctx, draft, ready, policy):
@@ -2338,8 +2368,9 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None, final=None):
             '<span class="sw-k">Kept</span>' if won else "")
         # a row opens its run, and says so as 'Show ›' does
         go = f'<span class="sw-go" aria-hidden="true">{_ic("chev", True)}</span>'
-        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}{go}</a></li>' if ctx["live"]
-                     else f'<li><div class="{cls}">{inner}</div></li>')
+        live = " data-live" if st in _LIVE else ""  # a run at work wears a slow sheen (rh.css)
+        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav{live}>{inner}{go}</a></li>'
+                     if ctx["live"] else f'<li><div class="{cls}"{live}>{inner}</div></li>')
     n = len(runs)
     ended = sum((ctx["states"].get(r) or "waiting") not in (*_LIVE, *_PRE) for r in runs)
     again = ""
@@ -2356,6 +2387,58 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None, final=None):
     body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{side}</span>{again}</div>'
             f'<ul class="sw-runs">{"".join(items)}</ul>')
     return _region("j-swarm", body, "section", "out s-j-swarm", ' aria-label="Swarm runs"')
+
+
+_TEAM_ROLE = {"best": "Lead", "plan": "Plan"}
+
+
+def _team_card(ctx, jid):
+    """A layered swarm's whole team on its lead's page, drawn as a tree: the lead, its plan and managers, and each
+    manager's agents, every one with its state and time. Wires join each agent to whoever judges it; team.js draws
+    them, flowing while that agent works, and lights the path of the work each judge kept up to the lead. A flat
+    swarm (every run under the lead works) has no tree: its runs card says it all."""
+    swarms, now = ctx.get("swarms") or {}, ctx["now"]
+    runs = swarms.get(jid) or []
+    if not any(swarms.get(r) for r in runs):
+        return ""
+    seen, tally = set(), {"n": 0, "live": 0}
+
+    def node(rid, up, kept_by_up, depth):
+        seen.add(rid)
+        m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
+        st = ctx["states"].get(rid) or "waiting"
+        tone = "live" if st in _LIVE else "fail" if st in _FAILED else "done" if st == "done" else "wait"
+        tally["n"] += 1
+        tally["live"] += tone == "live"
+        short = rid.rsplit(".", 1)[-1]
+        role = _TEAM_ROLE.get(short) or ("Manager" if re.fullmatch(r"m\d+", short) and swarms.get(rid) else "Agent")
+        start, end = m.get("started"), m.get("updated")
+        took = (_duration(now - start) if tone == "live" and _number(start) else
+                _duration(end - start) if tone in ("done", "fail") and _number(start) and _number(end) else "")
+        word = "" if tone == "done" else _STATES.get(st, (st,))[0]
+        model = _names([m["model"]]) if m.get("model") else short
+        kept = str(m.get("kept") or "")
+        cls = f"lt-n s-{tone}" + (" kept" if kept_by_up else "")
+        inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="lt-r">{_text(role)}'
+                 f'<span class="mono"> {_text(short)}</span></span><span class="lt-m">{_text(model)}</span>'
+                 f'<span class="lt-t">{_SEP_HTML.join(_text(x) for x in (word, took) if x)}</span>')
+        attrs = f' data-lt="{_text(rid)}" data-up="{_text(up)}" data-tone="{tone}"'
+        head = (f'<a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav{attrs}>{inner}</a>' if ctx["live"]
+                else f'<div class="{cls}"{attrs}>{inner}</div>')
+        kids = [k for k in swarms.get(rid, []) if k not in seen] if depth < 5 else []
+        sub = "".join(node(k, rid, tone_kept(kept, k), depth + 1) for k in kids)
+        return f'<li>{head}{f"<ul>{sub}</ul>" if sub else ""}</li>'
+
+    def tone_kept(kept, kid):
+        short = kid.rsplit(".", 1)[-1]
+        return bool(kept) and (kept == short or kept == "combined" and ctx["states"].get(kid) == "done")
+
+    tree = node(jid, "", False, 0)
+    side = f'{tally["n"]} agents' + (_SEP_HTML + f'{tally["live"]} working' if tally["live"] else "")
+    body = (f'<div class="head"><h2>{_ic("swarm", True)}Team</h2><span class="lines">{side}</span></div>'
+            f'<div class="lt" data-lt-box><svg class="lt-wires" aria-hidden="true"></svg>'
+            f'<ul class="lt-tree">{tree}</ul></div>')
+    return _region("j-team", body, "section", "out s-j-team", ' aria-label="Swarm team"')
 
 
 def _job_pane(opened, jobs, ctx, feedback, view):
@@ -2514,6 +2597,9 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     status_at, status_html = len(work), "".join(result)
     work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else "job-result"))
     if runs:
+        team = _team_card(ctx, jid)
+        if team:
+            work.append(team)
         work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept"),
                                 opened.get("swarm_stats"), final=opened.get("swarm_final")))
     # What it needs from you, each with the form that settles it.
@@ -3077,16 +3163,83 @@ def _swarm_settings(ctx):
     if not any(isinstance(m, str) for m in swarm.get("choices") or []):
         return ""
     boxes, judge_row = _swarm_rows(swarm)
+    team = _active_team(swarm)
+    row = ('<div class="team-row"><span class="team-now"><span class="soft">Team</span>'
+           f'<b data-team-name>{_text(team["name"]) if team else "Quick swarm"}</b></span>'
+           f'<button type="button" class="btn quiet small" data-team-open>{_ic("swarm", True)}Edit teams</button></div>'
+           if swarm.get("team_models") else "")
     return ('<form action="/settings/swarm" method="post" data-swarm-form>'
-            f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
-            '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
-            f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
+            f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>{row}'
+            '<p class="set-hint">Start a brief with <code>/swarm</code> to run the team named here. Quick swarm runs '
+            f'it on each model ticked below at once, and the judge keeps the best work.</p>'
+            f'<div class="swarm-models">{boxes}</div>'
             f'<div class="swarm-opts">{judge_row}'
             '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
             f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
             f'value="{_text(swarm.get("check") or "")}"></label></div>'
             '<p class="set-hint">The harness runs it on each run\'s changes in a clean copy before the judge reads '
             'them. Leave empty to judge without it.</p></fieldset></form>')
+
+
+def _team_presets(swarm):
+    """The stored presets ({active, presets}) the page was given, or none."""
+    data = swarm.get("presets")
+    return data if isinstance(data, dict) and isinstance(data.get("presets"), list) else {"active": "quick", "presets": []}
+
+
+def _active_team(swarm):
+    """The active swarm preset, or None for the quick swarm (the ticks)."""
+    data = _team_presets(swarm)
+    return next((p for p in data["presets"] if isinstance(p, dict) and p.get("id") == data.get("active")), None)
+
+
+def _team_size(preset):
+    """How many agents a preset runs: every copy of every node, plus the lead's plan."""
+    def count(node):
+        kids = node.get("children") if isinstance(node, dict) and isinstance(node.get("children"), list) else []
+        return sum(max(1, int(k.get("count") or 1)) * count(k) for k in kids if isinstance(k, dict)) + 1
+    tree = preset.get("tree") if isinstance(preset.get("tree"), dict) else {}
+    return count(tree) + (1 if preset.get("plan") else 0)
+
+
+def _team_dialog(ctx):
+    """Swarm teams: the presets, each a lead over managers over workers, edited by dragging (rh/web/team.js draws the
+    tree from the JSON here). The form only carries the token; the script sends the whole set as its data field."""
+    swarm = ctx.get("swarm") or {}
+    if not (ctx["live"] and swarm.get("team_models")):
+        return ""
+    models = []
+    for item in swarm.get("team_models") or []:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            models.append({"id": item[0], "name": _names([item[0]]), "prov": item[1], "plan": item[1] == "codex"})
+    data = _team_presets(swarm)
+    seen = {m["id"] for m in models}
+    names = {}
+    for preset in data["presets"]:  # models a preset names that the policy does not list yet
+        for role in preset.get("roles") or []:
+            for m in role.get("models") or []:
+                if m not in seen:
+                    names[m] = _names([m])
+        stack = [preset.get("tree") or {}]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if node.get("model") and node["model"] not in seen:
+                    names[node["model"]] = _names([node["model"]])
+                stack += node.get("children") or []
+    quick = {"models": [m for m in swarm.get("models") or [] if isinstance(m, str)], "judge": swarm.get("judge") or ""}
+    blob = json.dumps({"presets": data, "models": models, "names": names, "quick": quick, "template": hierarchy._roles(),
+                       "quickNames": {"models": [_names([m]) for m in quick["models"]], "judge": _names([quick["judge"]])
+                                      if quick["judge"] else ""},
+                       "icons": {p: _ic(p, True) for p in ("claude", "devin", "openai")}})
+    return ('<dialog class="team" id="team" aria-labelledby="team-title"><header><h2 id="team-title" tabindex="-1">'
+            'Swarm teams</h2><span class="team-saved" data-team-saved role="status" aria-live="polite"></span>'
+            '<form method="dialog"><button class="icon-btn" aria-label="Close swarm teams">×</button></form></header>'
+            f'<form class="team-form" action="/settings/swarm-presets" method="post" data-team-form>{_hidden(ctx, [])}'
+            '</form><form action="/settings/swarm-active" method="post" data-team-active>'
+            f'{_hidden(ctx, [])}</form><div class="team-body" data-team-body>'
+            '<p class="soft">Turn on scripts to edit swarm teams.</p></div>'
+            f'<div id="team-data" data-json="{_text(blob)}" hidden></div></dialog>')
 
 
 def _settings(ctx, preset, tint="cobalt"):
@@ -3103,7 +3256,7 @@ def _settings(ctx, preset, tint="cobalt"):
             f'{_hidden(ctx, [])}<fieldset><legend>Background</legend><div class="background-choices">{choices}</div>'
             f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form>'
             f'{_swarm_settings(ctx)}<footer><button type="button" data-keys class="btn quiet small" hidden>'
-            'Keyboard shortcuts <kbd>?</kbd></button></footer></div></dialog>')
+            'Keyboard shortcuts <kbd>?</kbd></button></footer></div></dialog>' + _team_dialog(ctx))
 
 
 def render(view: dict, now: float, token: str | None = None, result=None) -> str:

@@ -88,6 +88,27 @@ def live_view():
     return {**view, "can_add": True, "checks": {"mode": "on", "pid": None, "failed": None}}
 
 
+def layered_view(flat=False):
+    """A preset's team mid-run: the lead planned; manager m1's agents w1 (done) and w2 (running); manager m2 kept w3
+    over w4, which failed; the lead waits on the plan and both managers. `flat` drops the managers' teams."""
+    view = live_view()
+    states = {"t.plan": "done", "t.w1": "done", "t.w2": "running", "t.m1": "waiting", "t.w3": "done",
+              "t.w4": "failed", "t.m2": "done", "t.best": "waiting"}
+    view["live"] = [{"id": "t.w2", "state": "running", "paused": False, "detail": "", "external_id": None}]
+    view["not_started"] = [{"id": j, "state": "waiting", "paused": False, "detail": "", "external_id": None}
+                           for j in ("t.m1", "t.best")]
+    view["recent"] = [*view["recent"], *({"id": j, "state": st, "paused": False, "detail": "", "external_id": None}
+                                         for j, st in states.items() if st in ("done", "failed"))]
+    base = {"brief": "Fix the typo", "kind": "local-agent", "created": NOW - 900, "started": NOW - 600,
+            "updated": NOW - 120, "goal": "t", "model": "swe-2-max"}
+    meta = {j: {**base, "state": st} for j, st in states.items()}
+    meta["t.m1"].update(after=[] if flat else ["t.w1", "t.w2"], model="claude-opus-5-5")
+    meta["t.m2"].update(after=[] if flat else ["t.w3", "t.w4"], kept="w3", model="swe-2-high")
+    meta["t.best"]["after"] = ["t.plan", "t.m1", "t.m2"]
+    view["meta"] = {**view.get("meta", {}), **meta}
+    return view if flat else opened(view, "t.best", kind="local-agent", state="waiting")
+
+
 def opened(view, jid, **job):
     """The view with one job open, as serve builds it from `rh job show` and the job's out.log."""
     row = next(r for section in ("live", "not_started", "recent") for r in view.get(section, []) if r["id"] == jid)
@@ -338,6 +359,28 @@ class ListsTest(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("Write the notes", row.group(0))
 
+    def test_a_layered_swarm_draws_its_whole_team_on_the_lead_page(self):
+        # A preset's team runs in layers: the lead's page must show who reports to whom, with each agent's state,
+        # and light the work each judge kept; a flat swarm keeps its runs card alone.
+        page = dashboard.render(layered_view(), NOW, token=TOKEN)
+        card = re.search(r'data-region="j-team".*?</section>', page, re.S).group(0)
+        self.assertIn("8 agents", text(card))
+        self.assertIn("1 working", text(card))
+        tree = re.search(r'<ul class="lt-tree">(.*)</ul></div>', card, re.S).group(1)
+        m1 = re.search(r'data-lt="t.m1".*?</ul>', tree, re.S).group(0)  # the manager's own team sits under it
+        self.assertIn('data-lt="t.w1"', m1)
+        self.assertIn('data-lt="t.w2"', m1)
+        self.assertNotIn('data-lt="t.w3"', m1)
+        self.assertIn('data-lt="t.w2" data-up="t.m1" data-tone="live"', tree)
+        self.assertIn('data-lt="t.w4" data-up="t.m2" data-tone="fail"', tree)
+        self.assertRegex(tree, r'class="lt-n s-done kept"[^>]*data-lt="t.w3"')  # m2 kept w3
+        self.assertNotRegex(tree, r'class="[^"]*kept"[^>]*data-lt="t.w4"')
+        for word in ("Lead", "Plan", "Manager", "Agent", "SWE-2 Max", "Claude Opus 5.5", "Running"):
+            self.assertIn(word, text(card))
+        self.assertIn('href="/job/t.w2?t=', card)
+        flat = opened(layered_view(flat=True), "t.best", kind="local-shell", state="waiting")
+        self.assertNotIn('data-region="j-team"', dashboard.render(flat, NOW, token=TOKEN))
+
     def test_a_swarm_is_one_row_and_its_judge_page_lists_each_run(self):
         # The runs of a /swarm are the judge's work, not jobs of their own: a sidebar row per run, a judge page
         # that only says "waiting for fix.w2", or a swarm that reads "Up next" while its runs work, must fail.
@@ -367,6 +410,9 @@ class ListsTest(unittest.TestCase):
         # a done run's ring already says it: its row shows the time alone, with no "Done" said a second time
         self.assertNotIn("Done", text(card))
         self.assertIn('href="/job/fix.w1?t=', card)
+        # the run at work wears the sheen; the finished one does not
+        self.assertRegex(card, r'href="/job/fix\.w2\?t=[^"]*" data-nav data-live>')
+        self.assertNotRegex(card, r'href="/job/fix\.w1\?t=[^"]*" data-nav data-live>')
         self.assertIn("keeps the best work once every run has ended", text(page))
         self.assertNotIn("waiting for fix.w2", page)
         status = re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)
@@ -1021,6 +1067,41 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<p class="swarm-g">SWE-2 · Free</p>', only)
         self.assertNotIn(">Fusion", only)
 
+    def test_swarm_teams_are_picked_in_the_composer_and_edited_in_settings(self):
+        # The owner's teams (a lead over managers over workers) are chosen where /swarm is typed and edited in a
+        # dialog from Settings. The picked team names the composer's line, the ticks step aside for it, each radio
+        # carries its line as plain text (markup there was once drawn as literal text), and the editor gets every
+        # preset, model and role as escaped JSON in the page's one script's reach.
+        from rh import hierarchy
+        presets = {**hierarchy.defaults(), "active": "free-research"}
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "presets": presets,
+                 "choices": ["swe-2-max", "swe-2-flash-high"],
+                 "team_models": [["swe-2-max", "devin"], ["claude-opus-5-5", "claude"], ["gpt-6.2-astra", "codex"]]}
+        page = dashboard.render({**live_view(), "swarm": swarm}, NOW, token=TOKEN)
+        pick = re.search(r'<details class="swarm-pick">.*?</details>', page, re.S).group(0)
+        self.assertIn("Free research team", text(re.search(r"<summary.*?</summary>", pick, re.S).group(0)))
+        self.assertIn('data-team="preset"', pick)
+        radios = re.findall(r'<input type="radio" name="active" value="([^"]+)"[^>]*data-says="([^"]*)"', pick)
+        self.assertEqual([r[0] for r in radios], ["quick", "free-research", "astra-lead"])
+        for _, says in radios:
+            self.assertNotIn("&lt;", says)
+            self.assertIn(" · ", says)
+        self.assertIn('value="free-research" form="team-pick-f" checked', pick)
+        own = re.search(r'<form id="team-pick-f"[^>]*>', page).group(0)
+        self.assertIn('action="/settings/swarm-active"', own)
+        dialog = re.search(r'<dialog[^>]*id="team".*?</dialog>', page, re.S).group(0)
+        self.assertIn('action="/settings/swarm-presets"', dialog)
+        blob = json.loads(html.unescape(re.search(r'id="team-data" data-json="([^"]*)"', page).group(1)))
+        self.assertEqual([p["id"] for p in blob["presets"]["presets"]], ["free-research", "astra-lead"])
+        self.assertIn("gpt-6.2-astra", [m["id"] for m in blob["models"]])
+        self.assertEqual(page.count("<script"), 1)
+        self.assertEqual(dashboard._gpt_name("gpt-6.2-astra"), "GPT-6.2 Astra")
+        self.assertEqual(dashboard._names(["gpt-6.2-sol"]), "GPT-6.2 Sol")
+        # with the quick swarm active, the ticks are the swarm again
+        quick = dashboard.render({**live_view(), "swarm": {**swarm, "presets": hierarchy.defaults()}}, NOW, token=TOKEN)
+        self.assertIn('data-team="quick"', quick)
+        self.assertIn("judge:", text(re.search(r'<details class="swarm-pick">.*?</summary>', quick, re.S).group(0)))
+
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the
@@ -1051,7 +1132,7 @@ class ListsTest(unittest.TestCase):
         self.assertIn("width: 60%", rule0(".swarm-sel"))
         self.assertIn("width: 60%", rule0('.swarm-judge input[type="text"]'))
         # the composer's popover keeps its own order and box: its ticks, then the Judge row in .swarm-opts in-pop
-        pop = re.search(r'<div class="swarm-pop">(.*?)</div></details>', page, re.S).group(1)
+        pop = re.search(r'<div class="swarm-pop"[^>]*>(.*?)</div></details>', page, re.S).group(1)
         self.assertLess(pop.index('class="swarm-models"'), pop.index('class="swarm-opts in-pop"'))
         self.assertIn('name="judge"', pop)
         self.assertNotIn('name="check"', pop)
@@ -2602,6 +2683,8 @@ class DashboardTest(unittest.TestCase):
         # without any test noticing) must fail, so must a guard that finds no selectors at all.
         literals = re.findall(r"'((?:[^'\\\n]|\\.)*)'", dashboard.SCRIPT)
         made = set(" ".join(re.findall(r"className = '([^']*)'", dashboard.SCRIPT)).split())
+        # and those the team editor (rh/web/team.js) builds with h(tag, {class: '...'}), whole or as a prefix
+        made |= set(" ".join(re.findall(r"class: '([^']*)'", dashboard.SCRIPT)).split())
         selected = {c for lit in literals for c in re.findall(r"(?:^|[\s>(,a-z\]])\.([a-z][a-z0-9-]*)", lit)}
         self.assertGreaterEqual(len(selected), 15)
         view = opened(live_view(), "live-job")

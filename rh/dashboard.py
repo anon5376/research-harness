@@ -2740,11 +2740,18 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         # already in view it counts nothing and the head goes without it
         count = (f'<span class="lines mono">{n:,} {"line" if n == 1 else "lines"}</span>'
                  if opened.get("log_cut") or len(lines) > len(tail) else "")
+        err = " err" if failed else ""
+        # the rest of the log folds into the card's own foot, so one card names the output once (r27 F13): open, the
+        # whole replaces the last lines and the foot stays under it
+        rest = (f'<details class="out-more"><summary><span class="om-show">'
+                f'{f"Show last {len(lines):,} lines" if opened.get("log_cut") else "Show all"}</span>'
+                f'<span class="om-hide">Show less</span></summary><pre class="log ended{err}" tabindex="0">'
+                f'{"".join(_ln(l) for l in lines)}</pre></details>' if len(lines) > len(tail) else "")
         body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2>{count}</div>'
-                f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
+                f'<pre class="log ended{err}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>{rest}')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
-    # output that fits whole in the card above has nothing more to unfold
-    if (not finished or log) and not (card and len(lines) <= _TAIL) and not (swarming and not log):
+    # a card holds its whole output in its own foot; a page without one folds the output here
+    if (not finished or log) and not card and not (swarming and not log):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
         # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing; a

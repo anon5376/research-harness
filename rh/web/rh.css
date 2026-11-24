@@ -1850,6 +1850,20 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .fail-k > :first-child { color: var(--red); }
 /* A card holds at most twelve lines of output: all of them show, with no scroll inside the card. */
 .out > pre.log.ended { max-height: none; }
+/* The rest of the log folds into the card's foot, a hairline row like the diff card's Show all; open, the whole log
+   replaces the last lines and scrolls, and the foot stays under it. */
+.out:has(> details.out-more[open]) > pre.log { display: none; }
+details.out-more[open] { display: flex; flex-direction: column-reverse; }
+details.out-more > summary {
+  display: flex; align-items: center; justify-content: flex-end; gap: 6px; height: 36px; padding: 0 14px;
+  border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); cursor: pointer; list-style: none; }
+details.out-more > summary::-webkit-details-marker { display: none; }
+details.out-more > summary::after { content: "›"; font-size: 14px; color: var(--faint); transition: transform .12s; }
+details.out-more[open] > summary::after { transform: rotate(-90deg); }
+details.out-more > summary:hover { color: var(--text); }
+details.out-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+details.out-more:not([open]) .om-hide, details.out-more[open] .om-show { display: none; }
+details.out-more > pre.log.ended { max-height: 420px; }
 /* A running log is the page: it fills the height left under its status, newest lines pinned at the bottom, and
    wears the same card as Last output and Where it stopped (header row inside, 12.5px on 21px). */
 .worked:has(> .worked-content > pre.log[data-follow]) { border: 1px solid var(--border); border-radius: var(--r-card);

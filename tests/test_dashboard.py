@@ -3606,7 +3606,7 @@ console.log(JSON.stringify([
         done = opened(live_view(), "finished-job", kind="local-shell", log=None)
         done["open"]["log"] = log
         body = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last", "j-output"])
+        self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last"])  # r27 F13: the rest folds in
         card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
         self.assertIn("Last output", card)
         # r18 F8: the title says 'last'. r22 F7: '12 of 30' and the fold's '30 lines' named one total twice; the card
@@ -3625,19 +3625,17 @@ console.log(JSON.stringify([
         self.assertNotIn("last 12", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
-        fold = re.search(r'<summary class="worked-summary">.*?</summary>', body, re.S).group(0)
-        self.assertIn('<span class="worked-output">All output</span>', fold)
-        self.assertNotIn('class="lines', fold)
-        done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
+        self.assertIn('<span class="om-show">Show all</span>', card)
+        done["open"]["log_cut"] = True  # only the tail was kept: the foot says so, and never calls it all
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
+        self.assertIn('<span class="om-show">Show last 30 lines</span>', cut)
         # r19 F4: '12 of 30' named the kept tail as the whole. With no total known the card counts what it shows;
         # with the log's real length the card names it once, and the fold says how much of it it holds
         self.assertIn('<span class="lines mono">12 lines</span>', cut)
         done["open"]["log_total"] = 2412
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
         self.assertIn('<span class="lines mono">2,412 lines</span>', cut)
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
+        self.assertIn('<span class="om-show">Show last 30 lines</span>', cut)
         self.assertEqual(cut.count("2,412"), 1)
         del done["open"]["log_total"]
         done["open"]["log_cut"] = False
@@ -3651,6 +3649,41 @@ console.log(JSON.stringify([
         self.assertNotIn('data-region="j-last"', body)
         self.assertIn('data-region="j-output"', body)
 
+    def test_the_last_output_card_unfolds_the_rest_from_its_own_foot(self):
+        # r27 F13: a 'Last output · 2,400 lines' card sat over a separate 'Output · last 200 lines' row, two output
+        # labels with two counts. The card holds the rest itself: a hairline foot with a right-hand 'Show all' (or
+        # 'Show last N lines' for a kept tail) that swaps its last lines for the whole, as the diff card's foot does.
+        log = "\n".join(f"line {n}" for n in range(1, 31))
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"]["log"] = log
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertNotIn('data-region="j-output"', body)
+        card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
+        foot = re.search(r'<details class="out-more"><summary>(.*?)</summary>(.*?)</details>', card, re.S)
+        self.assertIsNotNone(foot, "the card has no foot that unfolds the rest")
+        self.assertIn('<span class="om-show">Show all</span>', foot.group(1))
+        self.assertIn("line 1</span>", foot.group(2))  # the whole kept log, in the card's own line markup
+        self.assertEqual(card.count('class="lines'), 1)  # one count: the head's
+        done["open"].update(log_cut=True, log_total=2412)
+        card = re.search(r'data-region="j-last".*?</section>', pane(dashboard.render(done, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="om-show">Show last 30 lines</span>', card)
+        self.assertEqual(card.count("2,412"), 1)
+        done["open"].update(log_cut=False, log_total=None, log="one\ntwo")  # all of it in view: no foot
+        self.assertNotIn("out-more", pane(dashboard.render(done, NOW, token=TOKEN)))
+        broke = opened(live_view(), "broke-job", kind="local-shell")  # a failed job's card folds the same way
+        broke["open"].update(log=log, receipt={"route": "local-shell", "checks": [{"cmd": "sh run.sh", "exit": 2}],
+                                               "ended": NOW - 10, "detail": "command exited 2"})
+        body = pane(dashboard.render(broke, NOW, token=TOKEN))
+        self.assertNotIn('data-region="j-output"', body)
+        self.assertIn('<details class="out-more">', re.search(r'data-region="j-error".*?</section>', body, re.S).group(0))
+        # open, the whole replaces the last lines and the foot stays under it; the foot is a 36px hairline row,
+        # its 12px label on the right
+        self.assertRegex(dashboard.STYLE, r'\.out:has\(> details\.out-more\[open\]\) > pre\.log \{ display: none; \}')
+        rule = dashboard.STYLE.split("\ndetails.out-more > summary {", 1)[1].split("}", 1)[0]
+        for want in ("height: 36px", "justify-content: flex-end", "border-top: 1px solid var(--rule)", "font-size: 12px"):
+            self.assertIn(want, rule)
+        self.assertIn("flex-direction: column-reverse", dashboard.STYLE.split("\ndetails.out-more[open] {", 1)[1].split("}", 1)[0])
+
     def test_finished_pages_keep_output_collapsible_and_the_reply_in_the_dock(self):
         # Output stays folded in Worked and the real Run again form lives after the session scroll area.
         log = "\n".join(f"line {n}" for n in range(1, 31))
@@ -3659,7 +3692,7 @@ console.log(JSON.stringify([
                             peek={"path": "notes.md", "text": "# Notes", "more": False})
         page = pane(dashboard.render(done, NOW, token=TOKEN))
         body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
-        self.assertIn('data-region="j-output"', body)
+        self.assertIn('<details class="out-more">', body)  # the output folds, in the card's foot
         # r21 F8: the file row and the Output row below it open the same way, so they say the same verb, 'Show ›'
         self.assertIn('<details class="file-preview"><summary>Show</summary>', body)
         self.assertNotIn("<summary>Preview</summary>", page)
@@ -3673,7 +3706,7 @@ console.log(JSON.stringify([
         page = pane(dashboard.render(broke, NOW, token=TOKEN))
         body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
         order = re.findall(r'data-region="(j-output|j-error)"', body)
-        self.assertEqual(order, ["j-error", "j-output"])
+        self.assertEqual(order, ["j-error"])  # its whole output folds into the card's foot
         self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
         self.assertIn('<span class="lines mono">30 lines</span>', error)  # the exit code leads the page, not this card

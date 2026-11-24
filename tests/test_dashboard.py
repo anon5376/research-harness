@@ -4543,6 +4543,65 @@ console.log(JSON.stringify({
         self.assertIn(".detail .jd-head-in > :is(h1, .job-worker) { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }",
                       dashboard.STYLE)
 
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_job_header_title_does_not_flash_before_the_script_decides(self):
+        # The server renders the head without 'echo', so the title painted for a frame and faded out once
+        # echoTitle() ran (a design review saw it at 0.0 s, gone by 0.25 s). Until the script decides, the live
+        # app hides the title and the worker crumb with no transition; echoTitle() marks the head 'ready' on the
+        # next frame, echo or not. A snapshot has no data-live-app, so it keeps its title.
+        rule = dashboard.STYLE.split("\nhtml[data-live-app] .detail .jd-head:not(.ready) :is(h1, .job-worker) {",
+                                     1)[1].split("}", 1)[0]
+        self.assertIn("opacity: 0", rule)
+        self.assertIn("transition: none", rule)
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("let echoIo = null;"):]
+        code = code[:code.index("\n}\n") + 3]
+        probe = """
+const assert = require('node:assert/strict');
+function headStub() {
+  const classes = new Set(), calls = [];
+  return { calls,
+    classList: {
+      add: c => { calls.push(['add', c]); classes.add(c); },
+      remove: c => { calls.push(['remove', c]); classes.delete(c); },
+      toggle: (c, on) => {
+        calls.push(['toggle', c, on]);
+        const yes = on === undefined ? !classes.has(c) : on;
+        if (yes) classes.add(c); else classes.delete(c);
+        return yes;
+      },
+      contains: c => classes.has(c),
+    },
+    has: c => classes.has(c) };
+}
+function exercise(withTwin) {
+  const head = headStub();
+  const h = { textContent: 'Fix the flaky suite', closest: () => head };
+  const scroller = {};
+  const twin = { textContent: 'Fix the flaky suite: it passes now' };
+  const seen = [];
+  class IntersectionObserver {
+    constructor(cb, opts) { this.cb = cb; this.opts = opts; }
+    observe(el) { seen.push(el); }
+    disconnect() {}
+  }
+  const window = { IntersectionObserver };
+  const $ = sel => sel === '.jd-scroll' ? scroller : h;
+  const $$ = () => withTwin ? [twin] : [];
+  const requestAnimationFrame = fn => { fn(); return 1; };
+""" + code + """
+  echoTitle();
+  assert(head.has('ready'), 'the head is marked decided on the next frame');
+  assert.equal(head.has('echo'), withTwin);
+  assert.equal(seen.length, withTwin ? 1 : 0);
+}
+exercise(true);
+exercise(false);
+console.log('ECHO TITLE PASSED');
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "ECHO TITLE PASSED")
+
     def test_an_inbox_rows_run_id_reads_as_an_identifier(self):
         # The run id under the reason was the same sans one pixel smaller in a near-identical grey, so the two read
         # as one level drawn twice (critic r13 F8). The live app sets .mono in the UI face with tabular figures by

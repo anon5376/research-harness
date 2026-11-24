@@ -2089,6 +2089,7 @@ function echoTitle() {
     ? $$('.assistant-message > :first-child, .user-message', scroller).find(el => norm(el.textContent).startsWith(said))
     : null;
   head.classList.toggle('echo', !!twin);
+  requestAnimationFrame(() => head.classList.add('ready'));
   if (!twin) return;
   echoIo = new IntersectionObserver(es => head.classList.toggle('echo', es[es.length - 1].isIntersecting),
     { root: scroller });

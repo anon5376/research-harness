@@ -1580,6 +1580,29 @@ class ListsTest(unittest.TestCase):
         self.assertIn('class="page ibx" data-view="list"', page)
         self.assertIn('class="page ibx" data-view="item"', inbox(live_view(), live_view()["inbox"][0]["id"]))
 
+    def test_the_inbox_list_says_it_is_done_where_a_phone_would_keep_looking(self):
+        # On a phone the Inbox is the list alone: one row over a long blank reads as still loading, so when no
+        # Settled today section follows, the list ends with a quiet 'Nothing else needs you'. The empty Inbox
+        # keeps its one 'Nothing needs you.', settled rows mean the list is not the page's end, and the line
+        # itself is drawn inside the phone query only.
+        one = {**live_view(), "inbox": live_view()["inbox"][:1], "live": [], "not_started": [], "recent": [],
+               "stops": []}
+        wait = lambda v: re.search(r'<section class="s-ib-wait".*?</section>', inbox(v), re.S).group(0)  # noqa: E731
+        section = wait(one)
+        self.assertEqual(section.count('<p class="ib-end">Nothing else needs you</p>'), 1)
+        self.assertIn('</ul><p class="ib-end">Nothing else needs you</p>', section)  # right after the rows
+        empty = inbox({**one, "inbox": []})
+        self.assertNotIn('class="ib-end"', empty)
+        self.assertEqual(empty.count("Nothing needs you."), 1)
+        settled = {**one, "settled": [{"id": 90, "job": "live-job", "kind": "question", "body": "Which?",
+                                       "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
+        self.assertNotIn('class="ib-end"', inbox(settled))
+        self.assertIn(".ib-end { display: none; }", dashboard.STYLE)
+        phone = dashboard.STYLE.split("@media (max-width: 600px) { .ib-end {", 1)[1].split("}", 1)[0]
+        for decl in ("display: block", "margin: 32px 0 0", "text-align: center", "font-size: 13px",
+                     "color: var(--faint)"):
+            self.assertIn(decl, phone)
+
     def test_the_inbox_who_line_wraps_like_the_status_line_so_no_line_starts_or_ends_with_a_dot(self):
         # On a 390px phone the meta line wrapped after a separator and left a dangling "·" at line 1's end. It
         # now wraps as the job's status line does: each part wears the dot that leads it inside one nowrap

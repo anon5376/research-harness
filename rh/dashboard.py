@@ -3307,9 +3307,12 @@ def _inbox_pane(view, ctx, feedback):
     top = _top('<h1 tabindex="-1">Inbox</h1>'
                     f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>'
                     '</span>')  # one count, the sidebar badge's: the Settled today section says the rest
+    # a phone's list ends on a long blank that reads as still loading, so with nothing settled below it the
+    # list says it is done (the stylesheet draws the line on the phone only)
+    end = '<p class="ib-end">Nothing else needs you</p>' if rows and not done else ""
     # alone, the group's name repeats the top bar's count: it stays for a screen reader only
     lists = (_section("ib-wait", "Needs you" if done else '<span class="vh">Needs you</span>',
-                      _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
+                      (_rows(rows) if rows else '<p class="empty">Nothing needs you.</p>') + end,
                       # the top bar carries the one count of what waits and what was settled; the lists repeat none
                       tabbar)
              + _section("ib-settled", "Settled today", _rows(done), "", hidden=not done))

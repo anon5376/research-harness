@@ -566,6 +566,10 @@ pre.log.err { color: var(--text); }
 .ib-list .n { font: 12px var(--ui); color: var(--faint); }
 .ib-gh-r { margin-left: auto; color: var(--faint); }
 .ib-list .rows > li { margin: 0 8px 2px; }
+/* a phone's list ends in a long blank; the line says the list is done */
+.ib-end { display: none; }
+@media (max-width: 600px) { .ib-end { display: block; margin: 32px 0 0; text-align: center; font-size: 13px;
+  color: var(--faint); } }
 .ib { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 3px; padding: 11px 12px;
   border-radius: 8px; transition: background .1s; }
 a.ib:hover { background: var(--surface); }

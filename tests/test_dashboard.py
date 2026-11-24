@@ -252,9 +252,10 @@ class ListsTest(unittest.TestCase):
         for jid in ("live-job", "web-job"):
             row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
             self.assertIn(f'<span class="name"><span class="nm" title="Same brief">{jid}</span></span>', row)
-            # the palette too: the id leads, and the shared name moves to the grey line
+            # the palette too: the id leads, and the shared name moves to the grey line in a span of its own
             self.assertRegex(page, rf'<span class="p-t">{jid}</span><span class="p-s"><span class="p-w">[^<]+</span>'
-                                   rf'(?:<span class="p-when mono num">[^<]+</span>)?<span>Same brief</span>')
+                                   rf'(?:<span class="p-when mono num">[^<]+</span>)?'
+                                   rf'<span class="p-b">Same brief</span>')
             # and the job's own page names it as the sidebar does, so the two never disagree
             one = opened(view, jid, kind="local-shell")
             one["open"]["job"]["spec"]["brief"] = "Same brief."
@@ -3979,6 +3980,32 @@ console.log(JSON.stringify([
                      "overflow: hidden"):
             self.assertIn(rule, meta)
         self.assertNotIn("text-overflow", meta)
+
+    def test_on_a_phone_the_clashing_names_brief_leaves_the_grey_line(self):
+        # Two listed jobs that share a name tell their palette rows apart with the shared name on the grey line,
+        # in a span of its own after the time; on a phone that third phrase is cut to letters that name nothing
+        # ('In the research-harness …'), so the stylesheet hides it under 480px and the row reads 'Running ·
+        # 13:46'. The id still leads the title, the data-id still finds the row when typed, and a name that does
+        # not clash never carries the span.
+        view = live_view()
+        view["meta"] = {**view.get("meta", {}),
+                        "live-job": {"kind": "local-shell", "brief": "Same brief."},
+                        "web-job": {"kind": "local-shell", "brief": "Same brief."}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        for jid in ("live-job", "web-job"):
+            row = re.search(rf'<a class="p-row" role="option" data-id="{jid}"[^>]*>.*?</a>', pal, re.S).group(0)
+            self.assertIn(f'<span class="p-t">{jid}</span>', row)
+            self.assertRegex(row, r'<span class="p-s"><span class="p-w">[^<]+</span>'
+                                   r'<span class="p-when mono num">[^<]+</span>'
+                                   r'<span class="p-b">Same brief</span>')
+        other = re.search(r'<a class="p-row" role="option" data-id="broke-job"[^>]*>.*?</a>',
+                          pal, re.S).group(0)
+        self.assertNotIn('class="p-b"', other)
+        self.assertEqual(pal.count('class="p-b"'), 2)
+        # the stylesheet hides the brief's span inside a max-width: 480px rule and nowhere at desktop width
+        self.assertIn("@media (max-width: 480px) { .p-s > .p-b { display: none; } }", dashboard.STYLE)
+        self.assertEqual(dashboard.STYLE.count(".p-s > .p-b"), 1)  # no desktop rule touches it
 
     def test_render_is_deterministic_and_does_not_mutate_view(self):
         # Mutating the source ledger view or consulting wall-clock time must fail.

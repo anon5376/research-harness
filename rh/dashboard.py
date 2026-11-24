@@ -2933,7 +2933,7 @@ def _palette(jobs, ctx, keys):
                     # the time the sidebar shows, so runs of one brief tell apart at a glance
                     + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
                     # no id or slug here (typing one still finds the row, by its data-id); only a clash names both
-                    + (f'<span>{_text(j.label)}</span>' if j.dup else "")
+                    + (f'<span class="p-b">{_text(j.label)}</span>' if j.dup else "")
                     + '</span>'
                     f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]

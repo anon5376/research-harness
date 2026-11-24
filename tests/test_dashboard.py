@@ -1152,6 +1152,28 @@ class ListsTest(unittest.TestCase):
         drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
         self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
 
+    def test_role_chips_read_as_draggable_and_add_under_is_a_button(self):
+        # r28 F9/F10: each role chip began with a grey dot that meant nothing and did not say it could be dragged,
+        # and 'Add under' was text with no edge, 10px right of the inspector's labels. A chip leads with a six-dot
+        # grip and lifts with a soft shadow under the cursor (no overshoot); 'Add under' is a 28px outlined pill
+        # with a '+', its edge on the labels' edge.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertNotIn("tm-chip-dot", dashboard.SCRIPT + dashboard.STYLE)
+        self.assertIn("h('span', {class: 'tm-grip', 'aria-hidden': 'true'})", dashboard.SCRIPT)
+        grip = rule(".tm-grip")
+        for want in ("width: 8px", "height: 12px", "radial-gradient(circle, #7c818c"):
+            self.assertIn(want, grip)
+        lift = rule(".tm-chip:hover")
+        self.assertIn("translateY(-1px)", lift)
+        self.assertIn("box-shadow: 0 4px 12px rgb(0 0 0 / .4)", lift)
+        self.assertIn("cubic-bezier(.16, 1, .3, 1)", rule(".tm-chip"))
+        self.assertIn("cursor: grabbing", rule(".tm-chip:active"))
+        self.assertEqual(dashboard.SCRIPT.count("class: 'tm-add-under', 'data-add': n._k"), 2)
+        pill = rule(".tm-add-under")
+        for want in ("height: 28px", "border: 1px solid var(--control)", "border-radius: 999px", "margin-left: 0"):
+            self.assertIn(want, pill)
+        self.assertIn('content: "+"', rule(".tm-add-under::before"))
+
     def test_the_team_dialogs_head_is_one_quiet_row(self):
         # r28 F4/F8: a 600px boxed name field sat over a row of six controls, Delete as loud as Duplicate, and the
         # white 'Use for /swarm' was a rounded box where the Inbox's primary is a pill. The name's own borderless

@@ -295,7 +295,7 @@ function palette(p) {
   return h('div', {class: 'tm-pal', 'aria-label': 'Roles'},
     h('span', {class: 'tm-pal-h'}, 'Drag a role onto an agent'),
     p.roles.map(r => h('span', {class: 'tm-chip', 'data-role': r.id, title: `Drag onto an agent to add a ${r.name} under it`},
-      h('span', {class: 'tm-chip-dot', 'aria-hidden': 'true'}), r.name)));
+      h('span', {class: 'tm-grip', 'aria-hidden': 'true'}), r.name)));
 }
 
 function optionList(p, n) {
@@ -339,9 +339,9 @@ function inspector(p) {
     root ? null : h('div', {class: 'tm-row'},
       h('button', {type: 'button', class: 'btn quiet small', 'data-move': -1, 'aria-label': 'Move earlier'}, '↑'),
       h('button', {type: 'button', class: 'btn quiet small', 'data-move': 1, 'aria-label': 'Move later'}, '↓'),
-      h('button', {type: 'button', class: 'btn quiet small', 'data-add': n._k}, 'Add under'),
+      h('button', {type: 'button', class: 'tm-add-under', 'data-add': n._k}, 'Add under'),
       h('button', {type: 'button', class: 'btn quiet small danger-q', 'data-remove': ''}, 'Remove')),
-    root ? h('div', {class: 'tm-row'}, h('button', {type: 'button', class: 'btn quiet small', 'data-add': n._k}, 'Add under')) : null);
+    root ? h('div', {class: 'tm-row'}, h('button', {type: 'button', class: 'tm-add-under', 'data-add': n._k}, 'Add under')) : null);
 }
 
 function roles(p) {

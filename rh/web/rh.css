@@ -498,6 +498,10 @@ pre.log.err { color: var(--text); }
   border-radius: 0 0 var(--r-control) var(--r-control); background: linear-gradient(transparent, var(--frame)); }
 .clip.whole::after, .clip.open::after { display: none; }
 .clip-acts { display: flex; gap: 4px; }
+/* Its Show all ends on the same chevron as every in-place expander: › folded, ⌄ open. */
+[data-more] { gap: 0; }
+[data-more]::after { content: "›"; margin-left: 4px; }
+[data-more][aria-expanded="true"]::after { content: "⌄"; }
 
 .jd-side { border-left: 1px solid var(--rule); padding: 18px 20px 24px; overflow: auto; display: flex; flex-direction: column;
   gap: 22px; min-height: 0; }
@@ -1564,6 +1568,9 @@ html[data-live-app] body[data-tint="mono"] { --tint-ground: #0b0b0c; }
 .ask-more { display: block; margin: 6px 0 0 auto; padding: 2px 4px; border: 0; background: none; cursor: pointer;
   font: 12px var(--ui); color: var(--faint); }
 .ask-more:hover { color: var(--text); }
+/* The fold's label ends on the same chevron as the prompt's and the log's: › folded, ⌄ open. */
+.ask-more::after { content: "›"; margin-left: 4px; }
+.ask-more[aria-expanded="true"]::after { content: "⌄"; }
 /* The thread fades out under the docked reply box instead of being cut by it. */
 html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 32px;
   pointer-events: none; background: linear-gradient(transparent, var(--tint-ground)); }
@@ -1875,8 +1882,9 @@ details.out-more > summary {
   display: flex; align-items: center; justify-content: flex-end; gap: 6px; height: 36px; padding: 0 14px;
   border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); cursor: pointer; list-style: none; }
 details.out-more > summary::-webkit-details-marker { display: none; }
-details.out-more > summary::after { content: "›"; font-size: 14px; color: var(--faint); transition: transform .12s; }
-details.out-more[open] > summary::after { transform: rotate(-90deg); }
+/* the label's own chevron ends it, as the other in-place expanders read: › folded, ⌄ open */
+details.out-more .om-show::after { content: "›"; margin-left: 4px; }
+details.out-more .om-hide::after { content: "⌄"; margin-left: 4px; }
 details.out-more > summary:hover { color: var(--text); }
 details.out-more > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 details.out-more:not([open]) .om-hide, details.out-more[open] .om-show { display: none; }

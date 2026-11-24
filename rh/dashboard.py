@@ -1206,7 +1206,7 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
     # it, and otherwise shows Show all.
     copy = (f'<div class="clip" data-clip><textarea class="prompt mono" id="{_text(pid)}" rows="4" readonly>'
             f'{_text(prompt)}</textarea></div><div class="clip-acts">{_copy(pid, "Copy prompt")}'
-            '<button type="button" class="btn small quiet" data-more hidden>Show all</button></div>'
+            '<button type="button" class="btn small quiet" data-more aria-expanded="false" hidden>Show all</button></div>'
             if isinstance(prompt, str) and prompt.strip() else
             f'<p class="detail">The prompt could not be read here; <code>rh cloud prompt {_text(jid)}</code> prints it.'
             '</p>')

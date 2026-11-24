@@ -657,6 +657,7 @@ function more(b) {
   c.classList.toggle('open', open);
   box.style.height = open ? box.scrollHeight + 'px' : '';
   b.textContent = open ? 'Show less' : 'Show all';
+  b.setAttribute('aria-expanded', String(open));
 }
 
 function filter() {

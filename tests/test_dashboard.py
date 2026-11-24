@@ -4724,7 +4724,8 @@ console.log(JSON.stringify([
         card = re.search(r'<div class="ask-card launch">.*?</ol>', pane(dashboard.render(view, NOW, token=TOKEN)),
                          re.S).group(0)
         self.assertRegex(card, r'<div class="clip" data-clip><textarea class="prompt mono" id="prompt-web-job"')
-        self.assertIn('<button type="button" class="btn small quiet" data-more hidden>Show all</button>', card)
+        self.assertIn('<button type="button" class="btn small quiet" data-more aria-expanded="false" hidden>'
+                      'Show all</button>', card)
         # The text is cut by its own box at exactly four lines; the padding and border sit outside it, on the clip,
         # so no part of a fifth line shows in them.
         rule = dashboard.STYLE.split(".steps .clip .prompt {", 1)[1].split("}", 1)[0]
@@ -4739,6 +4740,35 @@ console.log(JSON.stringify([
         self.assertIn(".clip.whole::after, .clip.open::after { display: none; }", dashboard.STYLE)
         self.assertIn("if (m) { more(m); return; }", dashboard.SCRIPT)
         self.assertIn("box.style.height = open ? box.scrollHeight + 'px' : '';", dashboard.SCRIPT)
+
+    def test_every_in_place_expander_ends_on_one_chevron(self):
+        # The three in-place expanders share one look: the label, then '›' folded and '⌄' open, 4px on at the
+        # label's own size and colour — the folded ask's Show all, the clipped prompt's, the log fold's. An
+        # expander missing its chevron, or one sized or coloured differently, must fail.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for sel in (".ask-more::after", "[data-more]::after", "details.out-more .om-show::after"):
+            with self.subTest(folded=sel):
+                body = rule(sel)
+                self.assertIn('content: "›"', body)
+                self.assertIn("margin-left: 4px", body)
+        for sel in ('.ask-more[aria-expanded="true"]::after', '[data-more][aria-expanded="true"]::after',
+                    "details.out-more .om-hide::after"):
+            with self.subTest(open=sel):
+                self.assertIn('content: "⌄"', rule(sel))
+        for sel in (".ask-more::after", "[data-more]::after", "details.out-more .om-show::after",
+                    "details.out-more .om-hide::after"):
+            with self.subTest(plain=sel):
+                body = rule(sel)
+                self.assertNotIn("font", body)  # the chevron keeps the label's own size
+                self.assertNotIn("color", body)  # and its own colour
+        # The clipped prompt's Show all starts folded, and the page's script opens and closes it.
+        view = opened(live_view(), "web-job")
+        view["open"]["prompt"] = "line\n" * 12
+        card = re.search(r'<div class="ask-card launch">.*?</ol>', pane(dashboard.render(view, NOW, token=TOKEN)),
+                         re.S).group(0)
+        self.assertIn('data-more aria-expanded="false" hidden>Show all</button>', card)
+        more = dashboard.SCRIPT.split("function more(b) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("b.setAttribute('aria-expanded', String(open))", more)
 
     def test_sessions_use_inline_status_and_inbox_keeps_its_seat_tones(self):
         for jid, status in (("broke-job", "Failed"), ("finished-job", "Done"), ("live-job", "Running")):

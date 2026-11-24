@@ -57,6 +57,8 @@ class FakeCloud:
     def status(self, task_id):
         seq = self.statuses.get(task_id, ["running"])
         st = seq.pop(0) if len(seq) > 1 else seq[0]
+        if isinstance(st, RouteUnavailable):
+            raise st
         return {"state": st, "raw": st.upper(), "title": "t", "detail": ""}
 
 
@@ -270,6 +272,76 @@ class SupervisorTest(unittest.TestCase):
             s.tick()
         self.assertEqual(self.led.job("c1")["state"], "running")
         self.assertEqual(len([e for e in self.led.events("c1") if e["kind"] == "unknown-status"]), 1)
+
+    def test_status_error_counts_on_the_job_without_failing_the_route(self):
+        cloud = FakeCloud(self.clock)
+        self.led.add_job(cloud_spec("c1"), pinned_sha=SHA)
+        s = self.sup(cloud)
+        s.tick()
+        cloud.statuses[self.led.job("c1")["external_id"]] = [
+            RouteUnavailable("error", "codex cloud status exited 1: no such task")]
+        s.tick()
+        j = self.led.job("c1")
+        self.assertEqual(j["state"], "running")
+        self.assertIn("status error 1/3", j["detail"])
+        self.assertTrue(self.led.route("codex-cloud")["healthy"])
+
+    def test_three_status_errors_in_a_row_end_the_job_failed_and_keep_the_route_open(self):
+        cloud = FakeCloud(self.clock)
+        self.led.add_job(cloud_spec("c1"), pinned_sha=SHA)
+        s = self.sup(cloud)
+        s.tick()
+        cloud.statuses[self.led.job("c1")["external_id"]] = [
+            RouteUnavailable("error", "codex cloud status exited 1: no such task")]
+        for n in (1, 2):
+            s.tick()
+            j = self.led.job("c1")
+            self.assertEqual(j["state"], "running")
+            self.assertIn(f"status error {n}/3", j["detail"])
+            self.assertTrue(self.led.route("codex-cloud")["healthy"])
+        s.tick()
+        j = self.led.job("c1")
+        self.assertEqual(j["state"], "failed")
+        r = self.led.receipt("c1")
+        self.assertEqual(r["route"], "codex-cloud")
+        self.assertIn("status error 3/3", r["detail"])
+        self.assertTrue(self.led.route("codex-cloud")["healthy"])
+
+    def test_status_outage_still_fails_the_route_then_a_task_error_counts_on_the_job(self):
+        cloud = FakeCloud(self.clock)
+        self.led.add_job(cloud_spec("c1"), pinned_sha=SHA)
+        s = self.sup(cloud)
+        s.tick()
+        tid = self.led.job("c1")["external_id"]
+        cloud.statuses[tid] = [RouteUnavailable("timeout", "codex cloud status timed out")]
+        s.tick()
+        self.assertFalse(self.led.route("codex-cloud")["healthy"], "an outage still fails the route")
+        self.assertEqual(self.led.job("c1")["state"], "running")
+        self.clock.sleep(120)  # past the 60 s backoff: the next tick's health probe reopens the route
+        cloud.statuses[tid] = [RouteUnavailable("error", "codex cloud status exited 1: no such task")]
+        s.tick()
+        j = self.led.job("c1")
+        self.assertEqual(j["state"], "running")
+        self.assertIn("status error 1/3", j["detail"])
+        self.assertTrue(self.led.route("codex-cloud")["healthy"])
+
+    def test_a_successful_status_resets_the_error_count(self):
+        cloud = FakeCloud(self.clock)
+        self.led.add_job(cloud_spec("c1"), pinned_sha=SHA)
+        s = self.sup(cloud)
+        s.tick()
+        tid = self.led.job("c1")["external_id"]
+        cloud.statuses[tid] = [RouteUnavailable("error", "first failure"), "running",
+                               RouteUnavailable("error", "second failure")]
+        s.tick()
+        self.assertIn("status error 1/3: first failure", self.led.job("c1")["detail"])
+        s.tick()  # the status call succeeds again
+        self.assertNotIn("status error", self.led.job("c1")["detail"])
+        s.tick()  # the next error starts at 1/3, not 2/3
+        j = self.led.job("c1")
+        self.assertEqual(j["state"], "running")
+        self.assertIn("status error 1/3: second failure", j["detail"])
+        self.assertTrue(self.led.route("codex-cloud")["healthy"])
 
 
 class LocalJobTest(unittest.TestCase):

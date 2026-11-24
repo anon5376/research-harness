@@ -583,7 +583,13 @@ a.ib:hover { background: var(--surface); }
 .q-head { position: relative; flex: none; border-bottom: 1px solid var(--rule); overflow: hidden; }
 .q-head-in { position: relative; padding: 13px 40px 20px; }  /* its first line shares the list's first line */
 .q-who { display: flex; align-items: center; flex-wrap: wrap; row-gap: 8px; color: var(--muted); font-size: 13px; }
-.q-who > .mono { color: var(--text); font-size: 13px; }
+.q-who > .mono, .q-who .nowrap > .mono { color: var(--text); font-size: 13px; }
+/* the meta line wraps as the job's status line does (.job-result-status.sl): each part keeps the 16px dot that
+   leads it, and the line starts 16px early and clips that band, so a wrapped line's leading dot is hidden;
+   the shift makes [data-clear]'s max-width end the box 16px short of the edge, so the cap leaves */
+.q-who.sl { display: block; max-width: none; margin-left: -16px; text-indent: 16px; clip-path: inset(0 0 0 16px); }
+.q-who.sl .nowrap { white-space: nowrap; }
+.q-who.sl .sep { display: inline-block; width: 16px; margin: 0; text-align: center; text-indent: 0; }
 /* A failed job's pane: the brief first, then where it ran, since when and its run id in one quiet line */
 .q-who.q-sub { margin-top: 8px; font-size: 12px; color: #9aa0ad; }
 .q-who.q-sub > .mono { color: #9aa0ad; font-size: 12px; }

@@ -1238,6 +1238,43 @@ class ListsTest(unittest.TestCase):
         self.assertIn('class="page ibx" data-view="list"', page)
         self.assertIn('class="page ibx" data-view="item"', inbox(live_view(), live_view()["inbox"][0]["id"]))
 
+    def test_the_inbox_who_line_wraps_like_the_status_line_so_no_line_starts_or_ends_with_a_dot(self):
+        # On a 390px phone the meta line wrapped after a separator and left a dangling "·" at line 1's end. It
+        # now wraps as the job's status line does: each part wears the dot that leads it inside one nowrap
+        # span, the parts are joined only by a break chance, and the .sl class hangs those dots in the same
+        # clipped 16px band.
+        view = {**live_view(), "meta": {"live-job": {"kind": "local-shell"}}}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view, 7), re.S).group(0)
+        who = re.search(r'<p class="q-who sl"[^>]*>(.*?)</p>', detail, re.S).group(1)
+        parts = who.split("<wbr>")
+        self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
+                         ["live-job", "·" + dashboard.HERE,
+                          "·asked at " + dashboard._clock(NOW - 31, NOW) + ", waiting 31 s"])
+        # no separator is a child of the line itself: each opens the nowrap span of the segment it leads
+        self.assertEqual(who.count('class="sep"'),
+                         len(re.findall(r'<span class="nowrap"><span class="sep">', who)))
+        self.assertRegex(parts[0], r'^<span class="nowrap"><span class="mono">live-job</span></span>$')
+        for part in parts[1:]:
+            self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')
+        self.assertIn(".q-who.sl .nowrap { white-space: nowrap", dashboard.STYLE)
+        rule = dashboard.STYLE.split("\n.q-who.sl {", 1)[1].split("}", 1)[0]
+        for decl in ("display: block", "max-width: none", "margin-left: -16px", "text-indent: 16px",
+                     "clip-path: inset(0 0 0 16px)"):
+            self.assertIn(decl, rule)
+        sep = dashboard.STYLE.split("\n.q-who.sl .sep {", 1)[1].split("}", 1)[0]
+        for decl in ("width: 16px", "margin: 0", "text-indent: 0"):
+            self.assertIn(decl, sep)
+        self.assertIn(".q-who > .mono, .q-who .nowrap > .mono { color: var(--text); font-size: 13px; }",
+                      dashboard.STYLE)
+        # the failed-job pane's quiet line is left alone: its separators and the last id stay direct
+        # children, so the desktop rule that leaves the id to the selected row beside it still matches
+        lead = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}
+        pane_html = re.search(r'data-region="ib-detail".*?</section>', inbox(lead), re.S).group(0)
+        sub = re.search(r'<p class="q-who q-sub"[^>]*>(.*?)</p>', pane_html, re.S).group(1)
+        self.assertTrue(sub.endswith('<span class="sep">·</span><span class="mono">broke-job</span>'), sub)
+        self.assertIn(".q-who.q-sub > .mono:last-child, .q-who.q-sub > .sep:nth-last-child(2)",
+                      dashboard.STYLE)
+
     def test_a_failed_jobs_title_folds_a_long_brief(self):
         # The detail title is the job's brief: one its name in the lists cannot say whole folds to three
         # lines with a Show all, the fold the job's own page gives the ask; one it can say keeps the bare

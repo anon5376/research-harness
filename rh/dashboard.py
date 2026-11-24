@@ -2807,11 +2807,13 @@ def _ib_detail(ctx, entry, settled, view, missing, lead=None):
     ask, detail = _ask_line(item)
     who = [f'<span class="mono">{_text(jid) if jid else "harness"}</span>']
     if job:
-        who.append(f'{_SEP_HTML}<span>{_text(_platform(job.kind))}</span>')
+        who.append(f'<span>{_text(_platform(job.kind))}</span>')
     if _number(item.get("created")):
-        who.append(f'{_SEP_HTML}<span>asked at <span class="mono num">{_clock(item["created"], ctx["now"])}'
+        who.append(f'<span>asked at <span class="mono num">{_clock(item["created"], ctx["now"])}'
                    f'</span>' + (f', waiting {_when(item["created"], ctx["now"], "q:age", short=True)}' if entry else "")
                    + '</span>')
+    # each part keeps the dot that leads it, so a wrapped line can hide its leading dot (see .sl in rh.css)
+    who = [f'<span class="nowrap">{_SEP_HTML if i else ""}{part}</span>' for i, part in enumerate(who)]
     about = ""
     if job:
         link = (f'<a href="{_url(ctx, "/job/" + job.id)}" data-nav>{_text(job.title)}</a>' if ctx["live"]
@@ -2824,7 +2826,7 @@ def _ib_detail(ctx, entry, settled, view, missing, lead=None):
              _tank([], "q-water", {"octopus": {"tone": tone, "at": [0.92, 0.5]}}))
     back = (f'<a class="ib-back" href="{_url(ctx, "/inbox")}" data-nav>Inbox</a>' if ctx["live"] else "")
     head = (f'{back}<div class="q-head">{water}<div class="q-head-in">'
-            f'<p class="q-who" data-clear>{"".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
+            f'<p class="q-who sl" data-clear>{"<wbr>".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
             f'{about}</div></div>')
     parts = [f'<div class="q-msg">{_text(detail)}</div>'] if detail else []
     if entry is None:

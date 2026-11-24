@@ -1460,6 +1460,17 @@ class ListsTest(unittest.TestCase):
         # without a recorded check the headline stays
         self.assertNotIn('class="ib-why ib-exit"', inbox({**view, "fails": {}}))
 
+    def test_the_inbox_stop_card_shows_its_tail_without_counting_it(self):
+        # r26: the pane's 'Where it stopped' shows the kept tail whole, so '· N lines' counted what was already in
+        # view; the card heads with its name alone.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}  # a failed job leads
+        view["tails"] = {"broke-job": "counting\nls: drafts/: No such file or directory"}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
+        card = re.search(r'<section class="out">.*?</section>', detail, re.S).group(0)
+        self.assertIn("Where it stopped", card)
+        self.assertIn("ls: drafts/: No such file or directory", card)
+        self.assertNotIn('class="lines', card)
+
     def test_a_running_job_says_how_far_along_its_log_says_it_is(self):
         self.assertEqual(dashboard._progress("start\nstep 357: window 357 of 2400\n"), (357, 2400))
         self.assertIsNone(dashboard._progress("1 of 1 done"))
@@ -3495,6 +3506,27 @@ console.log(JSON.stringify([
         self.assertEqual(body.count("ls: docs/: No such file or directory"), 1)
         self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
 
+    def test_a_log_card_counts_only_the_lines_kept_out_of_view(self):
+        # critic r26: 'Where it stopped · 2 lines' over the two lines it shows counts nothing hidden. The count
+        # stays only for a log longer than the card's tail, or a kept tail cut from a longer log.
+        broke = opened(live_view(), "broke-job", kind="local-shell")
+        broke["open"]["log"] = "one\ntwo"
+        error = re.search(r'data-region="j-error".*?</section>',
+                          pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn("Where it stopped", error)
+        self.assertIn("two", error)
+        self.assertNotIn('class="lines', error)
+        broke["open"]["log"] = "\n".join(f"line {n}" for n in range(1, 31))
+        error = re.search(r'data-region="j-error".*?</section>',
+                          pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">30 lines</span>', error)  # the count is real: only the tail shows
+        self.assertIn("line 30", error)
+        self.assertNotIn("line 18\n", error)
+        broke["open"].update(log="one\ntwo", log_cut=True)  # a kept tail: what shows is a part, so it counts itself
+        error = re.search(r'data-region="j-error".*?</section>',
+                          pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">2 lines</span>', error)
+
     def test_a_stopped_log_wraps_each_line_as_its_own_hanging_block(self):
         # Each tail line is its own block so a wrapped line indents under the line's start, not the card's edge;
         # a newline-joined tail, a line rendered outside its span, or a < reaching the page raw, must fail.
@@ -4095,6 +4127,27 @@ console.log(JSON.stringify([
         page = pane(dashboard.render(view, NOW, token=TOKEN))
         self.assertIn('<span class="lines mono">last 200 lines</span>', page)
         self.assertNotIn('<div class="jd-dock">', page)
+
+    def test_a_live_log_in_view_does_not_count_itself(self):
+        # r26: a stalled job's open fold read 'Output · 1 line' over its one line. A live log of twenty lines or
+        # fewer fits the open card without scrolling, so its summary counts nothing; a kept tail or a log that
+        # scrolls keeps its count.
+        stalled = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        stalled["open"]["log"] = "still here"
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>',
+                            pane(dashboard.render(stalled, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="worked-output">Output</span>', summary)
+        self.assertNotIn('class="lines', summary)
+        running = opened(live_view(), "live-job", kind="local-shell")
+        running["open"]["log"] = "\n".join(f"line {n}" for n in range(50))
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>',
+                            pane(dashboard.render(running, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">50 lines</span>', summary)
+        cut = opened(live_view(), "live-job", kind="local-shell")
+        cut["open"].update(log="one\ntwo", log_cut=True)
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>',
+                            pane(dashboard.render(cut, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">last 2 lines</span>', summary)
 
     def test_a_job_keeps_its_full_request_and_searchable_title(self):
         # A clipped request or a palette entry too long to read would make it harder to identify the job.

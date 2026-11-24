@@ -2635,18 +2635,24 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         # unknown length is no whole, so the card counts its own
         whole = total if total else None if opened.get("log_cut") else len(lines)
         n = whole if whole and whole > len(tail) else len(tail)
-        body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2><span class="lines mono">'
-                f'{n:,} {"line" if n == 1 else "lines"}</span></div>'
+        # the count says what is hidden: a log longer than the tail shown, or a kept tail cut from one; over lines
+        # already in view it counts nothing and the head goes without it
+        count = (f'<span class="lines mono">{n:,} {"line" if n == 1 else "lines"}</span>'
+                 if opened.get("log_cut") or len(lines) > len(tail) else "")
+        body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2>{count}</div>'
                 f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # output that fits whole in the card above has nothing more to unfold
     if (not finished or log) and not (card and len(lines) <= _TAIL) and not (swarming and not log):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
-        # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing
+        # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing; a
+        # live log shows whole in the open fold, so its count stays only for a kept tail ('last N') or a log long
+        # enough to scroll (over 20 lines)
         line_count = ((f"last {len(lines):,} lines" if last else "") if card else
                       f'{len(lines)} of {total:,} lines' if total and finished else
-                      f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}')
+                      f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
+                      if finished or last or len(lines) > 20 else "")
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
         output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
@@ -2787,11 +2793,9 @@ def _ib_job(ctx, entry, view):
                else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
     bad = job.state in _FAILED
     tail = str((view.get("tails") or {}).get(job.id) or "")
-    n = len(tail.splitlines())
-    stopped = (f'<section class="out"><div class="head"><h2>{_ic("term", True)}Where it stopped</h2>'
-               f'<span class="lines mono">{n} '
-               f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">'
-               f'{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
+    # the tail shows whole, so a count of it would count nothing hidden: the head is the name alone
+    stopped = (f'<section class="out"><div class="head"><h2>{_ic("term", True)}Where it stopped</h2></div>'
+               f'<pre class="log ended err" tabindex="0">{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
                if tail else "")
     # a failed check reads as on the job's page: the sentence, the command and its exit code
     check = (view.get("fails") or {}).get(job.id)

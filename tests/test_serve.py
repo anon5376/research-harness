@@ -647,7 +647,7 @@ class ServeTest(unittest.TestCase):
         # Under 200 lines and 64 KB the page has the whole log; past 64 KB it has the end, in fewer than 200 lines.
         self.local_job("short-local", log=b"one\ntwo\nthree\n")
         page = self.request("/job/short-local")[2]
-        self.assertIn('<span class="lines mono">3 lines</span>', page)
+        self.assertNotIn('class="lines', page)  # the log is whole and in view, so no count repeats it
         self.assertIn('class="job-result"', page)
         self.assertNotIn('<div class="jd-prog">', page)
         self.local_job("wide-local", log=b"".join(b"%04d " % i + b"x" * 995 + b"\n" for i in range(100)))

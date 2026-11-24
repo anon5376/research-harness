@@ -2394,6 +2394,23 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_running_agent_job_says_which_agent_and_model_it_steers(self):
+        # r31 F5: a running job's status was a bare 15px 'Running' heading that named no one, while a finished turn
+        # names its agent and model. The page whose composer steers a live agent says which one, in the same quiet
+        # 13px line a finished turn uses: 'Claude · Opus 5.5 · Running · …'.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", command=[
+            "python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go", "--model", "claude-opus-5-5"])
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        line = re.search(r'<p class="job-result agent-run" data-region="job-result"[^>]*>(.*?)</p>', page, re.S)
+        self.assertIsNotNone(line, "the running agent's status line is not marked agent-run")
+        self.assertRegex(text(line.group(1)), r"^Claude ?· ?Opus 5\.5 ?· ?Running")
+        self.assertIn(".jd .job-result.agent-run .job-result-status { font-size: 13px; font-weight: 400;",
+                      dashboard.STYLE)
+        # a running shell job, with no agent to name, keeps its headline
+        shell = pane(dashboard.render(opened(live_view(), "live-job", kind="local-shell"), NOW, token=TOKEN))
+        self.assertIn('<p class="job-result" data-region="job-result"', shell)
+
     def test_a_running_job_with_no_output_yet_shows_its_output_card_waiting(self):
         # r31 F6: an empty log was two bare lines saying one thing twice ('No output received yet' over 'The worker
         # has not produced output yet.') above an empty band. A running job's output is one card, so the empty one

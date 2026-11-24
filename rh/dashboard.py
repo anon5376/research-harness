@@ -2716,6 +2716,13 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         shown, word = "running", _STATES["running"][0]
     result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
     status_line = [_text("Done" if state == "done" else word)]
+    # a running agent's line names who the composer steers, as a finished turn's does (r31 F5): 'Claude · Opus 5.5'
+    steered = agent_of(spec.get("command")) if state in ("running", "stalled") else None
+    if steered and steered[0] in _AGENT_WHO:
+        who = _AGENT_WHO[steered[0]][0]
+        model = _MODEL_NAMES.get(steered[1], steered[1]) if steered[1] else ""
+        model = model[len(who) + 1:] if model.startswith(who + " ") else model
+        status_line[:0] = [_text(who)] + ([_text(model)] if model else [])
     late = state == "stalled"
     # quiet for over 5 min past the limit: the log card says output stopped, so the status line does not repeat it
     quiet_log = (late and _number(opened.get("log_at")) and now - opened["log_at"] > 300
@@ -2772,7 +2779,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
     status_at, status_html = len(work), "".join(result)
-    work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else "job-result"))
+    work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else
+                        "job-result agent-run" if steered and steered[0] in _AGENT_WHO else "job-result"))
     if runs:
         team = _team_card(ctx, jid)
         if team:

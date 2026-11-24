@@ -827,9 +827,10 @@ body[data-background="off"] { --art: none; }
 .detail .jd-head h1 { order: -1; margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font: 600 14px/20px var(--ui); letter-spacing: 0; color: #e8e9ec; }
 /* while the same words show just below (the answer's first line, the brief), the title steps aside */
-.detail .jd-head-in > h1 { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }
-.detail .jd-head.echo h1 { opacity: 0; }
-@media (prefers-reduced-motion: reduce) { .detail .jd-head-in > h1 { transition: none; } }
+.detail .jd-head-in > :is(h1, .job-worker) { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }
+/* the place beside the title fades with it: alone, its dot and name read as a broken header (critic r25 F2) */
+.detail .jd-head.echo :is(h1, .job-worker) { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .detail .jd-head-in > :is(h1, .job-worker) { transition: none; } }
 .job-worker { flex: none; color: var(--faint); font-size: 12px; }
 .jd-scroll { flex: 1; min-height: 0; overflow: auto; }
 .detail .jd-body { width: 100%; max-width: 768px; gap: 24px; margin: 0 auto; padding: 16px 24px 24px; font-size: 13px; }
@@ -1656,7 +1657,7 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]::before { content: "Run again"; }
 .composer[data-label="Judge again"]:has(.c-text:placeholder-shown) .compose-tools .send[data-followup]::before { content: "Judge again"; }
 /* How far a run has got is the page's headline while it runs. */
-.jd[data-state="running"] .job-result-status { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
+:is(.jd[data-state="running"], .jd[data-state="stalled"]) .job-result-status { font-size: 15px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .run-progress { height: 4px; border-radius: 2px; }
 .run-progress::-webkit-progress-bar, .run-progress::-webkit-progress-value { border-radius: 2px; }
 .worked pre.log[data-follow] { max-height: min(460px, max(240px, calc(100dvh - 300px))); }
@@ -1688,7 +1689,9 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
   .detail .jd-head h1 { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; white-space: normal;
     font-size: 15px; line-height: 20px; }
 }
-.jd[data-state="running"] .job-result-status * { font-size: inherit; }
+:is(.jd[data-state="running"], .jd[data-state="stalled"]) .job-result-status * { font-size: inherit; }
+/* past its limit and quiet for over 5 min, the ring dims: the page reads as stopped, not working (critic r25 F3) */
+.job-result .st.quiet { opacity: .5; }
 /* The Inbox's two ways forward are one height; running it again leads. */
 .q-acts { align-items: center; }
 .q-acts .btn { height: 32px; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
@@ -1712,7 +1715,7 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 .job-result-status.sl .sep::before, .job-result-status.sl .sep::after { content: none; }
 /* and the mark sits beside line 1 (20px lines, 14px mark) */
 .job-result > .st { align-self: flex-start; margin-top: 3px; }
-@media (max-width: 600px) { .jd[data-state="running"] .job-result-status { font-size: 14px; } }
+@media (max-width: 600px) { :is(.jd[data-state="running"], .jd[data-state="stalled"]) .job-result-status { font-size: 14px; } }
 /* On a phone the head's name is one line again; the brief below says it whole. */
 @media (max-width: 600px) {
   .detail .jd-head h1 { display: block; -webkit-line-clamp: unset; white-space: nowrap; }
@@ -1843,8 +1846,8 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
   border-bottom: 1px solid var(--rule); }
 .worked:has(> .worked-content > pre.log[data-follow]) > summary .worked-output { color: var(--text); font-size: 13px; }
 .worked-content:has(> pre.log[data-follow]) { margin-top: 0; border: 0; border-radius: 0; background: none; }
-.worked pre.log[data-follow] { max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
-@media (max-width: 600px) { .worked pre.log[data-follow] { max-height: max(240px, calc(100dvh - 300px)); } }
+.worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 310px)); max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
+@media (max-width: 600px) { .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 300px)); max-height: max(240px, calc(100dvh - 300px)); } }
 /* Settings opens with focus on itself, so its close button wears no ring until the keyboard reaches it. */
 .settings :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .settings header .icon-btn { width: 32px; height: 32px; font-size: 20px; line-height: 1; color: var(--muted); }

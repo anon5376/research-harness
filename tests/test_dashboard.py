@@ -1487,6 +1487,32 @@ class ListsTest(unittest.TestCase):
         view["open"]["job"]["state"] = "running"
         self.assertNotIn("last output", dashboard.render(view, NOW, token=TOKEN))
 
+    def test_a_quiet_job_past_its_limit_looks_stopped_and_its_log_fills_the_page(self):
+        # critic r25 F1: a one-line live log left ~640px of nothing under it; the live log card fills the page
+        # whatever it holds. F3: past its limit and quiet for over 5 min, the ring dims to half, and the status
+        # line reads at the running size so 'last output' is as loud as the limit.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn(".worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 310px)); "
+                      "max-height: max(240px, calc(100dvh - 310px));", dashboard.STYLE)
+        self.assertIn("@media (max-width: 600px) { .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 300px)); "
+                      "max-height: max(240px, calc(100dvh - 300px)); } }", dashboard.STYLE)
+        self.assertIn("font-size: 15px", rule(':is(.jd[data-state="running"], .jd[data-state="stalled"]) .job-result-status'))
+        self.assertIn("opacity: .5", rule(".job-result .st.quiet"))
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["log"] = "still indexing"
+        ring = lambda page: re.search(r'<p class="job-result[^"]*"[^>]*>.*?(<svg class="st[^"]*")', page, re.S).group(1)  # noqa: E731
+        view["open"]["log_at"] = NOW - 301
+        self.assertIn(" quiet", ring(dashboard.render(view, NOW, token=TOKEN)))
+        view["open"]["log_at"] = NOW - 299
+        self.assertNotIn(" quiet", ring(dashboard.render(view, NOW, token=TOKEN)))
+
+    def test_the_place_beside_a_hidden_title_hides_with_it(self):
+        # critic r25 F2: the header title fades while the brief bubble shows the same words, and its '· This Mac'
+        # was left floating alone
+        self.assertIn("opacity: 0", dashboard.STYLE.split("\n.detail .jd-head.echo :is(h1, .job-worker) {", 1)[1].split("}", 1)[0])
+        self.assertIn(".detail .jd-head-in > :is(h1, .job-worker) { transition: opacity 160ms", dashboard.STYLE)
+
 
 class DashboardTest(unittest.TestCase):
     def test_detail_is_escaped(self):
@@ -3410,8 +3436,8 @@ console.log(JSON.stringify([
         self.assertIn("function echoTitle()", dashboard.SCRIPT)
         self.assertIn("document.addEventListener('rh:page', echoTitle);", dashboard.SCRIPT)
         self.assertIn("new IntersectionObserver(", dashboard.SCRIPT.split("function echoTitle()", 1)[1])
-        self.assertIn(".detail .jd-head.echo h1 { opacity: 0; }", dashboard.STYLE)
-        self.assertIn(".detail .jd-head-in > h1 { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }",
+        self.assertIn(".detail .jd-head.echo :is(h1, .job-worker) { opacity: 0; }", dashboard.STYLE)
+        self.assertIn(".detail .jd-head-in > :is(h1, .job-worker) { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }",
                       dashboard.STYLE)
 
     def test_an_inbox_rows_run_id_reads_as_an_identifier(self):

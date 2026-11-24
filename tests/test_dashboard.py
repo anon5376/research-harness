@@ -2394,6 +2394,27 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_follow_up_is_named_by_its_brief_not_its_id_before_any_answer(self):
+        # r32 F5: a failed job and its follow-up share one brief, so each was marked a duplicate and named by its raw
+        # id ('count-words', 'count-words-r2') in the sidebar, the palette and its page's head, while every other row
+        # reads as a sentence. Runs of one chain are one thread, answered or not: chain-mates never mark each other.
+        # Two unrelated jobs with one brief still show their ids.
+        view = live_view()
+        view["meta"] = {**view.get("meta", {}),
+                        "live-job": {"kind": "local-shell", "brief": "Count the words."},
+                        "web-job": {"kind": "local-shell", "brief": "Count the words.\n\nFollow-up: skip drafts",
+                                    "prior": "live-job"}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        for jid in ("live-job", "web-job"):
+            row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
+            self.assertIn('<span class="name">Count the words</span>', row)
+            self.assertNotIn('class="nm"', row)
+        one = opened(view, "web-job", kind="local-shell")
+        one["open"]["job"]["spec"].update(brief="Count the words.\n\nFollow-up: skip drafts", prior="live-job")
+        head = re.search(r'data-region="j-head".*?</section>', dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn(">Count the words</h1>", head)
+        self.assertNotIn(">web-job</h1>", head)
+
     def test_a_queued_rows_words_are_a_target_the_height_of_its_row(self):
         # r32 F7: since r31 F4 a queued row's words are its edit button, but the button was 20px tall in a 32px row,
         # below the 24px minimum, with 12px dead between rows. The button fills its row: 32px with a pointer, 44px

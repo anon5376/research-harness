@@ -3560,9 +3560,10 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
                       and not str(s["scope"]).startswith("job:")]}
     jobs = [_Job(row, where, ctx) for row, where in rows]
     names = {}
-    for j in jobs:  # runs that share a name in the lists are told apart by their ids; the runs of one chain share
-        # its first said as one name, so chain-mates never mark each other
-        names.setdefault(j.label, set()).add(j.root if j.label == j.said else j.id)
+    for j in jobs:  # runs that share a name in the lists are told apart by their ids; the runs of one chain are one
+        # thread, answered or not, so chain-mates never mark each other (r32 F5: a failed job and its follow-up
+        # were both named by raw ids)
+        names.setdefault(j.label, set()).add(j.root)
     for j in jobs:
         j.dup = len(names[j.label]) > 1
     ctx["jobs"] = jobs

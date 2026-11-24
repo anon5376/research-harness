@@ -2874,12 +2874,12 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 /* The running job's composer and its queue, after T3 Code's (MIT, T3 Tools Inc.): one button that is Stop while the
    box is empty, Steer or Queue once it has words, and the check of an edit; queued messages wait Up next above it. */
 .talk .c-row { align-items: center; }
-.talk-hint { margin-right: auto; color: var(--faint); font-size: 12px; }
 .talk-send .ic { display: none; }
-.talk[data-state="stop"] .t-square, .talk[data-state="steer"] .t-steer, .talk[data-state="queue"] .t-queue,
-.talk[data-state="update"] .t-check { display: block; }
-.talk.composer[data-state="stop"] .compose-tools .talk-send.send { background: var(--red-bg); color: var(--red);
-  box-shadow: inset 0 0 0 1px var(--red-line); }
+.talk[data-state="stop"] .t-stop, .talk[data-state="steer"] .t-steer, .talk[data-state="queue"] .t-queue,
+.talk[data-state="update"] .t-update { display: block; }
+/* Stop is the app's own round button with its stop ring: quiet like an empty send, but its glyph at full strength */
+.talk.composer[data-state="stop"] .compose-tools .talk-send.send { color: var(--text); }
+.talk.composer[data-state="stop"] .compose-tools .talk-send.send:hover { background: rgb(255 255 255 / .2); }
 .talk-send:disabled { opacity: .5; cursor: default; }
 .talk-cancel { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
 .up-next { margin: 0 14px; padding: 8px 10px 6px; border: 1px dashed var(--border); border-bottom: 0;
@@ -2908,8 +2908,8 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .user-message.sending, .talk-dropped .user-message { opacity: .6; }
 .um-note { margin: 4px 0 0; color: var(--faint); font-size: 12px; text-align: right; }
 .talk-stop { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
-.talk-stop .ic { color: var(--red); }
+.talk-stop .ic { color: var(--faint); }
 @media (max-width: 600px) {
-  .talk-hint, .un-editing, .un-steer span { display: none; }
+  .un-editing, .un-steer span { display: none; }
   .up-next { margin: 0 8px; }
 }

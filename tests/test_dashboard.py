@@ -2417,6 +2417,14 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('placeholder="Ask anything"', dock)
         self.assertRegex(dock, r'<button[^>]*aria-label="Stop generation"[^>]*title="Interrupt"')
         self.assertIn("Click to steer, Ctrl/⌘-click to queue", dock)
+        # the app's own glyphs, not T3 Code's (owner): Stop is the app's stop ring, steer its send arrow, queue its
+        # clock; no hint line under the box, and no red Stop fill
+        for name, cls in (("stop", "t-stop"), ("up", "t-steer"), ("clock", "t-queue"), ("check", "t-update")):
+            self.assertIn(dashboard._ic(name).replace('class="ic"', f'class="ic {cls}"'), dock)
+        self.assertNotIn("talk-hint", dock)
+        for t3 in ("square", "steer", "queue"):
+            self.assertNotIn(t3, dashboard._ICONS)
+        self.assertNotIn("var(--red-bg); color: var(--red);\n  box-shadow: inset 0 0 0 1px var(--red-line)", dashboard.STYLE)
         badges = re.findall(r'<div class="user-message steered"><span class="um-badge" title="([^"]+)">.*?Steer</span>'
                             r'<span class="um-t">([^<]*)</span>', page)
         self.assertEqual(badges, [("Steered the active turn", "use tabs"),

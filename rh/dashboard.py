@@ -142,10 +142,7 @@ _ICONS = {
     "question": ('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"/>'
                  '<path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.8c0 1.5-2.2 2-2.2 2"/><path d="M12 15.5h.01"/>'),
     "check": '<path d="M20 6 9 17l-5-5"/>',
-    # the running job's composer, after T3 Code's: Stop's square, Steer's bent arrow, Queue's list-plus, Edit, Remove
-    "square": '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>',
-    "steer": '<path d="m15 14 5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>',
-    "queue": '<path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/>',
+    # a queued message's Edit and Remove (the running job's composer otherwise uses the app's own stop, up and clock)
     "pencil": '<path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/><path d="m15 5 4 4"/>',
     "x": '<path d="M18 6 6 18M6 6l12 12"/>',
     "patch": '<path d="M12 4v11M7 10.5l5 5 5-5"/><path d="M4.5 19.5h15"/>',
@@ -1730,12 +1727,12 @@ def _talk_said(talk):
             continue
         if m.get("mode") == "stop":  # not a message: a line where it was asked, as T3 Code's lifecycle rows
             word = "Interrupt requested" if state == "waiting" else "You stopped the run"
-            out.append(f'<p class="talk-stop">{_ic("square", True)}{word}</p>')
+            out.append(f'<p class="talk-stop">{_ic("stop", True)}{word}</p>')
             continue
         said = f'<span class="um-t">{_text(_reflow(str(m.get("text") or "")))}</span>'
         if state == "steered":
             tip = _STEER_TIPS.get(m.get("mode"), _STEER_TIPS["steer"])
-            out.append(f'<div class="user-message steered"><span class="um-badge" title="{tip}">{_ic("steer", True)}'
+            out.append(f'<div class="user-message steered"><span class="um-badge" title="{tip}">{_ic("up", True)}'
                        f'Steer</span>{said}</div>')
         elif state == "dropped":
             out.append(f'<div class="talk-dropped"><div class="user-message">{said}</div>'
@@ -1759,7 +1756,7 @@ def _up_next(talk):
                     f'<button type="button" class="ghost un-b" data-q-edit aria-label="Edit queued message" '
                     f'title="Edit in the composer">{_ic("pencil", True)}</button>'
                     f'<button type="button" class="ghost un-b un-steer" data-q="promote" '
-                    f'title="Send as a steer instead">{_ic("steer", True)}<span>Steer</span></button>'
+                    f'title="Send as a steer instead">{_ic("up", True)}<span>Steer</span></button>'
                     f'<button type="button" class="ghost un-b" data-q="remove" aria-label="Remove queued message" '
                     f'title="Remove from queue">{_ic("x", True)}</button></span></li>')
     every = (f'<button type="button" class="ghost un-all" data-q-all aria-expanded="false" '
@@ -1772,12 +1769,14 @@ def _up_next(talk):
 def _talk_form(ctx, jid):
     """The running job's composer, after T3 Code's: Enter steers (joins the turn), Ctrl/⌘ with it queues (the next
     turn), and empty its button is Stop. The script posts it to /job/message; an edit of a queued row sends update."""
-    icons = "".join(_ic(name).replace('class="ic"', f'class="ic t-{name}"') for name in ("square", "steer", "queue", "check"))
+    # the app's own glyphs (owner: not T3's square and arrows): its stop ring, the send arrow every composer has, a clock
+    icons = "".join(_ic(name).replace('class="ic"', f'class="ic t-{state}"')
+                    for name, state in (("stop", "stop"), ("up", "steer"), ("clock", "queue"), ("check", "update")))
     return (f'<form class="compose composer talk" method="post" action="/job/message" data-message data-state="stop">'
             f'{_hidden(ctx, [("job", jid), ("mode", "steer"), ("target", "")])}'
             f'<label class="sr" for="talk-{_text(jid)}">Message the agent</label>'
             f'<textarea class="c-text" id="talk-{_text(jid)}" name="text" rows="1" placeholder="Ask anything"></textarea>'
-            '<div class="c-row"><span class="talk-hint">Enter steers · ⌘ Enter queues</span><div class="compose-tools">'
+            '<div class="c-row"><div class="compose-tools">'
             '<button type="button" class="ghost talk-cancel" data-q-cancel hidden '
             'aria-label="Cancel editing queued message">Cancel</button>'
             '<button class="btn primary send talk-send" aria-label="Stop generation" title="Interrupt" '

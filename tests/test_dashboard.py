@@ -1152,6 +1152,17 @@ class ListsTest(unittest.TestCase):
         drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
         self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
 
+    def test_the_team_dialog_is_as_tall_as_its_team(self):
+        # r28 F2: the dialog was fixed at 800px, so a three-layer team left about 190px of empty glass under the
+        # tree, 300px under the inspector and 500px under the team list. It is as tall as what it holds now, up to
+        # the same cap, and scrolls inside only past that; a phone keeps its full-height sheet.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        box = rule("dialog.team")
+        self.assertNotRegex(box, r"(?<![\w-])height: min\(800px")
+        self.assertIn("max-height: min(800px, calc(100dvh - 48px))", box)
+        phone = dashboard.STYLE.split("@media (max-width: 760px) {\n  dialog.team", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("{ height: calc(100dvh - 24px); }", phone.split("\n", 1)[0])
+
     def test_a_tree_card_is_two_lines_and_never_cuts_its_model(self):
         # r28 F1/F3: a 145px card cut 'Claude Opus 5…' (the version is what tells two models apart), and lead and
         # manager cards carried two chips ('Max', 'Not in policy') under the name, so cards in one tree were 80 and

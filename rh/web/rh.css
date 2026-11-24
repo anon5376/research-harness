@@ -2391,7 +2391,8 @@ details.worked[open]:not(:has(> .worked-content > pre.log[data-follow])) > summa
 .team-now b { font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .team-row .btn .ic { margin-right: 6px; }
 /* the Settings sheet's glass (the shared rule near the top), not a grey panel of its own */
-dialog.team { width: min(1180px, calc(100% - 24px)); height: min(800px, calc(100dvh - 48px)); padding: 0;
+/* as tall as the team it holds, up to the cap, and scrolling inside only past that (r28 F2) */
+dialog.team { width: min(1180px, calc(100% - 24px)); max-height: min(800px, calc(100dvh - 48px)); padding: 0;
   border-radius: 18px; color: var(--text); font-size: 13px; }
 dialog.team[open] { display: flex; flex-direction: column; overflow: hidden; animation: pal .18s var(--ease); }
 dialog.team::backdrop { background: var(--backdrop); }

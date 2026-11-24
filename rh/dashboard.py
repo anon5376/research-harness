@@ -1106,20 +1106,28 @@ class _Job:
             return _text(self.label)
         return f'<span class="nm" title="{_text(self.label)}">{_text(self.id)}</span>'
 
-    def item(self, runs=1):
+    def item(self, runs=1, earlier=False):
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
         and the one control it offers. In Needs you the ring is amber, or red for a failure; a failure repeated by
-        `runs` runs of its brief is one row, for its newest run, and one already run again draws quieter."""
+        `runs` runs of its brief is one row, for its newest run, and one already run again draws quieter. In
+        Earlier the day's heading says when it ended, so the time cell stays empty and the row's title keeps the
+        full date and time."""
         ctx = self.ctx
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
+        when = _clock(since, ctx["now"]) if since is not None else ""
+        tip = ""
+        if earlier and since is not None:
+            t = time.localtime(since)
+            tip = f' title="{_text(when)}{_SEP}{t.tm_hour:02d}:{t.tm_min:02d}"'
+            when = ""
         cells = (f'{_ring("env" if self.native else self.state, hue, self.kind, self.past)}'
                  f'<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
-                 f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
-        link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
-                else f'<div class="item">{cells}</div>')
+                 f'<span class="time mono num">{when}</span>')
+        link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav{tip}>{cells}</a>' if ctx["live"]
+                else f'<div class="item"{tip}>{cells}</div>')
         do = f'<span class="do">{act}</span>' if act else ""
         return _row(f"job:{self.id}", link + do, attrs=f' data-where="{_text(self.place)}" data-tone="{self.tone}"')
 
@@ -1563,11 +1571,34 @@ def _item_row(ctx, item):
     return _row(f"need:{item['id']}", link + act, attrs=' data-where="" data-tone="warn"')
 
 
+def _earlier_rows(jobs, ctx):
+    """The Earlier group's rows in their listed order: one quiet heading before the first row of each calendar
+    day — 'Yesterday' for the day before today's, else the day `_clock` writes — while every row's time cell
+    stays empty and its title keeps the full date and time. A row with no time takes no heading."""
+    yn = time.localtime(_midnight(ctx["now"]) - 43200)
+    ykey = (yn.tm_year, yn.tm_yday)
+    out, day = [], None
+    for job in jobs:
+        since = job.since()
+        if since is not None:
+            t = time.localtime(since)
+            key = (t.tm_year, t.tm_yday)
+            if key != day:
+                day = key
+                label = "Yesterday" if key == ykey else f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
+                out.append(_row(f"day:{t.tm_year}-{t.tm_mon}-{t.tm_mday}", f"<span>{label}</span>", cls="day",
+                                attrs=' role="presentation"'))
+        out.append(job.item(earlier=True))
+    return out
+
+
 def _job_list(jobs, stop_rows, ctx):
     """Today's jobs, grouped by what you do next: Needs you, Live, Up next, Ended today, Earlier."""
     groups = {"needs": [], "live": [], "next": [], "ended": [], "earlier": []}
     for job in jobs:
-        if job.group != "needs":
+        if job.group == "earlier":
+            groups["earlier"].append(job)
+        elif job.group != "needs":
             groups[job.group].append(job.item())
     for entry in ctx["needs"]:
         groups["needs"].append(entry["job"].item(len(entry["runs"])) if entry["job"] else stop_rows[entry["key"]] if entry["stop"]
@@ -1575,7 +1606,8 @@ def _job_list(jobs, stop_rows, ctx):
     out = []
     for key, heading in (("needs", "Needs you"), ("live", "Live"), ("next", "Up next"), ("ended", "Ended today"),
                          ("earlier", "Earlier")):
-        items = groups[key]  # a group shows all its rows, so its head counts nothing; the Inbox badge is the one count
+        # a group shows all its rows, so its head counts nothing; the Inbox badge is the one count
+        items = _earlier_rows(groups[key], ctx) if key == "earlier" else groups[key]
         out.append(_section(f"g-{key}", heading, _rows(items), "", "group", hidden=not items, h="h3"))
     none = not jobs and not stop_rows
     empty = (f'<p class="empty no-jobs" data-region="no-jobs" data-sig="{_sig(none)}"{"" if none else " hidden"}>'

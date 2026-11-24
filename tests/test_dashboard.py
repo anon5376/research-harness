@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -3308,6 +3309,44 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Run again", text(row))
         self.assertIn('class="st t-red"', row)
         self.assertIn('data-tone="bad"', row)
+
+    def test_the_earlier_group_heads_each_day_and_keeps_the_time_on_the_title(self):
+        # A '24 Nov' down the sidebar's right edge on every Earlier row says nothing new: each day's first row
+        # gets one quiet heading ('Yesterday' for the day before today's, the day itself for older ones), the
+        # time cell stays empty so the columns still line up, and the row's title keeps the full date and time.
+        # A row with no time takes no heading, and every other group's rows are as they were.
+        view = live_view()
+        midnight = dashboard._midnight(NOW)
+        stamps = {"earlier-am": midnight - 5400, "earlier-pm": midnight - 9000,
+                  "earlier-old": midnight - 216000}
+        view["recent"] += [{"id": jid, "state": "done", "paused": False, "detail": "", "external_id": None}
+                           for jid in stamps]
+        view["meta"] = {"finished-job": {"kind": "local-shell", "updated": NOW - 600},
+                        **{jid: {"kind": "local-shell", "updated": ts} for jid, ts in stamps.items()}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        earlier = re.search(r'<section class="s-g-earlier group".*?</section>', page, re.S).group(0)
+        old_day = dashboard._clock(stamps["earlier-old"], NOW)
+        self.assertEqual(re.findall(r'<li class="day"[^>]*><span>([^<]+)</span></li>', earlier),
+                         ["Yesterday", old_day])
+        at = lambda needle: earlier.index(needle)  # noqa: E731
+        self.assertLess(at("<span>Yesterday</span>"), at('data-key="job:earlier-am"'))
+        self.assertLess(at('data-key="job:earlier-am"'), at('data-key="job:earlier-pm"'))
+        self.assertLess(at('data-key="job:earlier-pm"'), at(f"<span>{old_day}</span>"))
+        self.assertLess(at(f"<span>{old_day}</span>"), at('data-key="job:earlier-old"'))
+        for jid, ts in stamps.items():
+            row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', earlier, re.S).group(0)
+            self.assertIn('<span class="time mono num"></span>', row)
+            t = time.localtime(ts)
+            title = f'{dashboard._clock(ts, NOW)} · {t.tm_hour:02d}:{t.tm_min:02d}'
+            self.assertRegex(row, rf'<a class="item"[^>]*title="{re.escape(title)}"')
+        # the days replace the group's own heading on screen, so it never reads 'Earlier' over 'Yesterday'
+        self.assertIn('.lane .s-g-earlier:has(.day) > .head { position: absolute; width: 1px; height: 1px;',
+                      dashboard.STYLE)
+        self.assertIn('<h3 id="g-earlier">Earlier</h3>', earlier)  # still a heading for a screen reader
+        ended = re.search(r'<section class="s-g-ended group".*?</section>', page, re.S).group(0)
+        self.assertIn(f'<span class="time mono num">{dashboard._clock(NOW - 600, NOW)}</span>', ended)
+        live = re.search(r'<a class="item"[^>]*>', item(page, "live-job")).group(0)
+        self.assertNotIn("title=", live)
 
     def test_a_failure_already_run_again_gets_a_quieter_ring(self):
         # A rerun failure still drawn in the full red of one that needs you, a failure nobody ran again drawn

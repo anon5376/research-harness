@@ -4387,27 +4387,33 @@ console.log(JSON.stringify({
         # and the composer, so the eye went corner -> heading -> composer. Its luminance is capped at 0.7 (on the
         # cobalt ramp about #7f9be0) with the falloff below the cap untouched, so content is the brightest thing on
         # screen; the beam itself still reaches the cap. A dot's radius is half a cell times sqrt(L).
+        # r35 F4: at 0.7 the lit core (about 540x280px top right) still won the squint over the heading, so the
+        # cap is 0.5 (about #5f78c4) and the core's lit-dot coverage is halved, 0.40 -> about 0.21 of its cells;
+        # the streak keeps its shape and length.
         bg = open(os.path.join(os.path.dirname(dashboard.__file__), "web", "bg.js"), encoding="utf-8").read()
         probe = """
-const radii = [];
-class Path2D { moveTo() {} arc(x, y, r) { radii.push(r); } }
+const radii = [], core = [];
+class Path2D { moveTo() {} arc(x, y, r) { radii.push(r); if (x > 900 && y < 280) core.push(r); } }
 const ctx = { setTransform() {}, fillRect() {}, fill() {}, beginPath() {}, arc() {}, createPattern() { return {}; } };
 const document = { createElement: () => ({ getContext: () => ctx }) };
 const window = { devicePixelRatio: 1 };
 """ + bg + """
 for (const preset of ['beam', 'quiet']) {
-  radii.length = 0;
+  radii.length = 0; core.length = 0;
   window.RHBackground.render({ getContext: () => ctx }, { preset, tint: 'cobalt', width: 1440, height: 900, dpr: 1 });
   const half = 2, peak = Math.max(...radii.map(r => (r / half) ** 2));
-  console.log(preset + ' ' + peak.toFixed(4));
+  const cover = core.reduce((s, r) => s + (r / half) ** 2, 0) / ((540 / 4) * (280 / 4));
+  console.log(preset + ' ' + peak.toFixed(4) + ' ' + cover.toFixed(4));
 }
 """
         r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr)
-        peaks = dict(line.split() for line in r.stdout.split("\n") if line.strip())
-        self.assertLessEqual(float(peaks["beam"]), 0.7001)
-        self.assertGreater(float(peaks["beam"]), 0.6)  # still a beam, not a haze
-        self.assertLessEqual(float(peaks["quiet"]), 0.22 * 0.7 + 1e-4)  # Quiet is the beam at 22%
+        got = {p: (float(a), float(b)) for p, a, b in (line.split() for line in r.stdout.split("\n") if line.strip())}
+        self.assertLessEqual(got["beam"][0], 0.5001)
+        self.assertGreater(got["beam"][0], 0.45)  # still a beam, not a haze
+        self.assertLessEqual(got["beam"][1], 0.22)  # half the 0.40 the core had at round 35
+        self.assertGreater(got["beam"][1], 0.15)
+        self.assertLessEqual(got["quiet"][0], 0.22 * 0.5 + 1e-4)  # Quiet is the beam at 22%
 
     def test_every_control_switched_on_wears_the_tints_blue(self):
         # Three "on" colours sat side by side: near-white checkboxes and radios beside blue ticks. --on is the

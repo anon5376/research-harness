@@ -240,5 +240,63 @@ class SwarmCheckTest(unittest.TestCase):
                              {"fix.w1": "failed: exit 1", "fix.w2": "passed", "fix.w3": "no changes"})
 
 
+@unittest.skipIf(os.name == "nt", "POSIX only: the fake judge is a #! script")
+class SwarmResultCheckTest(unittest.TestCase):
+    """The judge may combine runs, so the work it keeps is checked too: a swarm whose result was never checked,
+    or one that checks a run kept whole a second time, must fail."""
+
+    def judge(self, script, check=True):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(tmp)]))
+        repo, out = tmp / "repo", tmp / "out"
+        runs = [tmp / "fix.w1", tmp / "fix.w2"]
+        for d in (repo, out, *runs):
+            d.mkdir()
+        git(repo, "init", "--quiet")
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
+        git(repo, "add", "a.txt")
+        git(repo, "commit", "--quiet", "-m", "start")
+        base = git(repo, "rev-parse", "HEAD").strip()
+        for run, word in zip(runs, ("bad", "two")):
+            (run / "base").write_text(base + "\n", encoding="utf-8")
+            (run / "answer.md").write_text(f"Added {word}.\n", encoding="utf-8")
+            (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
+                                               f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
+        log = tmp / "checks.log"
+        command = (f"{sys.executable} -c \"import sys, pathlib; open('{log}', 'a').write('x'); "
+                   "sys.exit('bad' in open('a.txt').read())\"")
+        fake = tmp / "claude"
+        fake.write_text(f"#!{sys.executable}\nimport pathlib, subprocess\n{script}\nprint('Done.')\n",
+                        encoding="utf-8")
+        fake.chmod(0o755)
+        cwd = Path.cwd()
+        try:
+            os.chdir(out)
+            code = agent.main(["agent.py", "claude", str(fake), str(repo), "Add a second line.",
+                               *[a for r in runs for a in ("--swarm", str(r))], *(["--check", command] if check else [])])
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(code, 0)
+        checks = len(log.read_text()) if log.exists() else 0
+        return json.loads((out / "swarm-result.json").read_text(encoding="utf-8")), checks
+
+    def test_a_combined_result_is_checked_and_its_failure_recorded(self):
+        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w1/changes.patch'], check=True)\n"
+                                    "p = pathlib.Path('a.txt'); p.write_text(p.read_text() + 'three\\n')")
+        self.assertEqual(result, {"kept": "combined", "check": "failed: exit 1"})
+        self.assertEqual(checks, 3)  # each run, then the judge's own result
+
+    def test_a_run_kept_whole_reuses_its_verdict(self):
+        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)")
+        self.assertEqual(result, {"kept": "fix.w2", "check": "passed"})
+        self.assertEqual(checks, 2)
+
+    def test_with_no_check_the_result_names_only_the_kept_run(self):
+        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)",
+                                    check=False)
+        self.assertEqual(result, {"kept": "fix.w2"})
+        self.assertEqual(checks, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

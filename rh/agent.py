@@ -260,7 +260,18 @@ def main(argv):
                         if not line.startswith(b"index ")]
             kept = next((run.name for run in runs if (run / "changes.patch").is_file()
                          and same((run / "changes.patch").read_bytes()) == same(diff)), "combined" if diff else "none")
-            (out / "swarm-result.json").write_text(json.dumps({"kept": kept}) + "\n", encoding="utf-8")
+            result = {"kept": kept}
+            if check and diff:  # the judge may have combined runs, so what it keeps is checked like any run
+                try:
+                    earlier = json.loads((out / "swarm-checks.json").read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    earlier = {}
+                verdict = earlier.get(kept) if isinstance(earlier, dict) else None
+                if not verdict:  # a run kept whole keeps the verdict it already has; anything else is checked now
+                    verdict, _ = _check(repo, out, check, scratch)
+                result["check"] = verdict
+                print(f"check result: {verdict}", flush=True)
+            (out / "swarm-result.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
         print(f"changes.patch: {len(diff.splitlines())} lines" if diff else "no files changed")
         return code
     finally:

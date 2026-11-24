@@ -1152,6 +1152,28 @@ class ListsTest(unittest.TestCase):
         drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
         self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
 
+    def test_the_team_dialogs_head_is_one_quiet_row(self):
+        # r28 F4/F8: a 600px boxed name field sat over a row of six controls, Delete as loud as Duplicate, and the
+        # white 'Use for /swarm' was a rounded box where the Inbox's primary is a pill. The name's own borderless
+        # rule never applied: the app's input[type="text"] rule outranked '.tm-name'. The name reads as 17px text
+        # (a border only on hover or focus), Duplicate and Delete live in a '...' menu (Delete in red, still asking
+        # once), and 'Use for /swarm' is a 30px pill. Vertical / Horizontal stays: the owner asked for both shapes.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        name = rule(".tm-bar > input.tm-name")
+        for want in ("font-size: 17px", "background: transparent", "border: 1px solid transparent", "width: auto"):
+            self.assertIn(want, name)
+        bar = dashboard.SCRIPT.split("function bar(p) {", 1)[1].split("\n}", 1)[0]
+        more = bar.split("'tm-more'", 1)[1]
+        self.assertIn("'data-dup': ''", more)
+        self.assertIn("'data-del': ''", more)
+        self.assertNotIn("'data-dup'", bar.split("'tm-more'", 1)[0])
+        self.assertIn("'data-shape': s", bar)
+        self.assertIn("color: var(--red)", rule(".tm-menu [data-del]"))
+        use = rule(".tm-bar-r [data-use]")
+        for want in ("border-radius: 999px", "height: 30px", "padding: 0 14px"):
+            self.assertIn(want, use)
+        self.assertIn("for (const m of $$('details.tm-more[open]'))", dashboard.SCRIPT)
+
     def test_the_team_dialog_is_as_tall_as_its_team(self):
         # r28 F2: the dialog was fixed at 800px, so a three-layer team left about 190px of empty glass under the
         # tree, 300px under the inspector and 500px under the team list. It is as tall as what it holds now, up to

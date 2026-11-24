@@ -279,9 +279,17 @@ function bar(p) {
     h('span', {class: 'tm-bar-r'},
       h('button', {type: 'button', class: 'btn small' + (active ? ' quiet' : ' primary'), 'data-use': p.id, disabled: active},
         active ? 'In use for /swarm' : 'Use for /swarm'),
-      h('button', {type: 'button', class: 'btn quiet small', 'data-dup': ''}, 'Duplicate'),
-      h('button', {type: 'button', class: 'btn quiet small danger-q', 'data-del': ''}, 'Delete')));
+      // the rarer actions wait in one menu, so the head is one row: name, shape, plan, count, use, more (r28 F4)
+      h('details', {class: 'tm-more'},
+        h('summary', {class: 'tm-more-b', 'aria-label': 'More team actions', title: 'More'}, '⋯'),
+        h('div', {class: 'tm-menu', role: 'menu'},
+          h('button', {type: 'button', role: 'menuitem', 'data-dup': ''}, 'Duplicate'),
+          h('button', {type: 'button', role: 'menuitem', class: 'danger-q', 'data-del': ''}, 'Delete')))));
 }
+// a click anywhere else closes the menu
+document.addEventListener('click', e => {
+  for (const m of $$('details.tm-more[open]')) if (!m.contains(e.target)) m.open = false;
+});
 
 function palette(p) {
   return h('div', {class: 'tm-pal', 'aria-label': 'Roles'},

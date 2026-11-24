@@ -2436,9 +2436,14 @@ dialog.team > header form { margin-left: auto; }
 .tm-quick p { margin: 0 0 12px; max-width: 560px; }
 .tm-bar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 18px;
   border-bottom: 1px solid var(--rule); }
-.tm-name { font: inherit; font-size: 15px; font-weight: 600; color: var(--text); background: transparent; border: 0;
-  border-radius: 7px; padding: 4px 6px; margin-left: -6px; width: 15ch; min-width: 8ch; }
-.tm-name:hover, .tm-name:focus { background: var(--raised); outline: none; }
+/* the team's name reads as the head's title, not a form field: the app's input[type="text"] rule outranked a bare
+   .tm-name and drew it as a 600px box (r28 F4), so this one names its element; a hairline shows only to edit it */
+.tm-bar > input.tm-name { display: inline-block; width: auto; field-sizing: content; min-width: 8ch; max-width: 26ch;
+  margin: 0 0 0 -7px; padding: 3px 6px; font: inherit; font-size: 17px; font-weight: 600; line-height: 24px;
+  color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 7px;
+  transition: border-color .16s var(--ease), background .16s var(--ease); }
+.tm-bar > input.tm-name:hover { border-color: rgb(255 255 255 / .12); }
+.tm-bar > input.tm-name:focus { border-color: rgb(255 255 255 / .2); background: rgb(255 255 255 / .03); outline: none; }
 .tm-seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--raised); }
 .tm-seg button { padding: 4px 11px; border-radius: 7px; color: var(--faint); font-size: 12px;
   transition: background .18s var(--ease), color .18s var(--ease); }
@@ -2453,7 +2458,23 @@ dialog.team > header form { margin-left: auto; }
 .tm-tog input:checked + .tm-sw::after { transform: translateX(12px); background: var(--surface); }
 .tm-tog input:focus-visible + .tm-sw { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .tm-census { font-size: 12px; color: var(--faint); }
-.tm-bar-r { margin-left: auto; display: flex; gap: 6px; }
+.tm-bar-r { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+/* the one primary here is the Inbox's pill (r28 F8) */
+.tm-bar-r [data-use] { height: 30px; padding: 0 14px; border-radius: 999px; }
+/* Duplicate and Delete wait in one menu; Delete is red and still asks once */
+.tm-more { position: relative; }
+.tm-more-b { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; color: var(--muted);
+  font-size: 16px; line-height: 1; cursor: pointer; list-style: none; transition: background .14s var(--ease), color .14s var(--ease); }
+.tm-more-b::-webkit-details-marker { display: none; }
+.tm-more-b:hover, .tm-more[open] > .tm-more-b { background: var(--raised); color: var(--text); }
+.tm-more-b:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.tm-menu { position: absolute; z-index: 5; top: calc(100% + 6px); right: 0; min-width: 168px; padding: 4px;
+  border: 1px solid rgb(170 185 235 / .14); border-radius: 10px; background: rgb(19 24 38);
+  box-shadow: 0 14px 34px rgb(0 0 0 / .5); }
+.tm-menu button { display: block; width: 100%; padding: 7px 10px; border-radius: 7px; text-align: left; font-size: 13px;
+  color: var(--text); }
+.tm-menu button:hover { background: var(--raised); }
+.tm-menu [data-del] { color: var(--red); }
 .btn.danger-q:hover, .btn.danger-q.arm { color: var(--red); }
 .tm-work { min-height: 0; overflow: auto; padding: 0 0 18px; }
 .tm-stage { position: relative; }

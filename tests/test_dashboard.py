@@ -1217,6 +1217,19 @@ class ListsTest(unittest.TestCase):
         self.assertIn("box-shadow: none", rule(".tm-ef .ef-tick.current"))
         self.assertIn("height: 28px", rule(".ef-thumb"))  # the composer's own thumb is unchanged
 
+    def test_a_cards_plus_shows_only_under_the_pointer(self):
+        # r29 F6: the selected card always wore a 22px '+' on its bottom edge, astride the connector, so it read as a
+        # joint in the line, and it was a third way to grow the tree beside the role chips and 'Add under'. It shows
+        # now only while the card is hovered or holds focus: an 18px circle 6px under the card, right of the line.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertNotIn(".tn.sel .tn-add", dashboard.STYLE)
+        self.assertIn("opacity: 1", rule(".tn:hover .tn-add, .tn:focus-within .tn-add"))
+        plus = rule(".tn-add")
+        for want in ("width: 18px", "height: 18px", "bottom: -24px", "left: calc(50% + 6px)", "background: #1b2030",
+                     "border: 1px solid rgb(255 255 255 / .2)", "opacity: 0"):
+            self.assertIn(want, plus)
+        self.assertIn("right: -24px", rule('.tm-canvas[data-shape="horizontal"] .tn-add'))
+
     def test_the_team_dialogs_head_is_one_quiet_row(self):
         # r28 F4/F8: a 600px boxed name field sat over a row of six controls, Delete as loud as Duplicate, and the
         # white 'Use for /swarm' was a rounded box where the Inbox's primary is a pill. The name's own borderless

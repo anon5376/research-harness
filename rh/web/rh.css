@@ -2580,12 +2580,14 @@ dialog.team > header form { margin-left: auto; }
 .tn-end { white-space: nowrap; }
 .tn.off .tn-m { color: var(--muted); }
 .tn.off .tn-ic { opacity: .6; }
-.tn-add { position: absolute; left: 50%; bottom: -11px; translate: -50% 0; width: 22px; height: 22px; border-radius: 50%;
-  display: grid; place-items: center; font-size: 14px; line-height: 1; color: var(--muted); background: var(--surface);
-  border: 1px solid var(--control); opacity: 0; scale: .8; z-index: 2;
+/* a card's quick "+" shows only under the pointer or with focus, 6px clear of the card and right of the connector,
+   so it never reads as a joint in the line (critic r29 F6); the role chips and "Add under" stay the visible ways */
+.tn-add { position: absolute; left: calc(50% + 6px); bottom: -24px; width: 18px; height: 18px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 13px; line-height: 1; color: var(--muted); background: #1b2030;
+  border: 1px solid rgb(255 255 255 / .2); opacity: 0; scale: .8; z-index: 2;
   transition: opacity .16s var(--ease), scale .16s var(--ease), color .16s var(--ease); }
-.tm-canvas[data-shape="horizontal"] .tn-add { left: auto; right: -11px; bottom: 50%; translate: 0 50%; }
-.tn:hover .tn-add, .tn:focus-within .tn-add, .tn.sel .tn-add { opacity: 1; scale: 1; }
+.tm-canvas[data-shape="horizontal"] .tn-add { left: auto; right: -24px; bottom: 50%; translate: 0 50%; }
+.tn:hover .tn-add, .tn:focus-within .tn-add { opacity: 1; scale: 1; }
 .tn-add:hover { color: var(--text); border-color: var(--faint); }
 /* dragging: the card lifts off the page and follows the pointer; where it would land glows */
 .tn.dragging, .tm-chip.dragging { opacity: .32; transform: none; }

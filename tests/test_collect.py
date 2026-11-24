@@ -44,10 +44,13 @@ class CollectTest(unittest.TestCase):
         for rel, text in files.items():
             p = self.repo / rel
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text)
+            if isinstance(text, bytes):
+                p.write_bytes(text)
+            else:
+                p.write_text(text)
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "task")
-        d = git(self.repo, "diff", self.sha, "HEAD")
+        d = git(self.repo, "diff", "--binary", self.sha, "HEAD")
         git(self.repo, "checkout", "-q", "main")
         git(self.repo, "branch", "-q", "-D", "scratch")
         return d
@@ -115,6 +118,17 @@ class CollectTest(unittest.TestCase):
         state, rec = self.collect({"runs/j1/RESULT.json": self.result(head="d" * 40)})
         self.assertEqual(state, "failed")
         self.assertIn("stale input", rec["detail"])
+
+    def test_non_utf8_result_fails_instead_of_raising(self):
+        bad = b"\xff\xfe\x00" + self.result().encode()  # the NUL makes git carry it as a binary patch
+        state, rec = self.collect({"runs/j1/RESULT.json": bad})
+        self.assertEqual(state, "failed")
+        self.assertIn("not UTF-8", rec["detail"])
+
+    def test_utf8_result_still_ends_done_and_reads_model_served(self):
+        state, rec = self.collect({"runs/j1/RESULT.json": self.result(model="gpt-5-codex")})
+        self.assertEqual(state, "done", rec)
+        self.assertEqual(rec["model_served"], "gpt-5-codex")
 
     def test_refusal_blocks_with_its_text(self):
         state, rec = self.collect({"runs/j1/RESULT.json": self.result(refusals=["sandbox denied: network access"])})

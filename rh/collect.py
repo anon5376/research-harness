@@ -57,7 +57,7 @@ def collect_cloud(job, cloud, repo, home, gate_runner=None):
             f"custody: {'outside the write root: %s' % late if late else ''}"
             f"{'; ' if late and links else ''}{'symlink or submodule: %s' % links if links else ''}"), **base)
     rp = wt / protocol.result_path(jid)
-    raw = rp.read_text(encoding="utf-8") if rp.is_file() else None
+    raw = rp.read_bytes() if rp.is_file() else None
     try:
         res = protocol.parse_result(raw, jid, sha)
     except protocol.ResultError as e:

@@ -1469,7 +1469,7 @@ class ListsTest(unittest.TestCase):
         # with, so the next file's header is not read as code
         self.assertNotIn("diff --git", dashboard._peek_html("changes.patch", two))
         self.assertIn(":is(.peek-sum, .peek .dl.file, .sw-d) .n.add", dashboard.STYLE)
-        self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono">2 files</span>'))
+        self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono files">2 files</span>'))
         self.assertIn('<span class="n del zero">−0</span>', dashboard._diff_head("+++ b/x.py\n@@ -0,0 +1 @@\n+a\n"))
         self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")
         self.assertEqual(dashboard._diff_head("+ a list item\n"), "")
@@ -1528,9 +1528,9 @@ class ListsTest(unittest.TestCase):
         self.assertIn("background: #1c2030", rule(".peek-copy:hover, .peek-copy:focus-visible"))
         self.assertIn("display: none", rule(".session-file:not(:has(> .file-preview[open])) .peek-copy"))
         # on a phone the open head is too narrow for name, path, counts, size, Copy and Preview: the counts drew
-        # over the size (layout check, r117). There the path and size step aside and Copy is its glyph alone.
+        # over the size (layout check, r117). There a lone path and the size step aside and Copy is its glyph alone.
         phone = dashboard.STYLE.split("/* phone patch head */", 1)[1].split("\n}", 1)[0]
-        for spec in (".peek-sum .mono { display: none; }", ".peek-copy .pc-t { display: none; }",
+        for spec in (".peek-sum .mono:not(.files) { display: none; }", ".peek-copy .pc-t { display: none; }",
                      ".session-file:has(> .file-preview[open]) .session-file-size { display: none; }"):
             self.assertIn(spec, phone)
         self.assertNotIn("peek-copy", pane(dashboard.render(done, NOW)))
@@ -4092,6 +4092,30 @@ console.log(JSON.stringify([
         added["open"]["events"] = [{"seq": 1, "ts": NOW, "job": "live-job", "kind": "job-added",
                                     "data": {"kind": "local-shell"}}]
         self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
+
+    def test_a_patch_row_drops_its_size_once_it_says_what_the_patch_changes(self):
+        # A patch row reading '2 files +2 −2 1.3 KB' says the size where the counts are the fact a reader needs:
+        # once the row shows what the patch changes, the byte size must go. Any other file's row keeps its size —
+        # there it is the row's one fact. On a phone the summary keeps 'N files' (what the link cannot say) and
+        # sheds a lone path, which repeats the row's link.
+        patch = ("diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
+                 "diff --git a/y.py b/y.py\n--- a/y.py\n+++ b/y.py\n@@ -1 +1 @@\n-c\n+d\n")
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"].update(files=[{"path": "changes.patch", "size": 300}, {"path": "notes.md", "size": 2048}],
+                            peek={"path": "changes.patch", "text": patch, "more": False})
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        rows = re.findall(r'<li class="session-file">(.*?)</li>', body, re.S)
+        patch_row = next(r for r in rows if ">changes.patch<" in r)
+        self.assertIn('<span class="peek-sum"><span class="mono files">2 files</span>'
+                      '<span class="n add">+2</span><span class="n del">−2</span></span>', patch_row)
+        self.assertNotIn("session-file-size", patch_row)
+        note_row = next(r for r in rows if ">notes.md<" in r)
+        self.assertIn('<span class="session-file-size">2.0 KB</span>', note_row)
+        # the phone rule sheds the name only when it is a lone path: the 'N files' span is marked to stay
+        self.assertIn('<span class="mono">x.py</span>', dashboard._diff_head("+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"))
+        phone = dashboard.STYLE.split("/* phone patch head */", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".peek-sum .mono:not(.files) { display: none; }", phone)
+        self.assertNotIn(".peek-sum .mono { display: none; }", phone)
 
     def test_today_opens_on_what_needs_you(self):
         # The queue belongs to the only sidebar, and the main workspace keeps the composer and live background.

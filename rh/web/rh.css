@@ -2394,8 +2394,9 @@ form.pop .btn.danger.fill:hover { background: rgb(255 146 155 / .16); border-col
 .session-file:not(:has(> .file-preview[open])) .peek-copy { display: none; }
 @media (max-width: 600px) {
   /* phone patch head */
-  /* name, counts, Copy and Preview fit one line: the path is in the card's own file head, the size in the folded row */
-  .peek-sum .mono { display: none; }
+  /* name, counts, Copy and Preview fit one line: a lone path repeats the row's link, a file count does not;
+     the size still shows in the folded row */
+  .peek-sum .mono:not(.files) { display: none; }
   .peek-copy .pc-t { display: none; }
   .peek-copy { width: 28px; padding: 0; justify-content: center; }
   .session-file:has(> .file-preview[open]) .session-file-size { display: none; }

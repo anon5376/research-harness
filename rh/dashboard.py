@@ -314,7 +314,8 @@ def _diff_head(text, whole=True):
     if not whole:
         return f'<span class="mono">{_text(files[0][0] + (" and more" if len(files) > 1 else ""))}</span>'
     name = files[0][0] if len(files) == 1 else f"{len(files)} files"
-    return f'<span class="mono">{_text(name)}</span>' + _counts(sum(f[1] for f in files), sum(f[2] for f in files))
+    kind = " files" if len(files) > 1 else ""  # marks a count: a phone sheds a lone path but keeps 'N files'
+    return f'<span class="mono{kind}">{_text(name)}</span>' + _counts(sum(f[1] for f in files), sum(f[2] for f in files))
 
 
 def _counts(added, removed):
@@ -2801,9 +2802,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 details = (f'<details class="file-preview"><summary>Show</summary><div class="peek-card">'
                            f'<pre class="peek{" diff" if diff_head else ""}" tabindex="0">'
                            f'{_peek_html(path, peek_text, whole=not preview.get("more"))}{more}</pre></div></details>')
+            # a diff's counts are the fact a patch row needs; the size stays only where it is the row's one fact
+            size = "" if summed else f'<span class="session-file-size">{_text(_size(file.get("size")))}</span>'
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'
-                             f'{summed}<span class="session-file-size">{_text(_size(file.get("size")))}</span>'
-                             f'{copy}</span>{details}</li>')
+                             f'{summed}{size}{copy}</span>{details}</li>')
         work.append(_region("session-files", '<ul class="session-files">' + "".join(file_rows) + '</ul>',
                             "section", "session-file-list", ' aria-label="Files produced"'))
     # A done job that gave no answer made its output: its last lines show open, as a failed one's do.

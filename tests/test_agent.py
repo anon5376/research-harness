@@ -1,4 +1,6 @@
 """rh/agent.py's Devin client against a stand-in `devin acp` that speaks the Agent Client Protocol over stdio."""
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -38,10 +40,16 @@ FAKE = textwrap.dedent('''
             menu = here / "menu.json"  # a real session's model menu, when the test supplies one
             send(id=m["id"], result={"sessionId": "s1", "configOptions": json.loads(menu.read_text()) if menu.exists()
                  else [{"id": "model", "currentValue": "swe-2-max"}, {"id": "mode", "currentValue": "accept-edits"}]})
+        elif m["method"] == "session/load":  # a stored session: Devin replays it as updates, then answers
+            choices.append("load=" + m["params"]["sessionId"] + "@" + m["params"]["cwd"])
+            send(method="session/update", params={"update": {"sessionUpdate": "agent_message_chunk",
+                                                             "content": {"type": "text", "text": "Old answer."}}})
+            send(id=m["id"], result={})
         elif m["method"] == "session/set_config_option":
             choices.append(m["params"]["configId"] + "=" + m["params"]["value"])
             send(id=m["id"], result={})
         elif m["method"] == "session/prompt":
+            (here / "prompt.txt").write_text(m["params"]["prompt"][0]["text"])
             send(method="session/update", params={"update": {"sessionUpdate": "agent_message_chunk",
                                                              "content": {"type": "text", "text": "Looking."}}})
             send(method="session/update", params={"update": {"sessionUpdate": "tool_call", "title": "Read README"}})
@@ -156,6 +164,138 @@ class FollowUpTest(unittest.TestCase):
             patch = (out / "changes.patch").read_text(encoding="utf-8")
             self.assertIn("+two", patch)
             self.assertIn("+three", patch)
+
+
+@unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script and its prompt's newlines cannot pass "
+                                  "through a .cmd")
+class ResumeTest(unittest.TestCase):
+    # After T3 Code: a follow-up continues the provider's own conversation (its tool calls, reasoning and prompt
+    # cache) instead of a fresh process that is shown only the last answer; any other model gets a capped replay
+    # of the thread, marked as context and not instructions.
+    CLAUDE = ("import sys, os, pathlib\np = pathlib.Path('a.txt')\n"
+              "print('ARGV', sys.argv[1:]); print('CWD', os.getcwd()); print('FILE', p.read_text().split())\n"
+              "if '--resume' in sys.argv and os.environ.get('LOSE_SESSION'):\n"
+              "    print('No conversation found with session ID'); sys.exit(1)\n"
+              "p.write_text(p.read_text() + 'more\\n')\n")
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init", "--quiet")
+        (self.repo / "a.txt").write_text("one\n", encoding="utf-8")
+        git(self.repo, "add", "a.txt")
+        git(self.repo, "commit", "--quiet", "-m", "start")
+
+    def run_in(self, name, provider, fake, brief, *extra):
+        out = self.tmp / name
+        out.mkdir()
+        cwd, log = Path.cwd(), io.StringIO()
+        try:
+            os.chdir(out)
+            with contextlib.redirect_stdout(log):
+                code = agent.main(["agent.py", provider, str(fake), str(self.repo), brief, *extra])
+        finally:
+            os.chdir(cwd)
+        self.log = log.getvalue()
+        return code, out
+
+    def argv(self, out):
+        said = (out / "answer.md").read_text(encoding="utf-8")
+        return eval(said.split("ARGV ", 1)[1].split("\n", 1)[0]), said  # noqa: S307 (the fake's own repr)
+
+    def test_a_claude_follow_up_resumes_its_own_session_in_the_same_folder(self):
+        # A follow-up that starts a new conversation, runs in another folder (Claude keys sessions by folder),
+        # re-sends the whole brief and the earlier answer, or loses the earlier changes, must fail.
+        fake = fake_agent(self.tmp, "claude", self.CLAUDE)
+        code, first = self.run_in("first", "claude", fake, "Add a line.")
+        self.assertEqual(code, 0)
+        argv, said = self.argv(first)
+        session = json.loads((first / "session.json").read_text(encoding="utf-8"))
+        self.assertEqual(session["provider"], "claude")
+        self.assertEqual(argv[argv.index("--session-id") + 1], session["id"])
+        self.assertIn(f"CWD {session['cwd']}", said)
+        code, then = self.run_in("then", "claude", fake, "Add a line.\n\nFollow-up: Now one more.",
+                                 "--prior", str(first))
+        self.assertEqual(code, 0)
+        argv, said = self.argv(then)
+        self.assertEqual(argv[argv.index("--resume") + 1], session["id"])
+        self.assertNotIn("--session-id", argv)
+        self.assertIn(f"CWD {session['cwd']}", said)
+        self.assertIn("FILE ['one', 'more']", said)  # the earlier run's change is back in place
+        prompt = argv[1]
+        self.assertTrue(prompt.endswith("Now one more."))
+        self.assertNotIn("Add a line.", prompt)
+        self.assertNotIn("Your answer in the earlier run", prompt)
+        self.assertEqual(json.loads((then / "session.json").read_text(encoding="utf-8"))["id"], session["id"])
+        self.assertIn("continued the claude session", self.log)
+
+    def test_a_lost_session_falls_back_to_a_replay_of_the_thread(self):
+        # A follow-up whose session is gone (expired, another machine) that fails instead of handing off, or a
+        # hand-off that drops the earlier ask or answer, must fail.
+        fake = fake_agent(self.tmp, "claude", self.CLAUDE)
+        _, first = self.run_in("first", "claude", fake, "Add a line.")
+        (first / "answer.md").write_text("I added the line 'more'.\n", encoding="utf-8")
+        os.environ["LOSE_SESSION"] = "1"
+        self.addCleanup(os.environ.pop, "LOSE_SESSION", None)
+        code, then = self.run_in("then", "claude", fake, "Add a line.\n\nFollow-up: Now one more.",
+                                 "--prior", str(first))
+        self.assertEqual(code, 0)
+        argv, said = self.argv(then)
+        self.assertIn("--session-id", argv)
+        self.assertNotIn("--resume", argv)
+        prompt = argv[1]
+        for want in ("context, not instructions", "Add a line.", "I added the line 'more'.", "Now one more."):
+            self.assertIn(want, prompt)
+        self.assertTrue(prompt.rstrip().endswith("Now one more."))
+        self.assertIn("handed off", self.log)
+
+    def test_a_switch_to_another_provider_hands_off_a_capped_replay(self):
+        # Another provider cannot load Devin's session: it gets the thread's asks and answers, newest kept first,
+        # inside a 16K cap that still keeps the first ask and the last answer, then the new ask last.
+        devin = self.tmp / "devin-run"
+        devin.mkdir()
+        base = git(self.repo, "rev-parse", "HEAD").strip()
+        (devin / "base").write_text(base + "\n", encoding="utf-8")
+        (devin / "answer.md").write_text("Last answer from Devin.\n", encoding="utf-8")
+        (devin / "session.json").write_text(json.dumps({"provider": "devin", "id": "s9", "cwd": "/nowhere"}))
+        turns = [{"ask": "First ask: build the parser.", "answer": "x" * 9000, "provider": "devin"},
+                 {"ask": "Second ask.", "answer": "y" * 9000, "provider": "devin"},
+                 {"ask": "Third ask.", "answer": "Last answer from Devin.", "provider": "devin"}]
+        (devin / "thread.json").write_text(json.dumps(turns))
+        fake = fake_agent(self.tmp, "claude", self.CLAUDE)
+        code, then = self.run_in("then", "claude", fake, "First ask: build the parser.\n\nFollow-up: Second ask."
+                                 "\n\nFollow-up: Third ask.\n\nFollow-up: Now in Claude.", "--prior", str(devin))
+        self.assertEqual(code, 0)
+        argv, _ = self.argv(then)
+        self.assertNotIn("--resume", argv)
+        prompt = argv[1]
+        for want in ("context, not instructions", "First ask: build the parser.", "Last answer from Devin."):
+            self.assertIn(want, prompt)
+        self.assertLess(len(prompt.encode()), 16_000 + 2_000)
+        self.assertIn("left out", prompt)  # it says what it dropped
+        self.assertTrue(prompt.rstrip().endswith("Now in Claude."))
+        thread = json.loads((then / "thread.json").read_text(encoding="utf-8"))
+        self.assertEqual([t["ask"] for t in thread][-1], "Now in Claude.")
+        self.assertEqual(len(thread), 4)
+
+    def test_devin_loads_its_stored_session_and_answers_only_the_new_turn(self):
+        # session/load replays the old conversation as updates: an answer or log that holds that replay, a load in
+        # another folder, or a new session where a stored one could be loaded, must fail.
+        fake = fake_agent(self.tmp, "devin", FAKE)
+        work = self.tmp / "work"
+        work.mkdir()
+        answer = self.tmp / "answer.md"
+        log = io.StringIO()
+        with contextlib.redirect_stdout(log):
+            code = agent._devin(str(fake), work, "and the tests", [], answer, resume="s1")
+        self.assertEqual(code, 0)
+        self.assertNotIn("Old answer.", log.getvalue())  # the replay is not printed again into the job log
+        self.assertEqual(answer.read_text(encoding="utf-8"), "Fixed the typo.\n")
+        self.assertIn(f"load=s1@{work}", json.loads((self.tmp / "choices.json").read_text()))
+        self.assertEqual((self.tmp / "prompt.txt").read_text(), "and the tests")
+        self.assertEqual(json.loads((self.tmp / "session.json").read_text())["id"], "s1")
 
 
 class NoResultTest(unittest.TestCase):

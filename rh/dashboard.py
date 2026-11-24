@@ -696,20 +696,36 @@ _SELF_REMARK = re.compile(r"(I|We)\s+(chose|kept|picked|took|went with|combined)
                           r"|(Everything|All( (checks|tests))?) (verifies|verified|checks out|pass|passes|passed)\b")
 
 
+# An agent's preamble about how it read the code, or a bare acknowledgement, before it says what it found or did.
+# "Read X as bytes so …" is a change and still names the run; only a Read line that reports reading ("fully", "plus") is
+# preamble.
+_PREAMBLE = re.compile(r"(?:I(?:['’]ve| have)?\s+(?:read|reviewed|looked|went|traced|checked|inspected)\b"
+                       r"|Read\b.*\b(?:fully|in full|plus)\b"
+                       r"|(?:Fair enough|Sure|Got it|Understood|Alright|Right)(?:[.,!:;]|\s+[—–-]))", re.I)
 _NO_FINAL = "Devin ended its turn without a final message"  # rh/agent.py writes it, in italics, as the answer
 
 
 def answer_head(text):
     """An agent's answer as a list label: its first line without Markdown marks, up to a dash or colon that starts an
     aside ("Fixed X — untested: …" names the run as "Fixed X"), at most 100 characters; "" when it has no words."""
-    line = ""
+    line, fenced = "", False
     for raw in str(text or "").splitlines():
+        if raw.strip().startswith("```"):  # code never names a run, nor does anything inside a fence
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        heading = re.fullmatch(r"\*\*.+\*\*", raw.strip()) is not None
         # boilerplate never names a run: a status word alone ("Done."), a leading one ("Done. Rounded the ETA"), or a
         # lead-in that ends in a colon ("Summary of the diff:") gives way to the next line
         x = re.sub(r"^#+\s*|^[-*]\s+", "", raw.strip()).replace("**", "").replace("`", "").replace("__", "")
         x = re.sub(r"^([_*])(?=\S)(.*\S)\1$", r"\2", x)  # a line in _italics_ or *italics* names a run without its marks
         if x.startswith(_NO_FINAL):  # the harness's notice that the agent said nothing is no answer to name it by
             return ""
+        if _PREAMBLE.match(x):
+            continue
+        if heading and x.endswith(":") and re.search(r"\s[—–]\s|:\s", x):  # "**Bug — x.py:59, in f:**" is a heading
+            x = x[:-1].rstrip()
         bare = _STATUS_LEAD.sub("", x).strip()
         if bare != x:  # what a status word leaves starts as a sentence: no stray mark, a capital
             bare = bare.lstrip("—–-:·•, ")
@@ -719,8 +735,13 @@ def answer_head(text):
             line = x
             break
     head, *rest = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)
-    if rest and not re.search(r"\s", head.strip()):  # "rh/dashboard.py — X did Y": a lone label; the words name it
-        head = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)[0]
+    # "rh/dashboard.py — X did Y": a lone label; the words name it. "Bug: x.py:82 — the \\b in X": two labels in a row
+    # A line of code after the label ("rh/oslock.py:20 — fd = os.open(…)") is no name: the label stays.
+    while rest and not re.search(r"\s", head.strip()):
+        nxt, *after = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)
+        if re.match(r"[\w.\[\]]+\s*=[^=]|\w+\(", nxt.strip()):
+            break
+        head, rest = nxt, after
     # a label gets cut by the list's ellipsis, which would leave a false ':1…' of a line number: the number goes whole
     line = _LINE_NO.sub(r"\1", head).strip().rstrip(".")
     if len(line) > 100:

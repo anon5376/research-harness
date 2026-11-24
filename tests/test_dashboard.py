@@ -202,6 +202,27 @@ def primaries(html):
 
 
 class ListsTest(unittest.TestCase):
+    def test_a_reading_preamble_or_code_never_names_a_run(self):
+        # load test: three runs were listed as "I've read rh/gitx.py, its callers…", "Read rh/privacy.py and tests/…
+        # fully, plus…" and "Fair enough"; each one's next line, a bold Bug heading, says what it found
+        self.assertEqual(dashboard.answer_head(
+            "I've read `rh/gitx.py`, its callers (`collect.py`, `cli.py`) and the tests. One line stands out.\n\n"
+            "**Bug — `rh/gitx.py:59`, in `commit_branch`:**\n```python\ngit(worktree, \"checkout\")\n```\n"
+            "**Triggering state:** land."), "rh/gitx.py, in commit_branch")
+        self.assertEqual(dashboard.answer_head(
+            "Read `rh/privacy.py` and `tests/test_privacy.py` fully, plus the hook.\n"
+            "**Bug: `rh/privacy.py:82` — the leading `\\b` in `_ACCOUNT`.**\nInput: x"),
+            "the leading \\b in _ACCOUNT")
+        self.assertEqual(dashboard.answer_head(
+            "Fair enough — the code path is clear from reading anyway.\n**Bug: `rh/collect.py:60`** — "
+            "`raw = rp.read_text()`"), "rh/collect.py")  # a line of code after the label is no name
+        self.assertEqual(dashboard.answer_head("```python\nx = 1\n```\nFixed the loop"), "Fixed the loop")
+        self.assertEqual(dashboard.answer_head("**Bug:** `rh/oslock.py:20` — `fd = os.open(path, 0)`"), "rh/oslock.py")
+        # an imperative that starts with Read or Right is what was done, and still names the run
+        self.assertEqual(dashboard.answer_head("**Read RESULT.json as bytes so non-UTF-8 files end failed.**"),
+                         "Read RESULT.json as bytes so non-UTF-8 files end failed")
+        self.assertEqual(dashboard.answer_head("Right-aligned the ETA"), "Right-aligned the ETA")
+
     def test_a_done_run_is_named_by_what_its_agent_said(self):
         # One brief run many times reads as many runs: each done one is named by its answer's first line.
         self.assertEqual(dashboard.answer_head("**Reject a job whose `accept` is a list — untested: I could not**\n\nWhy"),

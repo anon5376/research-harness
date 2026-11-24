@@ -1,70 +1,123 @@
+<div align="center">
+
 # research-harness
 
-research-harness runs research as typed jobs on agent workers and keeps one record of what each job delivered. You write jobs as contracts. One supervisor launches them, in Codex cloud or as local shell commands, or hands them to a person as GPT Pro chats, and a job that ends gets exactly one typed state with a receipt. A job counts as done when it finishes and, if it names an acceptance check, that check passes on your machine.
+**hand your research and coding jobs to AI agents, then actually check what came back.**
 
-Status: [in progress] v1.0.0, not yet released. Python 3.11+. The harness is standard library only; the desktop app adds pywebview and is built with PyInstaller (`desktop/requirements.txt`). On Linux with node and Python 3.11, `python3 -I tests/run.py` runs 445 tests: 437 pass and 8 skip. Before the Devin adapter, a Mac with node passed 416 of 423, with 7 skipped. Windows support is new: the CI workflow is configured to run the suite on Windows, where POSIX-specific local-job tests skip. Desktop app: the build workflow is configured to produce an Apple-silicon .dmg, an Intel .dmg and a Windows .exe on GitHub runners, ad-hoc signed on macOS and unsigned on Windows, each with a .sha256, and to run a smoke test on each. These are workflow requirements, not confirmation that any package was built or opened.
+[![release](https://img.shields.io/github/v/release/anon5376/research-harness?style=flat-square&color=3b5bdb&label=release)](https://github.com/anon5376/research-harness/releases/latest)
+![python](https://img.shields.io/badge/python-3.11%2B-3b5bdb?style=flat-square)
+![deps](https://img.shields.io/badge/dependencies-none-3b5bdb?style=flat-square)
+![platforms](https://img.shields.io/badge/macOS%20·%20Linux%20·%20Windows-1f2433?style=flat-square)
 
-## What it does
+<img src="docs/img/new-job.png" alt="The New job screen: a composer under the research-harness title" width="860">
 
-- **Contracts.** A job is a TOML file: a brief, the capabilities it needs, the model and speed, and one acceptance command. Before launch the supervisor checks `needs` against `caps.toml` and the model against `policy.toml`.
-- **GPT Pro chats.** A `gpt-chat` job is a question for GPT Pro in ChatGPT on the web; the harness never calls an API for it. It waits on you once the supervisor hands it off: copy its prompt (`rh chat prompt <job>`, or Copy in the app), ask ChatGPT, and paste the reply back (`rh chat reply <job> <file>`, or the reply box in the app). The saved reply is the job's result and ends it `done`.
-- **One supervisor.** One check loop per `$RH_HOME` launches jobs: `rh supervise`, or the app's own loop while `rh serve` runs, whichever holds `supervisor.lock`. If the app holds it, `rh supervise` exits with an error; if `rh supervise` holds it, the app says so and takes over within 5 s of it stopping. It owns launch, stop and pause. A stop belongs to whoever set it, and only that owner lifts it. The supervisor's own cloud launches stay at least 60 s apart and at most 20 an hour (`min_gap_s` and `max_per_hour` under `[cloud]`), and tasks attached with `rh cloud attach` count toward both. A supervisor web-route handoff checks the same limits against launches and attachments already recorded, but reserves nothing until its task is attached. A manual `rh cloud handoff` skips them, and so does launching it in the web composer. Under `rh supervise`, a ledger write from another process, such as `rh job add`, `rh stop` or `rh cloud attach`, or `touch $RH_HOME/wake` ends the wait early; it checks once a second, and a write that lands mid-tick waits for the next tick. A finished job is still collected on the next regular tick. The app's loop reads neither: between completed checks it polls for a job added from a terminal, sleeping at most 5 s, so a check in progress can delay that. The configured delay between checks is 1.5 s for 20 s after an action in the app, then 3 s while a job on this machine starts or runs (15 s if a cloud job runs too), and otherwise the supervisor interval.
-- **One ledger.** Every job, event and receipt is in one SQLite file. `rh status` sums it up in one view: live and waiting jobs, the last ten finished, stops, down routes and the inbox. `rh job show <job>` has a job's events and receipt.
-- **Typed endings.** Each job ends as `done`, `failed`, `blocked`, `capacity`, `truncated`, `aborted`, `no_result` or `cancelled`, with a receipt. A job that runs past its timeout is marked `stalled`, without a receipt, until it is harvested or cancelled.
-- **Local acceptance.** A cloud job's output comes back as a patch or a checksummed bundle. Its acceptance command runs on your machine, and `rh land` commits an accepted result on the local branch `cloud/<job>`.
-- **Heavy-step lease.** `rh lease run` makes heavy local steps take turns and starts each one only after host admission.
-- **Devin API.** `rh/adapters/devin.py` talks to the Devin API v3: it starts, finds, reads and ends sessions, and maps a session's status to the harness's states. Every session is tagged with its job, and a launch reuses the job's session if one exists, so a retry after a lost answer starts no second session. The key comes only from `DEVIN_API_KEY`, is scrubbed from every error, and never follows a redirect. `rh doctor` checks the route once `devin.org_id` is set. No job kind launches Devin sessions yet.
-- **Operator inbox.** A step only a person may take goes to `rh inbox` with the exact action.
+</div>
 
-## What it never does
+---
 
-The rh CLI never pushes, publishes, deploys, signs in or spends money by itself. Preflight holds a job whose brief, command or acceptance check names one of those actions and puts the step in `rh inbox`. It matches phrases, so it is a guard, not a guarantee. Cloud jobs send their brief and the repository content to Codex cloud and run on that account's capacity.
+## what's this
 
-## Use
+I run a lot of agents: Codex in the cloud, Claude and Devin on my Mac, GPT Pro in the browser. Keeping track of who did what, and whether it actually worked, got messy fast. So I built this.
 
-```
-bin/rh env spec                  # what the operator enters to create the cloud environment
-bin/rh config set cloud.env_id <ID>
-bin/rh job add jobs/probe.toml   # a TOML contract; preflight runs on the next tick
-bin/rh job cancel <job> --reason TEXT   # end a job that has not started, or a stalled one, with a receipt
-bin/rh supervise                 # the check loop; one per $RH_HOME (rh serve runs its own when this isn't running)
-bin/rh status                    # live and waiting jobs, the last ten finished, stops, down routes, inbox
-bin/rh inbox                     # operator steps, refusals, web launches
-bin/rh serve                     # the app in the browser, on 127.0.0.1, token-protected; it keeps checking while it runs
-bin/rh land <job>                # commit a done cloud job's diff on branch cloud/<job>; never pushes
-bin/rh chat reply <job> <file>   # save ChatGPT's reply to a GPT Pro chat job; that ends it done
-bin/rh lease run --what build -- make   # heavy local step under the shared lease
-bin/rh doctor                    # codex CLI, git origin, cloud env, host load, ledger, supervisor, notify
+You write a job, the harness sends it to an agent, and every job ends with one clear result and a receipt. A job only counts as **done** when it finished *and* its check passed on your own machine. A "PASS" from the agent doesn't count.
+
+It's plain Python, standard library only. There's a local web app and a CLI, and they share one SQLite file.
+
+## get it
+
+**Mac app:** grab the `.dmg` from [releases](https://github.com/anon5376/research-harness/releases/latest), drag it to Applications, done.
+
+> It's ad-hoc signed, not notarized, so macOS will block it the first time. Go to **System Settings → Privacy & Security** and hit **Open Anyway**. One time only.
+
+**From source** (any OS, Python 3.11+):
+
+```bash
+git clone https://github.com/anon5376/research-harness
+cd research-harness
+bin/rh serve    # opens the app on 127.0.0.1, token-protected
 ```
 
-A job contract:
+## what it does
+
+- **coding jobs on your Mac.** Pick Codex, Claude or Devin and describe what you want. The agent works on a throwaway clone of your repo, so your actual repo is never touched. You get its answer and a `changes.patch` to read before you keep anything.
+- **`/swarm`.** Type `/swarm` before a brief and the same job runs on several models at once. A judge model then reads every run and keeps the best one. By default it uses Devin's SWE-2 models, which are free.
+- **cloud jobs.** Send a job to Codex cloud. Its patch comes back, the acceptance check runs locally, and `rh land` commits it to a local branch `cloud/<job>`.
+- **GPT Pro chats.** For questions that need GPT Pro on the web. No API: copy the prompt, ask ChatGPT, paste the reply back. That's it.
+- **one supervisor, one ledger.** One loop launches everything and owns stop and pause. Every job, event and receipt lands in one SQLite file, and `rh status` shows the whole picture.
+- **clear endings.** Every job ends as exactly one of `done`, `failed`, `blocked`, `capacity`, `truncated`, `aborted`, `no_result` or `cancelled`, with a receipt.
+- **an inbox for you.** Anything only a human should do goes to `rh inbox` with the exact step.
+- **it improves itself.** `rh improve` sends an agent to improve this repo, one change per round. A change is kept on a local branch `improve/<job>` only if the tests and the privacy scan pass.
+
+<div align="center">
+<img src="docs/img/swarm.png" alt="A finished swarm: two runs, SWE-2 Max and SWE-2 Flash, with the judge's pick marked Kept and its reasoning below" width="860">
+<br><sub>a swarm after the judge picked its run</sub>
+</div>
+
+## what it never does
+
+The harness never pushes, publishes, deploys, signs in anywhere or spends money on its own. If a job's brief, command or check mentions one of those, preflight holds the job and puts the step in your inbox. It matches phrases, so treat it as a guard rail, not a guarantee.
+
+Heads up: cloud jobs send their brief and your repo's content to Codex cloud and use that account's capacity.
+
+## cli cheat sheet
+
+```bash
+bin/rh serve                     # the app in your browser; it runs the supervisor while open
+bin/rh job add jobs/probe.toml   # add a job (a TOML contract); preflight checks it on the next tick
+bin/rh status                    # live and waiting jobs, the last ten finished, stops, inbox
+bin/rh inbox                     # stuff only you can do
+bin/rh job cancel <job> --reason TEXT
+bin/rh supervise                 # the check loop on its own, one per $RH_HOME
+bin/rh land <job>                # commit a done cloud job's diff on branch cloud/<job> (never pushes)
+bin/rh chat reply <job> <file>   # paste ChatGPT's reply into a GPT Pro job
+bin/rh improve                   # let an agent improve this repo, kept on local branches
+bin/rh lease run --what build -- make   # heavy local steps take turns
+bin/rh doctor                    # is everything the harness needs healthy?
+```
+
+A job looks like this:
 
 ```toml
 id = "lit-scan-01"
-kind = "codex-cloud"            # or local-shell (needs command = [...]), or gpt-chat (no command, no accept)
+kind = "codex-cloud"            # or local-shell (needs command = [...]), or gpt-chat
 brief = """Collect the five most cited reviews on the topic into runs/lit-scan-01/reviews.md."""
 needs = ["net"]                 # checked against caps.toml before launch
-accept = "test -s runs/lit-scan-01/reviews.md"   # run locally on the collected diff
+accept = "test -s runs/lit-scan-01/reviews.md"   # runs on your machine
 [model]
-requested = "gpt-6.1-sol"       # must be allowed by policy.toml
+requested = "gpt-6.1-sol"       # has to be allowed by policy.toml
 speed = "standard"
 ```
 
-A goal (`rh goal add`) expands into a set of role-based jobs; the goal's acceptance card goes on its last job in dependency order. Cloud jobs launch with `codex cloud exec` and are followed, diffed and checked through the codex CLI, which works only with an environment the CLI lists; while it lists none for `cloud.env_id`, cloud jobs wait and the inbox holds one step that says so. A ready job can still be launched by hand: `rh cloud handoff <job>`, then `rh cloud prompt <job>` prints the exact prompt, `rh cloud attach` records the task id, and `rh cloud harvest` hands the returned patch or bundle to the supervisor.
+<details>
+<summary><b>the nerdy details</b></summary>
 
-## Skills
+<br>
 
-`skills/` holds agent skills that can be used without the harness. Copy a folder into your agent's skills directory.
+- **Supervisor.** One check loop per `$RH_HOME`: either `rh supervise` or the app's own loop while `rh serve` runs, whichever holds `supervisor.lock`. If the app holds it, `rh supervise` exits with an error. If `rh supervise` holds it, the app says so and takes over within 5 s of it stopping. A stop belongs to whoever set it, and only that owner lifts it.
+- **Cloud pacing.** The supervisor's own cloud launches stay at least 60 s apart and at most 20 an hour (`min_gap_s` and `max_per_hour` under `[cloud]`). Tasks attached with `rh cloud attach` count toward both. A manual `rh cloud handoff` skips them, and so does launching from the web composer.
+- **Waking up.** Under `rh supervise`, a ledger write from another process (`rh job add`, `rh stop`, `rh cloud attach`) or `touch $RH_HOME/wake` ends the wait early. In the app, the delay between checks is 1.5 s for 20 s after you do something, 3 s while a local job starts or runs (15 s if a cloud job runs too), and the supervisor interval otherwise.
+- **Timeouts.** A job that runs past its timeout is marked `stalled`, without a receipt, until it's harvested or cancelled.
+- **Goals.** `rh goal add` expands a goal into role-based jobs. The goal's acceptance card goes on the last job.
+- **Codex cloud.** Cloud jobs launch with `codex cloud exec`, which only works with an environment the codex CLI lists. Until it lists `cloud.env_id`, cloud jobs wait and the inbox says so. By hand: `rh cloud handoff <job>`, `rh cloud prompt <job>`, then `rh cloud attach` and `rh cloud harvest`.
+- **Devin API.** `rh/adapters/devin.py` speaks the Devin API v3. The key comes only from `DEVIN_API_KEY` and is scrubbed from every error. `rh doctor` checks it once `devin.org_id` is set. No job kind launches Devin cloud sessions yet; Devin on your Mac runs through the local coding agent.
+- **Windows.** The lock is a file handle that blocks write and delete sharing. Load and memory pressure are approximated, so the lease's numbers are close to the POSIX ones but not identical.
 
-| Skill | Use |
+</details>
+
+## skills
+
+`skills/` has agent skills that work without the harness. Copy a folder into your agent's skills directory.
+
+| skill | what it's for |
 |---|---|
 | `codex-cloud-loop` | Codex cloud tasks as workers, from environment setup to an accepted patch |
 | `claude-worker-loop` | Claude Code workers, from brief to accepted result |
-| `unlazy` | Acceptance gates for long unattended builds; optional |
+| `unlazy` | acceptance gates for long unattended builds |
 
-## Scope and limits
+## where it's at
 
-- macOS, Linux and Windows. On Windows the lock is a file handle that denies write and delete sharing, load is the busy CPU fraction times the CPU count, and memory pressure comes from the share of memory in use, so the lease's numbers are comparable but not identical to the POSIX readings.
-- A Codex cloud environment the CLI cannot resolve, which may include newer ones, launches and harvests through the web view, with the operator steps above.
+- **v0.20.1.** The 557 tests pass on a Mac with Python 3.11. CI runs them on macOS, Linux and Windows. macOS and Linux are green. Windows currently fails 7 tests: 5 launch shell-script fakes Windows can't run, 1 reads `node` output without UTF-8, and 1 trips over a locked temp file. That's next on the fix list.
+- The macOS build is ad-hoc signed and the Windows build is unsigned.
+- v1.0.0 is the first "stable, designed, everything checked" release, and it isn't here yet. The plan is in [briefs/M7-desktop-plan.md](briefs/M7-desktop-plan.md).
 - No licence file yet.
-- Design and milestones: [DESIGN.md](DESIGN.md).
+- Want the why and the architecture? [DESIGN.md](DESIGN.md).

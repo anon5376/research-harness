@@ -2710,13 +2710,16 @@ def _ib_row(ctx, entry, picked, view=None):
     return _row(entry["key"], link, "ib-li", f' data-kind="{entry["tab"]}"')
 
 
-def _settled_row(ctx, item, picked):
+def _settled_row(ctx, item, picked, runs=1):
+    """One settled item, or the newest of `runs` asked and answered alike, which counts them (critic r25 F6)."""
     ask, _ = _ask_line(item)
     jid = item.get("job")
     note = str(item.get("resolution") or "").strip()
     note = note[:1].upper() + note[1:]  # a stored note may start lower case ("job cancelled"); the list reads in sentences
     # the outcome, then the run's id on its own line, as the rows that wait read
     sub = f'<span class="ib-why">{_text(note)}</span>' if note else ""
+    if runs > 1:
+        sub += (_SEP_HTML if sub else "") + f'<span class="ib-n">{runs} runs</span>'
     idline = f'<span class="ib-id mono">{_text(jid)}</span>' if jid else ""
     current = ' aria-current="true"' if picked else ""
     inner = (f'<span class="ib-ic">{_ic("check")}</span><span class="ib-t">{_text(ask)}</span>'
@@ -2885,7 +2888,12 @@ def _inbox_pane(view, ctx, feedback):
     lead = (next((e for e in waiting if e["job"] and not e["item"]), None)
             if entry is None and settled_item is None and missing is None else None)
     rows = [_ib_row(ctx, e, (entry or lead) is not None and e["key"] == (entry or lead)["key"], view) for e in waiting]
-    done = [_settled_row(ctx, i, settled_item is not None and i["id"] == settled_item["id"]) for i in settled]
+    # settled items with the same question and outcome (a swarm's runs held alike) are one row for the newest
+    alike = {}
+    for i in settled:  # newest first, so each group's first item is its row
+        alike.setdefault((_ask_line(i)[0], str(i.get("resolution") or "").strip().lower()), []).append(i)
+    done = [_settled_row(ctx, group[0], settled_item is not None and any(i["id"] == settled_item["id"] for i in group),
+                         len(group)) for group in alike.values()]
     counts = {}
     for e in waiting:
         counts[e["tab"]] = counts.get(e["tab"], 0) + 1

@@ -3059,6 +3059,30 @@ console.log(JSON.stringify([
         self.assertNotIn("t-amber", alone)
         self.assertNotIn("t-amber", ring("finished-job"))
 
+    def test_settled_items_asked_and_answered_alike_fold_into_one_row(self):
+        # critic r25 F6: four 'Push or touch git config · Job cancelled' rows, one per run of a swarm, filled the
+        # bottom third of the Inbox and only their id lines told them apart. Items with the same question and the
+        # same outcome are one row for the newest, which counts its runs; any of them picked lights that row.
+        held = lambda i, jid, ago: {"id": i, "kind": "decision", "job": jid, "action": "Push or touch git config",  # noqa: E731
+                                    "detail": "", "created": NOW - ago - 30, "resolved": NOW - ago,
+                                    "resolution": "job cancelled"}
+        view = {**live_view(), "settled": [held(11, "swarm-api.w1", 300), held(12, "swarm-api.w2", 290),
+                                           held(13, "swarm-api.best", 280), held(14, "swarm-api", 400),
+                                           {**held(15, "live-job", 200), "resolution": "yes, ship"}]}
+        page = dashboard.render({**view, "box": True}, NOW, token=TOKEN)
+        keys = re.findall(r'<li class="ib-li settled" data-key="([^"]+)"', page)
+        self.assertEqual(keys, ["settled:15", "settled:13"])  # newest first; the four alike are one row, the newest
+        row = re.search(r'data-key="settled:13".*?</li>', page, re.S).group(0)
+        self.assertIn('<span class="ib-why">Job cancelled</span>' + dashboard._SEP_HTML + '<span class="ib-n">4 runs</span>',
+                      row)
+        self.assertIn('<span class="ib-id mono">swarm-api.best</span>', row)
+        self.assertIn("/inbox/13", row)
+        self.assertNotIn("ib-n", re.search(r'data-key="settled:15".*?</li>', page, re.S).group(0))
+        # an older run of the folded four, picked by its address, lights the row that holds it
+        page = dashboard.render({**view, "box": True, "pick": 11, "picked": view["settled"][0]}, NOW, token=TOKEN)
+        self.assertEqual(re.findall(r'<li class="ib-li[^"]*" data-key="([^"]+)"[^>]*><a[^>]*aria-current', page),
+                         ["settled:13"])
+
     def test_inbox_lists_what_waits_newest_first_and_shows_one(self):
         # An ask missing from the list, the list out of order, the detail showing another item than the one picked, a
         # settled item offered its form again, or an unknown item shown as another, must fail.

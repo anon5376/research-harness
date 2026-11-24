@@ -935,14 +935,14 @@ body[data-background="quiet"] .jd-main::before { opacity: .07; }
 .chat-card .reply-box { margin-top: 12px; }
 
 /* Neutral glass lets the artwork supply its colour. */
-.dock .composer, .session-dock .composer, .coord-panel, .opts-body, .pal, #keys, .settings, dialog.team,
+.dock .composer, .session-dock .composer, .up-next, .coord-panel, .opts-body, .pal, #keys, .settings, dialog.team,
 .detail .jd-side:has(.jd-inspector[open]) {
   border: 1px solid rgb(255 255 255 / .10);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), inset 0 -1px 0 rgb(0 0 0 / .25), var(--glass-shadow);
   background: var(--raised);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .dock .composer, .session-dock .composer, .coord-panel, .opts-body, .pal, #keys, .settings, dialog.team,
+  .dock .composer, .session-dock .composer, .up-next, .coord-panel, .opts-body, .pal, #keys, .settings, dialog.team,
   .detail .jd-side:has(.jd-inspector[open]) {
     background: linear-gradient(180deg, rgb(255 255 255 / .10), rgb(255 255 255 / .04));
     -webkit-backdrop-filter: blur(28px) saturate(160%);
@@ -1024,7 +1024,7 @@ dialog.settings:has(.settings-body.scrolled) header::after {
   .ib-list .head .tabs { gap: 8px; overflow-x: auto; }
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  .dock .composer, .session-dock .composer, .coord-panel, .opts-body, .pal, #keys, .settings, dialog.team,
+  .dock .composer, .session-dock .composer, .up-next, .coord-panel, .opts-body, .pal, #keys, .settings, dialog.team,
   .detail .jd-side:has(.jd-inspector[open]) { background: var(--surface);
     -webkit-backdrop-filter: none; backdrop-filter: none; }
   .toast.no { background: var(--red-bg); }
@@ -2882,8 +2882,8 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .talk.composer[data-state="stop"] .compose-tools .talk-send.send:hover { background: rgb(255 255 255 / .2); }
 .talk-send:disabled { opacity: .5; cursor: default; }
 .talk-cancel { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
-.up-next { margin: 0 14px; padding: 8px 10px 6px; border: 1px dashed var(--border); border-bottom: 0;
-  border-radius: 12px 12px 0 0; background: var(--surface); font-size: 13px; }
+/* the composer's own glass (it is in the glass rule above), full width, a card of its own just over the box */
+.up-next { margin: 0 0 8px; padding: 8px 10px 6px; border-radius: 14px; font-size: 13px; }
 .un-head { margin: 0 0 4px 4px; color: var(--muted); font-size: 12px; }
 .un-n { color: var(--faint); }
 .un-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; }
@@ -2911,5 +2911,4 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .talk-stop .ic { color: var(--faint); }
 @media (max-width: 600px) {
   .un-editing, .un-steer span { display: none; }
-  .up-next { margin: 0 8px; }
 }

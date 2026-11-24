@@ -1744,12 +1744,12 @@ def _talk_said(talk):
 
 def _up_next(talk):
     """T3 Code's queued rows: what waits for the turn to end, numbered, each with Edit, Steer and Remove; past three,
-    the first two and 'Show all n queued'. Empty, the region stays (hidden), so the page's regions do not change
+    the first three and 'n more'. Empty, the region stays (hidden), so the page's regions do not change
     when one is queued and the composer keeps its draft."""
     queued = [m for m in talk if m.get("mode") == "queue" and m.get("state") in ("waiting", "queued")]
     n, rows = len(queued), []
     for i, m in enumerate(queued, 1):
-        more = " un-more" if n > 3 and i > 2 else ""
+        more = " un-more" if n > 3 and i > 3 else ""
         rows.append(f'<li class="un-row{more}" data-id="{_text(m["id"])}" aria-label="Queued message {i} of {n}, not sent">'
                     f'<span class="un-i">{i}</span><span class="un-t">{_text(str(m.get("text") or ""))}</span>'
                     '<span class="un-editing" hidden>Editing in the composer</span><span class="un-acts">'
@@ -1760,13 +1760,13 @@ def _up_next(talk):
                     f'<button type="button" class="ghost un-b" data-q="remove" aria-label="Remove queued message" '
                     f'title="Remove from queue">{_ic("x", True)}</button></span></li>')
     every = (f'<button type="button" class="ghost un-all" data-q-all aria-expanded="false" '
-             f'data-more="Show all {n} queued">Show all {n} queued</button>') if n > 3 else ""
-    body = (f'<p class="un-head"><span>Up next</span><span class="un-n"> · {n} queued</span></p>'
+             f'data-more="{n - 3} more">{n - 3} more</button>') if n > 3 else ""
+    body = (f'<p class="un-head"><span>Up next</span><span class="un-n"> · {n}</span></p>'
             f'<ol class="un-list">{"".join(rows)}</ol>{every}') if n else ""
     return _region("j-up-next", body, "section", "up-next", ' aria-label="Up next"' + ("" if n else " hidden"))
 
 
-def _talk_form(ctx, jid):
+def _talk_form(ctx, jid, who="the agent"):
     """The running job's composer, after T3 Code's: Enter steers (joins the turn), Ctrl/⌘ with it queues (the next
     turn), and empty its button is Stop. The script posts it to /job/message; an edit of a queued row sends update."""
     # the app's own glyphs (owner: not T3's square and arrows): its stop ring, the send arrow every composer has, a clock
@@ -1775,7 +1775,7 @@ def _talk_form(ctx, jid):
     return (f'<form class="compose composer talk" method="post" action="/job/message" data-message data-state="stop">'
             f'{_hidden(ctx, [("job", jid), ("mode", "steer"), ("target", "")])}'
             f'<label class="sr" for="talk-{_text(jid)}">Message the agent</label>'
-            f'<textarea class="c-text" id="talk-{_text(jid)}" name="text" rows="1" placeholder="Ask anything"></textarea>'
+            f'<textarea class="c-text" id="talk-{_text(jid)}" name="text" rows="1" placeholder="Steer {_text(who)}…"></textarea>'
             '<div class="c-row"><div class="compose-tools">'
             '<button type="button" class="ghost talk-cancel" data-q-cancel hidden '
             'aria-label="Cancel editing queued message">Cancel</button>'
@@ -2957,7 +2957,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     else:
         reply = ""
     if talking:
-        dock_content = _talk_form(ctx, jid)
+        talker = agent_of(spec.get("command"))
+        dock_content = _talk_form(ctx, jid, talker[0].capitalize() if talker else "the agent")
         dock_region = "j-message"
         dock_label = "Message the agent"
     elif chat_dock:

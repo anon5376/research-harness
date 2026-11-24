@@ -2414,7 +2414,8 @@ class DashboardTest(unittest.TestCase):
         self.assertEqual({k: form[0]["fields"].get(k) for k in ("job", "mode", "target", "text")},
                          {"job": "live-job", "mode": "steer", "target": "", "text": ""})
         dock = re.search(r'data-region="j-message".*?</form>', page, re.S).group(0)
-        self.assertIn('placeholder="Ask anything"', dock)
+        # the box says what Enter does to whom (r31 F7: 'Ask anything' was a stock chat-product tell)
+        self.assertIn('placeholder="Steer Claude…"', dock)
         self.assertRegex(dock, r'<button[^>]*aria-label="Stop generation"[^>]*title="Interrupt"')
         self.assertIn("Click to steer, Ctrl/⌘-click to queue", dock)
         # the app's own glyphs, not T3 Code's (owner): Stop is the app's stop ring, steer its send arrow, queue its
@@ -2431,7 +2432,8 @@ class DashboardTest(unittest.TestCase):
                                   ("Originally queued, then promoted to steer the active turn", "lint it")])
         up = re.search(r'data-region="j-up-next".*?</section>', page, re.S).group(0)
         self.assertIn("Up next", text(up))
-        self.assertIn("· 2 queued", text(up))
+        self.assertIn("Up next · 2", text(up))
+        self.assertNotIn("queued", text(up).split("Up next", 1)[1].split("1", 1)[0])  # 'Up next' says it once
         rows = re.findall(r'<li class="un-row[^"]*" data-id="([0-9a-f]+)" aria-label="([^"]+)"', up)
         self.assertEqual(rows, [(ids[2], "Queued message 1 of 2, not sent"), (ids[4], "Queued message 2 of 2, not sent")])
         self.assertIn("the &lt;docs&gt;", up)
@@ -2439,12 +2441,19 @@ class DashboardTest(unittest.TestCase):
         for label in ('aria-label="Edit queued message"', 'title="Send as a steer instead"',
                       'aria-label="Remove queued message" title="Remove from queue"'):
             self.assertEqual(up.count(label), 2, label)
-        # more than three wait: the first two show, then 'Show all n queued'
+        # more than three wait: the first three show, then 'n more' (r31 F8: it showed two, and said the count twice)
         view["open"]["inbox"] += [{"id": ids[5], "mode": "queue", "text": "and more", "state": "queued"},
                                   {"id": "9" * 12, "mode": "queue", "text": "and more", "state": "queued"}]
         up = re.search(r'data-region="j-up-next".*?</section>', pane(dashboard.render(view, NOW, token=TOKEN)), re.S).group(0)
-        self.assertEqual(up.count('class="un-row un-more"'), 2)
-        self.assertIn("Show all 4 queued", text(up))
+        self.assertEqual(up.count('class="un-row un-more"'), 1)
+        self.assertIn("1 more", text(up))
+        self.assertIn('data-more="1 more"', up)
+        # the tray is the composer's own glass, not a grey tab with a dashed edge (r31 F3)
+        glass = dashboard.STYLE.split("border: 1px solid rgb(255 255 255 / .10);", 1)[0].rsplit("}", 1)[1]
+        self.assertIn(".up-next", glass)
+        tray = re.search(r"\n\.up-next \{[^}]*\}", dashboard.STYLE).group(0)
+        self.assertNotIn("dashed", tray)
+        self.assertNotIn("background", tray)
         # a job that cannot take messages (no inbox from the app), or one that has ended, has no composer
         del view["open"]["inbox"]
         self.assertNotIn('action="/job/message"', dashboard.render(view, NOW, token=TOKEN))

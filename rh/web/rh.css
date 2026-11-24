@@ -118,6 +118,8 @@ kbd { font: 11px/16px var(--ui); color: var(--muted); background: var(--raised);
 .st { flex: none; display: block; }
 .st .k { stroke: var(--ground); }
 .st.past { opacity: .45; }  /* a failure already run again keeps the shape, not the urgency */
+/* past its limit a job is not working: its ring steps back wherever it is drawn, dimmed and still */
+.st[data-s="late"] { opacity: .5; animation: none; }
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; background: var(--faint); }
 .dot.live, .dot.good { background: var(--accent); }
 .dot.warn { background: var(--amber); }

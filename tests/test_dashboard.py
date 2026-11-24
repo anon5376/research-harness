@@ -2869,6 +2869,41 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="st t-red past"', ring)
         self.assertRegex(dashboard.STYLE, r"\.st\.past \{[^}]*opacity: \.45")
 
+    def test_a_stalled_jobs_ring_steps_back_wherever_it_is_drawn(self):
+        # A job past its limit wore the running job's lively accent ring in the sidebar, the palette and the
+        # Inbox, so a stuck job read as a working one; only its own page's status line dimmed it. One rule on
+        # the late ring (svg.st[data-s="late"]) steps it back everywhere now, while a running job's ring is
+        # unchanged.
+        rules = re.findall(r'\.st(?![\w-])[^{}]*\[data-s="late"\][^{}]*\{([^}]*)\}', dashboard.STYLE)
+        stepped = [body for body in rules if "opacity: .5" in body and "animation: none" in body]
+        self.assertTrue(stepped, "no stylesheet rule steps a stalled job's ring back")
+        ring = lambda markup: re.search(r'<svg class="([^"]+)" data-s="([^"]+)"', markup).groups()  # noqa: E731
+        # one stalled job live, another waiting on you: the rule is on the ring's shape, not its tone
+        view = live_view()
+        view["live"] += [{"id": j, "state": "stalled", "paused": False,
+                          "detail": "still going", "external_id": None} for j in ("slow-job", "late-job")]
+        view["inbox"].append({"id": 9, "kind": "decision", "job": "late-job", "action": "stop it?", "detail": "",
+                              "created": NOW - 1, "resolved": None, "resolution": None})
+        page = dashboard.render(view, NOW, token=TOKEN)
+        for jid in ("slow-job", "late-job"):
+            cls, shape = ring(item(page, jid))  # the sidebar row
+            self.assertIn("st", cls.split())
+            self.assertEqual(shape, "late", jid)
+            pal = re.search(rf'data-id="{jid}"[^>]*><span class="p-ic">(.*?)</span>',
+                            re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0), re.S).group(1)
+            cls, shape = ring(pal)  # the palette row
+            self.assertIn("st", cls.split())
+            self.assertEqual(shape, "late", jid)
+        cls, shape = ring(re.search(r'<li class="ib-li" data-key="job:late-job".*?</li>',
+                                    inbox(view, 9), re.S).group(0))  # the Inbox row
+        self.assertIn("st", cls.split())
+        self.assertEqual(shape, "late")
+        # a running job's ring is not the stepped-back one
+        cls, shape = ring(item(page, "live-job"))
+        self.assertIn("st", cls.split())
+        self.assertEqual(shape, "half")
+        self.assertNotIn('data-s="late"', item(page, "live-job"))
+
     def test_one_filled_button_per_page_and_destructive_actions_marked(self):
         # A page with no filled button or with two, or a pause or cancel styled like a safe action, must fail.
         home = pane(dashboard.render(live_view(), NOW, token=TOKEN))

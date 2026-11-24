@@ -2394,6 +2394,19 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_queued_rows_words_are_a_target_the_height_of_its_row(self):
+        # r32 F7: since r31 F4 a queued row's words are its edit button, but the button was 20px tall in a 32px row,
+        # below the 24px minimum, with 12px dead between rows. The button fills its row: 32px with a pointer, 44px
+        # on a phone, where Remove is a 44px square too.
+        rule = lambda block, sel: block.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("min-height: 32px", rule(dashboard.STYLE, ".un-row"))
+        t = rule(dashboard.STYLE, ".un-t")
+        self.assertIn("align-self: stretch", t)
+        self.assertIn("min-height: 32px", t)
+        phone = "\n" + dashboard.STYLE.split("/* phone queue rows */", 1)[1].split("\n}", 1)[0]
+        self.assertIn("min-height: 44px", rule(phone, "  .un-row, .un-t"))
+        self.assertIn("width: 44px; height: 44px", rule(phone, '  .un-b[data-q="remove"]'))
+
     def test_a_running_agent_job_says_which_agent_and_model_it_steers(self):
         # r31 F5: a running job's status was a bare 15px 'Running' heading that named no one, while a finished turn
         # names its agent and model. The page whose composer steers a live agent says which one, in the same quiet

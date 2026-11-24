@@ -2898,12 +2898,13 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .un-head { margin: 0 0 4px 4px; color: var(--muted); font-size: 12px; }
 .un-n { color: var(--faint); }
 .un-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; }
-.un-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 4px; border-radius: 8px;
+.un-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 4px; border-radius: 8px;
   color: var(--muted); }
 .un-row:is(:hover, :focus-within) { background: var(--raised); }
 .un-i { flex: none; width: 16px; color: var(--faint); text-align: center; font-variant-numeric: tabular-nums; }
-/* the words are the row's edit button: a tap or click puts them in the composer */
-.un-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0;
+/* the words are the row's edit button: a tap or click puts them in the composer; it is as tall as its row, so a
+   click anywhere on the row's words lands (r32 F7: it was a 20px strip) */
+.un-t { flex: 1; align-self: stretch; min-width: 0; min-height: 32px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0;
   background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .un-t:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .un-row.editing .un-t, .un-row.leaving { opacity: .5; }
@@ -2931,6 +2932,8 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 }
 @media (max-width: 600px) {
   /* phone queue rows */
+  .un-row, .un-t { min-height: 44px; }
+  .un-b[data-q="remove"] { width: 44px; height: 44px; }
   .un-editing { display: none; }
   .un-row:not(.editing) .un-b:not([data-q="remove"]) { display: none; }
   .un-row [data-q-edit].un-b { display: none; }

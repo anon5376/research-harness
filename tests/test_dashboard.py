@@ -3786,6 +3786,49 @@ console.log(JSON.stringify([
         self.assertIn(dashboard._ICONS["flask"], row)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_preview_thumbnails_are_brightened_and_off_draws_nothing(self):
+        # Orbit and Quiet previews read as near-black rectangles at thumbnail size, so drawPreviews() brightens
+        # what it copies into each tile — and only there: the page's own drawField() keeps its brightness, and
+        # Off's tile is the CSS diagonal alone, so nothing may be drawn or brightened onto its canvas. A
+        # thumbnail drawn without the filter, a filter left set, or a brightened Off, must fail.
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("function drawPreviews()"):]
+        code = code[:code.index("\n}\n") + 3]
+        probe = code + """
+class Ctx {
+  constructor(rec) { this.rec = rec; this._filter = 'none'; }
+  set filter(v) { this.rec.filters.push(v); this._filter = v; }
+  get filter() { return this._filter; }
+  drawImage() { this.rec.draws.push(this._filter); }
+}
+function preview(name) {
+  const rec = { name, filters: [], draws: [] };
+  const ctx = new Ctx(rec);
+  return { dataset: { preview: name }, rec, ctx, getContext: () => ctx };
+}
+const orbit = preview('orbit'), off = preview('off');
+const $$ = () => [orbit, off];
+const big = {};
+const document = { createElement: () => big, body: { dataset: { tint: 'cobalt' } } };
+const window = { RHBackground: { render() {} } };
+drawPreviews();
+console.log(JSON.stringify({
+  orbit: { draws: orbit.rec.draws, filters: orbit.rec.filters, filter: orbit.ctx.filter },
+  off: { draws: off.rec.draws, filters: off.rec.filters, filter: off.ctx.filter },
+}));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got["orbit"]["draws"], ["brightness(1.9) saturate(1.15)"])
+        self.assertEqual(got["orbit"]["filters"], ["brightness(1.9) saturate(1.15)", "none"])
+        self.assertEqual(got["orbit"]["filter"], "none")
+        self.assertEqual(got["off"]["draws"], [])
+        self.assertEqual(got["off"]["filters"], [])
+        field = dashboard.SCRIPT[dashboard.SCRIPT.index("function drawField()"):]
+        field = field[:field.index("\n}\n") + 3]
+        self.assertNotIn("brightness(", field)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):
         # A syntax error in app.js, which no Python test runs, must fail.
         r = subprocess.run(["node", "--check", str(ROOT / "rh" / "web" / "app.js")], capture_output=True, text=True,

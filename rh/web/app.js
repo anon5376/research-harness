@@ -1193,11 +1193,16 @@ function drawPreviews() {
   // twice the thumbnail each dot keeps about a pixel, so the scene's shape reads.
   const big = document.createElement('canvas');
   for (const c of $$('canvas.background-preview')) {
+    // Off's tile is the CSS diagonal alone; there is no scene to draw or brighten.
+    if (c.dataset.preview === 'off') continue;
     bg.render(big, {preset: c.dataset.preview, tint: document.body.dataset.tint, width: 528, height: 320, dpr: 1});
     c.width = 264; c.height = 160;
     const g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
+    // At thumbnail size the scene loses its light, so the previews are drawn brighter than the page.
+    g.filter = 'brightness(1.9) saturate(1.15)';
     g.drawImage(big, 0, 0, c.width, c.height);
+    g.filter = 'none';
   }
 }
 let fieldTimer = 0;

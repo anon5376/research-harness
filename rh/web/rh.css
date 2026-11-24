@@ -120,6 +120,10 @@ kbd { font: 11px/16px var(--ui); color: var(--muted); background: var(--raised);
 .st.past { opacity: .45; }  /* a failure already run again keeps the shape, not the urgency */
 /* past its limit a job is not working: its ring steps back wherever it is drawn, dimmed and still */
 .st[data-s="late"] { opacity: .5; animation: none; }
+/* a live job's one moving sign on its page: the status line's ring breathes (r33 F6); sidebar rings stay still */
+.job-result .st:is([data-s="quarter"], [data-s="half"], [data-s="three"]) { animation: run-breathe 1.6s cubic-bezier(.65, 0, .35, 1) infinite; }
+@keyframes run-breathe { 50% { opacity: .5; } }
+@media (prefers-reduced-motion: reduce) { .job-result .st { animation: none; } }
 .dot { width: 6px; height: 6px; border-radius: 50%; display: inline-block; flex: none; background: var(--faint); }
 .dot.live, .dot.good { background: var(--accent); }
 .dot.warn { background: var(--amber); }

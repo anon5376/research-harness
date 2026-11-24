@@ -2484,6 +2484,20 @@ class DashboardTest(unittest.TestCase):
         self.assertNotIn("livetag", page + dashboard.STYLE)
         self.assertRegex(text(re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)), "Running")
 
+    def test_a_running_jobs_status_ring_breathes_and_rests_under_reduced_motion(self):
+        # r33 F6: with '• live' gone from the Output fold (r32 F8), nothing on a running job's page moved, so running
+        # and hung looked the same. The status line's ring is the page's one live sign: it breathes 1 -> .5 -> 1 over
+        # 1.6 s while the job launches, runs or is checked, and is still under reduced motion. Sidebar rings stay still.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        status = re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)
+        self.assertIn('data-s="half"', status)
+        self.assertIn('.job-result .st:is([data-s="quarter"], [data-s="half"], [data-s="three"]) '
+                      '{ animation: run-breathe 1.6s cubic-bezier(.65, 0, .35, 1) infinite; }', dashboard.STYLE)
+        self.assertIn("@keyframes run-breathe { 50% { opacity: .5; } }", dashboard.STYLE)
+        self.assertIn("@media (prefers-reduced-motion: reduce) { .job-result .st { animation: none; } }",
+                      dashboard.STYLE)
+
     def test_a_running_job_with_no_output_yet_shows_its_output_card_waiting(self):
         # r31 F6: an empty log was two bare lines saying one thing twice ('No output received yet' over 'The worker
         # has not produced output yet.') above an empty band. A running job's output is one card, so the empty one

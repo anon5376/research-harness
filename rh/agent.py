@@ -24,6 +24,11 @@ import tempfile
 import threading
 from pathlib import Path
 
+# A run that ended cleanly having said nothing and changed nothing exits with this, so the harness ends it as
+# no_result rather than done (rh/collect.py maps it, as it maps 75 to capacity).
+NO_RESULT = 66
+SILENT = "_Devin ended its turn without a final message. Its work is in the output above._"
+
 
 def _within(path, root):
     try:
@@ -123,7 +128,7 @@ def _devin(binary, work, brief, extra, answer):
     print(f"\nstopped: {stop}", flush=True)
     text = "".join(said).strip()
     if not text and stop == "end_turn":  # it happens: the turn ends on a tool call with nothing said after it
-        text = "_Devin ended its turn without a final message. Its work is in the output above._"
+        text = SILENT
     answer.write_text(text + "\n", encoding="utf-8")
     return 0 if stop == "end_turn" else 1
 
@@ -283,6 +288,10 @@ def main(argv):
                 print(f"check result: {verdict}", flush=True)
             (out / "swarm-result.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
         print(f"changes.patch: {len(diff.splitlines())} lines" if diff else "no files changed")
+        said = answer.read_text(encoding="utf-8", errors="replace").strip() if answer.exists() else ""
+        if code == 0 and not diff and said in ("", SILENT):
+            print("no result: the agent ended with no answer and no changes", flush=True)
+            code = NO_RESULT
         # a swarm judge ends failed, not done, when the work it kept fails the check, whatever the agent returned
         if runs and result.get("check", "passed") != "passed":
             print(f"the kept work failed its check: {result['check']}", flush=True)

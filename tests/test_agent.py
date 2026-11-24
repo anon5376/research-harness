@@ -1,6 +1,7 @@
 """rh/agent.py's Devin client against a stand-in `devin acp` that speaks the Agent Client Protocol over stdio."""
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,7 +9,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-from rh import agent
+from rh import agent, collect
 
 # The stand-in answers initialize and session/new, then, for the prompt: says something, starts a tool call, asks to
 # run a command, to edit a file inside the folder and one outside it, says its answer, and ends the turn. It writes
@@ -155,6 +156,50 @@ class FollowUpTest(unittest.TestCase):
             patch = (out / "changes.patch").read_text(encoding="utf-8")
             self.assertIn("+two", patch)
             self.assertIn("+three", patch)
+
+
+class NoResultTest(unittest.TestCase):
+    """A run that ends cleanly having said nothing and changed nothing produced nothing: it must end as no_result,
+    not done. Ten SWE-2 Max runs at once ended 3 of 7 this way (the turn stopped after a read), and each was done."""
+
+    def run_agent(self, script):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, ignore_errors=True))
+        repo, out = tmp / "repo", tmp / "out"
+        for d in (repo, out):
+            d.mkdir()
+        git(repo, "init", "--quiet")
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
+        git(repo, "add", "a.txt")
+        git(repo, "commit", "--quiet", "-m", "start")
+        fake = fake_agent(tmp, "claude", script)
+        cwd = Path.cwd()
+        try:
+            os.chdir(out)
+            return agent.main(["agent.py", "claude", str(fake), str(repo), "Find one bug."]), out
+        finally:
+            os.chdir(cwd)
+
+    def test_a_run_that_says_and_changes_nothing_has_no_result(self):
+        code, out = self.run_agent("pass\n")
+        self.assertEqual(code, agent.NO_RESULT)
+        self.assertFalse((out / "changes.patch").exists())
+
+    def test_a_run_with_an_answer_or_a_change_has_a_result(self):
+        self.assertEqual(self.run_agent("print('No bug found; I checked the parser.')\n")[0], 0)
+        code, out = self.run_agent("import pathlib\npathlib.Path('a.txt').write_text('two\\n')\n")
+        self.assertEqual(code, 0)
+        self.assertTrue((out / "changes.patch").stat().st_size)
+
+    def test_the_harness_ends_that_run_no_result(self):
+        self.assertEqual(collect.NO_RESULT, agent.NO_RESULT)
+        job = {"id": "lt-x", "spec": {"command": ["python3", "rh/agent.py"], "accept": None}}
+        state, receipt = collect.collect_local(job, agent.NO_RESULT, Path("."))
+        self.assertEqual(state, "no_result")
+        self.assertIn("no answer and no changes", receipt["detail"])
+        # a person's own command that happens to exit 66 has failed, as any other exit code would say
+        shell = {"id": "mine", "spec": {"command": ["sh", "-c", "exit 66"], "accept": None}}
+        self.assertEqual(collect.collect_local(shell, 66, Path("."))[0], "failed")
 
 
 class SwarmJudgeTest(unittest.TestCase):

@@ -1699,6 +1699,7 @@ body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 .job-result-status { flex: 1 1 0; min-width: 0; }
 /* under a failure banner the line is quiet: the state word and the time in the meta grey, never a second red */
 .job-result.after-fail .job-result-status { color: #9aa0ab; }
+.job-result.after-fail svg.st { color: #8b92a3; }
 .job-result-status .nowrap { white-space: nowrap; }  /* a part wraps whole, at a separator or not at all */
 /* and the line breaks before a separator, never after it, so no dot hangs at a line's end */
 .job-result-status .sep::before { content: "\200B"; }

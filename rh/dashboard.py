@@ -2454,8 +2454,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
             # past its limit, 'N left' would read as budget left: it says when it should end instead
             status_line.append(_text(f"ends ~{_clock(now + rest, now)}" if late else _left(rest)))
     quiet = failed and bad and len(status_line) > 1
-    if quiet:  # the banner above says it failed, in red, and names the check: the line is the state word and the time
-        result = result[1:]
+    if quiet:  # the banner above says it failed, in red, and names the check: the line is the state and its time, grey
         if checks_at is not None:
             del status_line[checks_at]
     # each part keeps the dot that leads it, so a wrapped line can hide its leading dot (see .sl in rh.css)
@@ -2597,7 +2596,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
         last = "last " if opened.get("log_cut") else ""
         # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing
-        line_count = ((f"last {len(lines):,}" if last else "") if card else
+        line_count = ((f"last {len(lines):,} lines" if last else "") if card else
                       f'{len(lines)} of {total:,} lines' if total and finished else
                       f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}')
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it

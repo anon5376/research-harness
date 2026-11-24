@@ -3145,14 +3145,14 @@ console.log(JSON.stringify([
         self.assertNotIn('class="lines', fold)
         done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30</span>', cut)
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
         # r19 F4: '12 of 30' named the kept tail as the whole. With no total known the card counts what it shows;
         # with the log's real length the card names it once, and the fold says how much of it it holds
         self.assertIn('<span class="lines mono">12 lines</span>', cut)
         done["open"]["log_total"] = 2412
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
         self.assertIn('<span class="lines mono">2,412 lines</span>', cut)
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30</span>', cut)
+        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
         self.assertEqual(cut.count("2,412"), 1)
         del done["open"]["log_total"]
         done["open"]["log_cut"] = False
@@ -3219,7 +3219,10 @@ console.log(JSON.stringify([
         # word in the meta grey, never red.
         status = re.search(r'<p class="job-result[^"]*" data-region="job-result".*?</p>',
                            dashboard.render(broke, NOW, token=TOKEN), re.S).group(0)
-        self.assertNotIn("<svg", status)
+        # r24 F8: with no glyph it read as a stray caption beside every other status line's; it keeps its ring, drawn
+        # in the meta grey, so it is never a second red under the banner
+        self.assertIn('data-s="failed"', status)
+        self.assertIn(".job-result.after-fail svg.st { color: #8b92a3; }", dashboard.STYLE)
         self.assertNotIn("checks", text(status))
         self.assertTrue(text(status).startswith("Failed·"), text(status))  # the state, then its time
         self.assertIn('class="job-result after-fail"', status)

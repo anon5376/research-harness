@@ -1118,6 +1118,20 @@ class ListsTest(unittest.TestCase):
         self.assertIn("document.addEventListener('rh:page', fitNames);", dashboard.SCRIPT)
         self.assertIn("\n.vh {", dashboard.STYLE)
 
+    def test_the_team_editor_is_an_outline_on_a_phone(self):
+        # r155 teams-phone: the tree ran off the dialog's right edge, cards could not be scrolled past (touch-action:
+        # none), and the title wore a focus ring. On a phone the team is an indented outline, a vertical swipe
+        # scrolls, drop zones run top to bottom, a scroll's pointercancel picks nothing, and the title has no ring.
+        phone = dashboard.STYLE.split("/* On a phone the team is an indented outline", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("@media (max-width: 760px)", phone)
+        self.assertIn(".tm-canvas[data-shape] .tt ul { position: relative; padding: 0 0 0 24px; }", phone)
+        self.assertIn("touch-action: pan-y", phone)
+        self.assertIn("dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }", dashboard.STYLE)
+        self.assertIn("const OUTLINE = matchMedia('(max-width: 760px)')", dashboard.SCRIPT)
+        self.assertIn("p.shape === 'vertical' && !OUTLINE.matches ? (x - rect.left)", dashboard.SCRIPT)
+        drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
+        self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
+
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the

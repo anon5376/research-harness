@@ -216,10 +216,12 @@ function canvas(p, animate) {
 }
 
 // a team wider than the canvas shrinks to fit (never under 62%), so the whole hierarchy reads at once
+const OUTLINE = matchMedia('(max-width: 760px)');  // rh.css draws the team as an indented outline there
 function fit(box) {
   const tt = $('.tt', box);
   if (!tt) return;
   tt.style.zoom = '';
+  if (OUTLINE.matches) return;
   const room = box.clientWidth - 36, need = tt.scrollWidth;
   tt.style.zoom = need > room ? String(Math.max(.62, room / need)) : '';
 }
@@ -392,7 +394,8 @@ function change(fn, animate = true) {
 function zone(target, x, y, p) {
   const k = target.dataset.k, rect = target.getBoundingClientRect();
   if (k === p.tree._k) return 'in';
-  const along = p.shape === 'vertical' ? (x - rect.left) / rect.width : (y - rect.top) / rect.height;
+  // siblings sit side by side only in a wide vertical tree; a phone's outline stacks them, as horizontal does
+  const along = p.shape === 'vertical' && !OUTLINE.matches ? (x - rect.left) / rect.width : (y - rect.top) / rect.height;
   return along < .26 ? 'before' : along > .74 ? 'after' : 'in';
 }
 function clearMarks() { for (const el of $$('.tn.drop-in, .tn.drop-before, .tn.drop-after')) el.classList.remove('drop-in', 'drop-before', 'drop-after'); }
@@ -441,6 +444,10 @@ function drop(e) {
   if (!d) return;
   clearMarks();
   document.documentElement.classList.remove('tm-dragging');
+  if (e.type === 'pointercancel') {  // the page took the gesture (a phone's scroll): not a pick, and no drop
+    if (!d.on) return;
+    d.target = null;
+  }
   if (!d.on) {  // a click: pick the agent
     if (d.k) { T.sel = d.k; render(false); $(`.tn[data-k="${d.k}"]`)?.focus(); }
     return;

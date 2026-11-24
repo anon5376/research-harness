@@ -2648,3 +2648,26 @@ a.lt-n:hover { background: var(--active); }
   animation: sw-glint 2.2s ease-in-out infinite; }
 @keyframes sw-glint { from { transform: translateX(-14px); } to { transform: translateX(48px); } }
 @media (prefers-reduced-motion: reduce) { .sw-run[data-live]::after, .sw-bar::after { animation: none; display: none; } }
+
+/* On a phone the team is an indented outline whatever its shape: each agent full width under whoever judges it,
+   joined by a rail on the left, so the whole team reads without sideways scrolling. A vertical swipe scrolls it;
+   a sideways nudge picks a card up. (Later than the shapes' rules and as specific, so these win.) */
+@media (max-width: 760px) {
+  .tm-canvas[data-shape] .tt, .tm-canvas[data-shape] .tt ul { flex-direction: column; justify-content: flex-start;
+    min-width: 0; margin: 0; }
+  .tm-canvas[data-shape] .tt ul { position: relative; padding: 0 0 0 24px; }
+  .tm-canvas[data-shape] .tt li { flex-direction: column; align-items: stretch; padding: 8px 0 0; }
+  .tm-canvas[data-shape] .tt > li { padding-top: 0; }
+  .tm-canvas[data-shape] .tt ul::before { display: none; }
+  .tm-canvas[data-shape] .tt ul > li:nth-child(n)::before { content: ""; display: block; position: absolute;
+    left: -13px; right: auto; top: 0; bottom: auto; width: 12px; height: 36px; border: 0;
+    border-left: 1px solid var(--pal-line); border-bottom: 1px solid var(--pal-line); border-radius: 0 0 0 9px; }
+  .tm-canvas[data-shape] .tt ul > li:nth-child(n)::after { content: ""; display: block; position: absolute;
+    left: -13px; right: auto; top: 36px; bottom: 0; width: 0; height: auto; border: 0;
+    border-left: 1px solid var(--pal-line); border-radius: 0; }
+  .tm-canvas[data-shape] .tt ul > li:last-child:nth-child(n)::after { display: none; }
+  .tm-canvas[data-shape] .tn { width: auto; touch-action: pan-y; }
+  .tm-canvas[data-shape] .tn.drop-before::before { left: 10px; right: 10px; top: -6px; bottom: auto; width: auto; height: 3px; }
+  .tm-canvas[data-shape] .tn.drop-after::after { left: 10px; right: 10px; bottom: -6px; top: auto; width: auto; height: 3px; }
+}
+dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }

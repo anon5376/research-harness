@@ -1090,6 +1090,9 @@ html[data-live-app] .app { position: relative; isolation: isolate; }
 html[data-live-app] .pane { background: transparent; }
 html[data-live-app] .app:not(:has(.sea-page)) .bg-field { opacity: .2;
   -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / .35), #000 90%); mask-image: linear-gradient(to bottom, rgb(0 0 0 / .35), #000 90%); }
+/* On a phone the dots sit under body text and make it shimmer; the wash stays by the dock. */
+@media (max-width: 600px) { html[data-live-app] .app:not(:has(.sea-page)) .bg-field {
+  -webkit-mask-image: linear-gradient(to bottom, transparent calc(100% - 160px), #000); mask-image: linear-gradient(to bottom, transparent calc(100% - 160px), #000); } }
 body[data-background="quiet"] .bg-field { opacity: 1; }
 /* a phone's front door: the field stays behind its controls, calm under the top bar and gone where the
    composer sits, so the folder title and the composer lead, not the glow (r33 F1) */

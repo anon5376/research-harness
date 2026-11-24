@@ -3624,6 +3624,18 @@ class DashboardTest(unittest.TestCase):
         # The water is plain: no grid behind the creatures.
         self.assertNotIn("background", dashboard.STYLE.split(".tank-c {", 1)[1].split("}", 1)[0])
 
+    def test_on_a_phone_the_wash_behind_a_job_page_shows_only_by_the_dock(self):
+        # A phone's dot pitch (~3px) sits near the stroke width of its 15-17px body text, so answers, inbox rows
+        # and brief bubbles shimmer over the dots: there the wash shows only by the composer docked at the foot.
+        sel = "html[data-live-app] .app:not(:has(.sea-page)) .bg-field"
+        phone = dashboard.STYLE.split("@media (max-width: 600px) { " + sel + " {", 1)[1].split("}", 1)[0]
+        mask = "linear-gradient(to bottom, transparent calc(100% - 160px), #000)"
+        self.assertIn("-webkit-mask-image: " + mask, phone)
+        self.assertIn("; mask-image: " + mask, phone)
+        desk = dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]
+        self.assertIn("opacity: .2", desk)
+        self.assertIn("rgb(0 0 0 / .35), #000 90%", desk)
+
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_sea_draws_each_creature_whole(self):
         # A creature missing from the sea it is counted in, a dot or sprite cut by the tank's edge, two seats'

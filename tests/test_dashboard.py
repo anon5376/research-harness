@@ -1597,11 +1597,13 @@ class ListsTest(unittest.TestCase):
         settled = {**one, "settled": [{"id": 90, "job": "live-job", "kind": "question", "body": "Which?",
                                        "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
         self.assertNotIn('class="ib-end"', inbox(settled))
-        self.assertIn(".ib-end { display: none; }", dashboard.STYLE)
-        phone = dashboard.STYLE.split("@media (max-width: 600px) { .ib-end {", 1)[1].split("}", 1)[0]
-        for decl in ("display: block", "margin: 32px 0 0", "text-align: center", "font-size: 13px",
-                     "color: var(--faint)"):
-            self.assertIn(decl, phone)
+        # r35 F7: the desktop list ends the same way (it stopped bare above ~730px of column), 24px under the
+        # last card; a phone keeps 32px
+        line = dashboard.STYLE.split("\n.ib-end {", 1)[1].split("}", 1)[0]
+        for decl in ("margin: 24px 0 0", "text-align: center", "font-size: 13px", "color: var(--faint)"):
+            self.assertIn(decl, line)
+        self.assertNotIn("display: none", line)
+        self.assertIn("@media (max-width: 600px) { .ib-end { margin-top: 32px; } }", dashboard.STYLE)
 
     def test_the_inbox_who_line_wraps_like_the_status_line_so_no_line_starts_or_ends_with_a_dot(self):
         # On a 390px phone the meta line wrapped after a separator and left a dangling "·" at line 1's end. It

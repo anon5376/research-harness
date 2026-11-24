@@ -291,8 +291,17 @@ class CliTest(unittest.TestCase):
             self.assertIn("another supervisor", r.stderr)
             self.assertLess(time.time() - t0, 2.0)
         finally:
-            first.kill()
-            first.wait()
+            if os.name == "nt":
+                # A killed supervisor leaves ledger.db-shm locked on Windows; letting it run out its ticks
+                # closes the ledger cleanly, so kill it only if it overstays.
+                try:
+                    first.wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    first.kill()
+                    first.wait()
+            else:
+                first.kill()
+                first.wait()
 
     def test_service_plist_is_written_but_never_loaded(self):
         import plistlib

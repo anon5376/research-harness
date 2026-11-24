@@ -937,7 +937,7 @@ class ListsTest(unittest.TestCase):
         code = code[:code.index("\n}\n") + 3]
         cases = json.dumps([[n, j] for n, j, _ in self.SWARM_LINES])
         out = subprocess.run(["node", "-e", code + f"console.log(JSON.stringify({cases}.map(([n, j]) => swarmLine(n, j))))"],
-                             capture_output=True, text=True, timeout=30, check=True).stdout
+                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=True).stdout
         self.assertEqual(json.loads(out), [line for _, _, line in self.SWARM_LINES])
 
     def test_the_swarm_ticks_list_devin_as_the_picker_does(self):

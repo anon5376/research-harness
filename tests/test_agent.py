@@ -57,6 +57,22 @@ FAKE = textwrap.dedent('''
 ''')
 
 
+def fake_agent(directory, name, script):
+    """Write a stand-in agent as a `#!` script and return it as the binary to run. Windows cannot exec a `#!`
+    script, so there the same script gets a .cmd launcher that runs it with this interpreter."""
+    fake = directory / name
+    fake.write_text(f"#!{sys.executable}\n" + script, encoding="utf-8")
+    fake.chmod(0o755)
+    if os.name != "nt":
+        return fake
+    launcher = directory / f"{name}.cmd"
+    # cd first: _devin kills the .cmd, which orphans the interpreter; a cwd outside the test's temp dir
+    # keeps the orphan from blocking TemporaryDirectory cleanup on Windows.
+    launcher.write_text("@echo off\n@cd /d \"%TEMP%\"\n"
+                        f'@"{sys.executable}" "%~dp0{name}" %*\n@exit /b %errorlevel%\n', encoding="utf-8")
+    return launcher
+
+
 class DevinAcpTest(unittest.TestCase):
     def test_devin_runs_over_acp_under_the_workspace_write_rule(self):
         # A client that answers a command with yes, an edit outside the copy with yes, an edit inside it with no,
@@ -64,9 +80,7 @@ class DevinAcpTest(unittest.TestCase):
         # turn as a failure, or leaves the session on a model other than the one asked for, must fail.
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            fake = tmp / "devin"
-            fake.write_text(f"#!{sys.executable}\n" + FAKE, encoding="utf-8")
-            fake.chmod(0o755)
+            fake = fake_agent(tmp, "devin", FAKE)
             work = tmp / "work"
             work.mkdir()
             answer = tmp / "answer.md"
@@ -81,9 +95,7 @@ class DevinAcpTest(unittest.TestCase):
         # ("Invalid value") and failed every SWE-2 Max and Flash Max run; the start-up flag already chose it.
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
-            fake = tmp / "devin"
-            fake.write_text(f"#!{sys.executable}\n" + FAKE, encoding="utf-8")
-            fake.chmod(0o755)
+            fake = fake_agent(tmp, "devin", FAKE)
             (tmp / "menu.json").write_text(json.dumps([
                 {"id": "model", "currentValue": "swe-2-high",
                  "options": [{"value": "swe-2-high"}, {"value": "swe-2-flash-medium"}]},
@@ -102,6 +114,8 @@ def git(cwd, *args):
 
 
 class FollowUpTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script and its prompt's newlines "
+                                          "cannot pass through a .cmd")
     def test_a_follow_up_starts_from_the_last_runs_changes_and_reads_its_answer(self):
         # A follow-up on a clean copy, one that does not see the earlier answer, or whose changes.patch drops the
         # earlier run's changes, must fail.
@@ -121,11 +135,9 @@ class FollowUpTest(unittest.TestCase):
                 "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n one\n+two\n", encoding="utf-8")
             git(repo, "commit", "--quiet", "--allow-empty", "-m", "moved on")  # the repo moved since that run
             # A stand-in claude: prints the prompt it got and the file as it found it, then adds line three.
-            fake = tmp / "claude"
-            fake.write_text(f"#!{sys.executable}\nimport sys, pathlib\np = pathlib.Path('a.txt')\n"
-                            "print(sys.argv[2]); print('FILE', p.read_text().split())\n"
-                            "p.write_text(p.read_text() + 'three\\n')\n", encoding="utf-8")
-            fake.chmod(0o755)
+            fake = fake_agent(tmp, "claude", "import sys, pathlib\np = pathlib.Path('a.txt')\n"
+                              "print(sys.argv[2]); print('FILE', p.read_text().split())\n"
+                              "p.write_text(p.read_text() + 'three\\n')\n")
             cwd = Path.cwd()
             try:
                 os.chdir(out)
@@ -146,6 +158,8 @@ class FollowUpTest(unittest.TestCase):
 
 
 class SwarmJudgeTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script and its prompt's newlines "
+                                          "cannot pass through a .cmd")
     def test_a_judge_reads_every_runs_answer_and_patch_and_keeps_only_what_it_chose(self):
         # A judge that cannot see the runs' work, or whose changes.patch carries the runs' folder, must fail.
         with tempfile.TemporaryDirectory() as tmp:
@@ -165,12 +179,9 @@ class SwarmJudgeTest(unittest.TestCase):
                 (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
                                                    f"@@ {where} @@\n one\n+{word}\n", encoding="utf-8")
             # A stand-in claude: lists what it was shown, then applies the second run's patch.
-            fake = tmp / "claude"
-            fake.write_text(f"#!{sys.executable}\nimport sys, pathlib, subprocess\nprint(sys.argv[2])\n"
-                            "for p in sorted(pathlib.Path('.swarm').rglob('*')): print('SEEN', p.as_posix())\n"
-                            "subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n",
-                            encoding="utf-8")
-            fake.chmod(0o755)
+            fake = fake_agent(tmp, "claude", "import sys, pathlib, subprocess\nprint(sys.argv[2])\n"
+                              "for p in sorted(pathlib.Path('.swarm').rglob('*')): print('SEEN', p.as_posix())\n"
+                              "subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n")
             cwd = Path.cwd()
             try:
                 os.chdir(out)
@@ -194,6 +205,8 @@ class SwarmJudgeTest(unittest.TestCase):
 
 
 class SwarmCheckTest(unittest.TestCase):
+    @unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script and its prompt's newlines "
+                                          "cannot pass through a .cmd")
     def test_the_judge_is_told_which_runs_pass_the_check_on_a_clean_copy(self):
         # Agents may not run commands, so the harness checks each run's patch itself: a judge brief that does not
         # say which run passed, or a check run on the repository instead of the run's patched copy, must fail.
@@ -215,11 +228,8 @@ class SwarmCheckTest(unittest.TestCase):
                                                    f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
             (runs[2] / "answer.md").write_text("I changed nothing.\n", encoding="utf-8")  # no patch: not checked
             check = f"{sys.executable} -c \"import sys; sys.exit('bad' in open('a.txt').read())\""
-            fake = tmp / "claude"
-            fake.write_text(f"#!{sys.executable}\nimport sys, pathlib\nprint(sys.argv[2])\n"
-                            "for p in sorted(pathlib.Path('.swarm').rglob('check.txt')): print('CHECK', p.parent.name, p.read_text().splitlines()[0])\n",
-                            encoding="utf-8")
-            fake.chmod(0o755)
+            fake = fake_agent(tmp, "claude", "import sys, pathlib\nprint(sys.argv[2])\n"
+                              "for p in sorted(pathlib.Path('.swarm').rglob('check.txt')): print('CHECK', p.parent.name, p.read_text().splitlines()[0])\n")
             cwd = Path.cwd()
             try:
                 os.chdir(out)

@@ -2498,8 +2498,8 @@ dialog.team > header form { margin-left: auto; }
 .tm-canvas:not(.lines-in) .tt li::before, .tm-canvas:not(.lines-in) .tt li::after,
 .tm-canvas:not(.lines-in) .tt ul::before { opacity: 0; transition: none; }
 
-.tn { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: 8px;
-  row-gap: 6px; width: 150px; padding: 10px 10px; border-radius: 12px; background: #151c2e;
+.tn { position: relative; display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; column-gap: 6px;
+  row-gap: 6px; width: 150px; min-height: 58px; padding: 10px 8px; border-radius: 12px; background: #151c2e;
   border: 1px solid rgb(255 255 255 / .08); cursor: grab; user-select: none; touch-action: none; text-align: left;
   box-shadow: 0 1px 0 rgb(255 255 255 / .03) inset, 0 6px 18px -10px rgb(0 0 0 / .6);
   transition: background .18s var(--ease), border-color .18s var(--ease), box-shadow .18s var(--ease), transform .18s var(--ease); }
@@ -2515,17 +2515,23 @@ dialog.team > header form { margin-left: auto; }
 /* the wide tree names the role alone, so four workers fit at full size; what it does is in its label and the
    inspector (the phone's outline has room and shows it) */
 .tn-does { display: none; color: var(--faint); opacity: .8; }
-.tn-m { font-size: 13px; font-weight: 500; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tn-tags { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px; }
-.tn-tag { font-size: 11px; line-height: 17px; padding: 0 6px; border-radius: 5px; background: var(--surface); color: var(--muted); }
-.tn-tag.plan { color: var(--muted); box-shadow: inset 0 0 0 1px var(--control); background: transparent; }
-/* amber means 'needs you'; a model the team cannot run is a neutral mark with a lock, and its card steps back */
-.tn-tag.lock { color: #b8bdc8; background: rgb(255 255 255 / .06); }
-.tn-tag.lock::before { content: ""; display: inline-block; box-sizing: border-box; width: 8px; height: 10px;
-  margin-right: 4px; vertical-align: -1px; border: 1.3px solid currentColor; border-bottom: 0;
-  border-radius: 4px 4px 1.5px 1.5px; box-shadow: inset 0 -5px 0 currentColor, 0 0 0 0 currentColor; }
-.tn.off .tn-m, .tn.off .tn-ic { opacity: .6; }
-.tn-tag.note { color: #b8bdc8; background: rgb(255 255 255 / .06); }
+/* the model's short name wraps to a second line before it is ever cut: the version tells two models apart */
+.tn-m { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; white-space: normal;
+  overflow-wrap: anywhere; font-size: 13px; line-height: 17px; font-weight: 500; color: var(--text); }
+/* a model the team cannot run: a 12px lock right after its name, neutral (amber means 'needs you'); the card steps
+   back and its words are in its title, its label and the inspector */
+.tn-lock { position: relative; display: inline-block; width: 12px; height: 12px; margin-left: 5px; vertical-align: -1px;
+  color: #b8bdc8; }
+.tn-lock::before { content: ""; position: absolute; left: 3px; top: 0; width: 6px; height: 6px; box-sizing: border-box;
+  border: 1.4px solid currentColor; border-bottom: 0; border-radius: 3px 3px 0 0; }
+.tn-lock::after { content: ""; position: absolute; left: 1.5px; top: 5px; width: 9px; height: 7px; border-radius: 1.5px;
+  background: currentColor; }
+/* ChatGPT plan or outside the role: a quiet ring after the name, its words in the card's title and label */
+.tn-mark { display: inline-block; width: 6px; height: 6px; margin-left: 6px; vertical-align: 1px; border-radius: 50%;
+  box-shadow: inset 0 0 0 1.3px #b8bdc8; }
+.tn-end { white-space: nowrap; }
+.tn.off .tn-m { color: var(--muted); }
+.tn.off .tn-ic { opacity: .6; }
 .tn-add { position: absolute; left: 50%; bottom: -11px; translate: -50% 0; width: 22px; height: 22px; border-radius: 50%;
   display: grid; place-items: center; font-size: 14px; line-height: 1; color: var(--muted); background: var(--surface);
   border: 1px solid var(--control); opacity: 0; scale: .8; z-index: 2;

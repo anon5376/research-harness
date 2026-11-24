@@ -1152,6 +1152,29 @@ class ListsTest(unittest.TestCase):
         drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
         self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
 
+    def test_a_tree_card_is_two_lines_and_never_cuts_its_model(self):
+        # r28 F1/F3: a 145px card cut 'Claude Opus 5…' (the version is what tells two models apart), and lead and
+        # manager cards carried two chips ('Max', 'Not in policy') under the name, so cards in one tree were 80 and
+        # 58px tall. A card is two lines now: role and effort ('Lead · Max'), then the short model name as Settings
+        # writes it ('Opus 5.5'), wrapping to a second line before it is ever cut, with a 12px lock right after a
+        # model the policy does not allow; the words live in the card's label and the inspector.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        card = dashboard.SCRIPT.split("function card(p, n, depth) {", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("tn-tags", card)
+        self.assertNotIn("tn-tag", card)
+        self.assertIn("const short = m.name.replace(/^Claude /, '')", card)
+        self.assertIn("'tn-lock'", card)
+        self.assertIn("[role.name, effort, count].filter(Boolean).join(' · ')", card)
+        name = rule(".tn-m")
+        for want in ("white-space: normal", "-webkit-line-clamp: 2"):
+            self.assertIn(want, name)
+        self.assertNotIn("nowrap", name)
+        self.assertIn("min-height: 58px", rule(".tn"))
+        lock = rule(".tn-lock")
+        for want in ("width: 12px", "height: 12px"):
+            self.assertIn(want, lock)
+        self.assertNotRegex(dashboard.STYLE, r"\.tn-tags? \{")
+
     def test_the_team_dialog_is_the_apps_own_glass(self):
         # r27 F3/F7/F8/F11/F14/F2: the teams dialog was a grey stock panel with a white 'In use' pill, amber 'Not in
         # policy' chips (amber means 'needs you'), a count that included the lead's plan, the same subtitle on every
@@ -1162,7 +1185,7 @@ class ListsTest(unittest.TestCase):
         self.assertIn("dialog.team", glass)
         self.assertNotIn("background", rule("dialog.team"))
         self.assertNotIn("background", rule(".tm-use"))
-        lock = rule(".tn-tag.lock")
+        lock = rule(".tn-lock")
         self.assertNotIn("amber", lock)
         self.assertNotIn("amber", rule(".tm-mchip.off"))
         self.assertNotIn("dashed", rule(".tm-new"))

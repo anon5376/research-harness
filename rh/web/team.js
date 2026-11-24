@@ -175,23 +175,27 @@ document.addEventListener('change', async e => {
 function card(p, n, depth) {
   const m = model(n.model), role = roleOf(p, n.role);
   const scope = role.models.includes(n.model);
-  const tags = [];
-  if (n.effort) tags.push(h('span', {class: 'tn-tag'}, WORDS[n.effort] || n.effort));
-  if ((n.count || 1) > 1) tags.push(h('span', {class: 'tn-tag tn-n'}, '×' + n.count));
-  // amber means 'needs you' in this app: a blocked model is a neutral mark with a lock, and its card steps back
-  if (m.off) tags.push(h('span', {class: 'tn-tag lock', title: 'The model policy does not allow this model yet: the swarm will not start'}, 'Not in policy'));
-  else if (m.plan) tags.push(h('span', {class: 'tn-tag plan', title: 'Runs on Codex: uses your ChatGPT plan'}, 'ChatGPT plan'));
-  if (!scope && !m.off) tags.push(h('span', {class: 'tn-tag note', title: `${role.name} does not list this model`}, 'Outside role'));
+  // two lines at one height (r28 F1/F3): role and effort, then the short model name as Settings writes it, which
+  // wraps before it is ever cut; a model the team cannot run wears a lock right after its name (amber means 'needs
+  // you' in this app), and the words for every mark are in the card's label and title and in the inspector
+  const short = m.name.replace(/^Claude /, '');
+  const effort = n.effort ? WORDS[n.effort] || n.effort : '', count = (n.count || 1) > 1 ? '×' + n.count : '';
+  const notes = [m.off ? 'Not in policy: the swarm will not start' : m.plan ? 'ChatGPT plan: runs on Codex' : '',
+                 !scope && !m.off ? `Outside role: ${role.name} does not list this model` : ''].filter(Boolean);
   const lead = depth === 0;
   const what = lead ? (p.plan ? 'Plans, then judges' : 'Judges') : n.children.length && p.shape === 'vertical' ? 'Judges its team'
     : 'Works';
   return h('div', {class: 'tn' + (T.sel === n._k ? ' sel' : '') + (lead ? ' root' : '') + (m.off ? ' off' : ''), 'data-k': n._k, tabindex: 0,
-                   role: 'button', 'aria-pressed': T.sel === n._k ? 'true' : 'false',
-                   'aria-label': `${role.name}, ${m.name}${lead ? ', the lead' : ''}. ${what}.`},
+                   role: 'button', 'aria-pressed': T.sel === n._k ? 'true' : 'false', title: notes.join('\n') || null,
+                   'aria-label': `${role.name}, ${m.name}${effort ? ', ' + effort + ' effort' : ''}${count ? ', ' + n.count + ' copies' : ''}`
+                     + `${lead ? ', the lead' : ''}. ${what}.${notes.length ? ' ' + notes.join('. ') + '.' : ''}`},
     h('span', {class: 'tn-ic', html: icon(m.prov)}),
-    h('span', {class: 'tn-t'}, h('span', {class: 'tn-role'}, role.name, h('span', {class: 'tn-does'}, ' · ' + what)),
-      h('span', {class: 'tn-m'}, m.name)),
-    tags.length ? h('span', {class: 'tn-tags'}, tags) : null,
+    h('span', {class: 'tn-t'}, h('span', {class: 'tn-role'}, [role.name, effort, count].filter(Boolean).join(' · '),
+                                     h('span', {class: 'tn-does'}, ' · ' + what)),
+      h('span', {class: 'tn-m'}, short.slice(0, short.lastIndexOf(' ') + 1),
+        // the mark stays with the name's last word, so it never wraps onto a line of its own
+        h('span', {class: 'tn-end'}, short.slice(short.lastIndexOf(' ') + 1),
+          m.off ? h('span', {class: 'tn-lock', 'aria-hidden': 'true'}) : notes.length ? h('span', {class: 'tn-mark', 'aria-hidden': 'true'}) : null))),
     h('button', {type: 'button', class: 'tn-add', title: 'Add an agent under this one', 'aria-label': 'Add an agent under ' + m.name,
                  'data-add': n._k}, '+'));
 }

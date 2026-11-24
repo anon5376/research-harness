@@ -283,6 +283,10 @@ def main(argv):
                 print(f"check result: {verdict}", flush=True)
             (out / "swarm-result.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
         print(f"changes.patch: {len(diff.splitlines())} lines" if diff else "no files changed")
+        # a swarm judge ends failed, not done, when the work it kept fails the check, whatever the agent returned
+        if runs and result.get("check", "passed") != "passed":
+            print(f"the kept work failed its check: {result['check']}", flush=True)
+            code = code or 1
         return code
     finally:
         shutil.rmtree(scratch, ignore_errors=True)

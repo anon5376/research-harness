@@ -649,9 +649,9 @@ _HEADS = {}  # answer.md path -> (mtime_ns, first line): the list asks for every
 
 
 def _kept(cfg, job):
-    """The run a finished swarm judge kept ("w1", "combined" or "none"), from its swarm-result.json; "" for any other
-    job or when the judge left none."""
-    if not job["spec"].get("after_any") or job.get("state") != "done":
+    """The run a done or failed swarm judge kept ("w1", "combined" or "none"), from its swarm-result.json; "" for
+    any other job or when the judge left none."""
+    if not job["spec"].get("after_any") or job.get("state") not in ("done", "failed"):
         return ""
     root = _outputs(cfg, {"job": job})
     found = root / "swarm-result.json" if root else None

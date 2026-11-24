@@ -884,6 +884,28 @@ class ServeTest(unittest.TestCase):
         page = self.request("/job/swarm-fix.best")[2]
         self.assertNotIn('class="sw-c', head(page))
 
+    def test_a_failed_swarms_judge_still_names_the_run_it_kept(self):
+        # A judge whose kept work failed the check ends failed, not done; its swarm-result.json still says what it
+        # kept, so the swarm is named by that run's work all the same.
+        for jid, after, after_any in (("swarm-fix.w1", [], False), ("swarm-fix.w2", [], False),
+                                      ("swarm-fix.best", ["swarm-fix.w1", "swarm-fix.w2"], True)):
+            spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Fix the typo.",
+                                       "command": ["true"], "after": after, "after_any": after_any})
+            with self.ledger() as led:
+                led.add_job(spec)
+                for step in ("ready", "launching", "running"):
+                    led.set_state(jid, step)
+                led.finish(jid, "failed" if jid == "swarm-fix.best" else "done",
+                           {"route": "local-shell", "checks": [], "model_requested": None,
+                            "model_served": None, "ended": time.time(), "detail": "ok"})
+        run = self.home / "runs" / "swarm-fix.best"
+        run.mkdir(parents=True)
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "swarm-fix.w1", "check": "failed: exit 1"}),
+                                               encoding="utf-8")
+        meta = self.serve._meta({"home": str(self.home)})[0]
+        self.assertEqual(meta["swarm-fix.best"]["state"], "failed")
+        self.assertEqual(meta["swarm-fix.best"]["kept"], "swarm-fix.w1")
+
     def test_refused_new_job_returns_to_the_form_with_the_draft(self):
         cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},
                  {"id": "bad-quote", "kind": "local-shell", "brief": "x <b>", "command": "echo 'open"},

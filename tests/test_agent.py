@@ -296,23 +296,33 @@ class SwarmResultCheckTest(unittest.TestCase):
                                *[a for r in runs for a in ("--swarm", str(r))], *(["--check", command] if check else [])])
         finally:
             os.chdir(cwd)
-        self.assertEqual(code, 0)
         checks = len(log.read_text()) if log.exists() else 0
-        return json.loads((out / "swarm-result.json").read_text(encoding="utf-8")), checks
+        return json.loads((out / "swarm-result.json").read_text(encoding="utf-8")), checks, code
 
     def test_a_combined_result_is_checked_and_its_failure_recorded(self):
         # the judge starts from w2, which passed, and adds a line of its own that fails: only checking the judge's
         # own tree can say so
-        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n"
-                                    "p = pathlib.Path('a.txt'); p.write_text(p.read_text() + 'bad\\n')")
+        result, checks, code = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n"
+                                          "p = pathlib.Path('a.txt'); p.write_text(p.read_text() + 'bad\\n')")
         self.assertEqual(result, {"kept": "combined", "check": "failed: exit 1"})
         self.assertEqual(checks, 3)  # each run, then the judge's own result
+        self.assertEqual(code, 1)  # kept work that fails the check ends the job failed, not done
 
     def test_a_run_kept_whole_on_a_newer_commit_is_checked_again(self):
-        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)",
-                                    moved=True)
+        result, checks, code = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)",
+                                          moved=True)
         self.assertEqual(result, {"kept": "fix.w2", "check": "failed: exit 1"})
         self.assertEqual(checks, 3)
+        self.assertEqual(code, 1)
+
+    def test_a_judge_that_failed_keeps_its_exit_code_when_the_check_fails(self):
+        # the judge keeps w1, whose check fails, and itself exits 3: the failed check would make a clean exit 1,
+        # but a judge that already failed keeps its own code
+        result, checks, code = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w1/changes.patch'], check=True)\n"
+                                          "import sys; sys.exit(3)")
+        self.assertEqual(result, {"kept": "fix.w1", "check": "failed: exit 1"})
+        self.assertEqual(checks, 2)  # w1's verdict holds for its own tree, so the kept work is not checked again
+        self.assertEqual(code, 3)
 
     def test_a_run_whose_commit_is_missing_fails_its_check(self):
         tmp = Path(tempfile.mkdtemp())
@@ -332,15 +342,17 @@ class SwarmResultCheckTest(unittest.TestCase):
         self.assertIn("commit", verdict)
 
     def test_a_run_kept_whole_reuses_its_verdict(self):
-        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)")
+        result, checks, code = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)")
         self.assertEqual(result, {"kept": "fix.w2", "check": "passed"})
         self.assertEqual(checks, 2)
+        self.assertEqual(code, 0)
 
     def test_with_no_check_the_result_names_only_the_kept_run(self):
-        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)",
-                                    check=False)
+        result, checks, code = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)",
+                                          check=False)
         self.assertEqual(result, {"kept": "fix.w2"})
         self.assertEqual(checks, 0)
+        self.assertEqual(code, 0)
 
 
 if __name__ == "__main__":

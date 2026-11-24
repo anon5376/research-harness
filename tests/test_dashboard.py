@@ -4353,6 +4353,34 @@ console.log(JSON.stringify({
             self.assertNotIn(gone, bg)
         self.assertIn('data-tint="cobalt"', dashboard.render({**live_view(), "tint": "violet"}, NOW, token=TOKEN))
 
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_beams_brightest_dot_stays_below_the_heading(self):
+        # r34 F5: the beam's near-white corner was the brightest thing on the New page, ahead of the 28px heading
+        # and the composer, so the eye went corner -> heading -> composer. Its luminance is capped at 0.7 (on the
+        # cobalt ramp about #7f9be0) with the falloff below the cap untouched, so content is the brightest thing on
+        # screen; the beam itself still reaches the cap. A dot's radius is half a cell times sqrt(L).
+        bg = open(os.path.join(os.path.dirname(dashboard.__file__), "web", "bg.js"), encoding="utf-8").read()
+        probe = """
+const radii = [];
+class Path2D { moveTo() {} arc(x, y, r) { radii.push(r); } }
+const ctx = { setTransform() {}, fillRect() {}, fill() {}, beginPath() {}, arc() {}, createPattern() { return {}; } };
+const document = { createElement: () => ({ getContext: () => ctx }) };
+const window = { devicePixelRatio: 1 };
+""" + bg + """
+for (const preset of ['beam', 'quiet']) {
+  radii.length = 0;
+  window.RHBackground.render({ getContext: () => ctx }, { preset, tint: 'cobalt', width: 1440, height: 900, dpr: 1 });
+  const half = 2, peak = Math.max(...radii.map(r => (r / half) ** 2));
+  console.log(preset + ' ' + peak.toFixed(4));
+}
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        peaks = dict(line.split() for line in r.stdout.split("\n") if line.strip())
+        self.assertLessEqual(float(peaks["beam"]), 0.7001)
+        self.assertGreater(float(peaks["beam"]), 0.6)  # still a beam, not a haze
+        self.assertLessEqual(float(peaks["quiet"]), 0.22 * 0.7 + 1e-4)  # Quiet is the beam at 22%
+
     def test_every_control_switched_on_wears_the_tints_blue(self):
         # Three "on" colours sat side by side: near-white checkboxes and radios beside blue ticks. --on is the
         # tint's accent (body's --ef-accent, so it follows the owner's tint), and every control that switches

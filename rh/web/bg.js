@@ -146,7 +146,9 @@
       if (core + haze < 0.004) return 0;
       var brk = fbm(t * 2.4, n * 10, 7, 4);
       var corner = Math.exp(-(px * px + py * py) / 0.035) * 0.45;
-      return (core * 1.3 + haze) * (0.6 + 0.8 * brk) + corner;
+      // its brightest dots stop at 0.7 (cobalt's ~#7f9be0), below the page's heading: decoration never
+      // outshines content (critic r34 F5); everything under the cap keeps its falloff
+      return Math.min(0.7, (core * 1.3 + haze) * (0.6 + 0.8 * brk) + corner);
     }
   };
 

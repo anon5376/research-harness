@@ -165,7 +165,9 @@ def preflight(spec, caps, policy, view):
     ended = ("failed", "blocked", "capacity", "truncated", "aborted", "no_result", "cancelled")
     for up in spec["after"]:
         st = view.states.get(up)
-        if st is None:
+        if up == spec["id"]:
+            holds.append(f"after {up}: a job cannot wait on itself")
+        elif st is None:
             holds.append(f"after {up}: no such job")
         elif st == "done" or (st in ended and spec.get("after_any")):
             continue  # with after_any (a swarm's judge) a run that ended badly is simply left out

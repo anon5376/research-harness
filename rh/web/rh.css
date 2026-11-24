@@ -641,7 +641,7 @@ dialog::backdrop { background: var(--backdrop); }
   outline: none; }
 .p-list { padding: 6px 8px 8px; max-height: min(460px, calc(100vh - 260px)); overflow: auto; }
 .p-sec { font-size: 13px; color: var(--faint); padding: 10px 12px 4px; }
-.p-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 240px auto; align-items: center; column-gap: 12px;
+.p-row { display: grid; grid-template-columns: 20px minmax(0, 1fr) 240px 48px auto; align-items: center; column-gap: 12px;
   width: 100%; height: 40px; padding: 0 12px; border-radius: 8px; text-align: left; cursor: pointer; }
 .p-row:hover { background: var(--raised); }
 .p-row[aria-selected="true"] { background: var(--active); }
@@ -654,7 +654,9 @@ dialog::backdrop { background: var(--backdrop); }
   color: var(--faint); font-size: 13px; line-height: 20px; }
 .p-s > * { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .p-s .mono { font-size: 12px; }
-.p-a { color: var(--faint); font-size: 13px; }
+/* The time is a cell of its own on the title line, one column for every row — where a one-line row always put it. */
+.p-when { grid-column: 4; grid-row: 1; justify-self: end; color: var(--faint); white-space: nowrap; }
+.p-a { grid-column: -2 / -1; color: var(--faint); font-size: 13px; }
 .p-none { padding: 14px 12px; color: var(--muted); }
 .p-foot { display: flex; align-items: center; gap: 10px; height: 44px; padding: 0 12px 0 18px; border-top: 1px solid var(--pal-rule);
   color: var(--muted); font-size: 13px; background: var(--pal-foot); }
@@ -1641,18 +1643,19 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .p-s { flex-wrap: nowrap; }
 .p-s > span:last-child { flex: none; width: 84px; text-align: left; }
 @media (max-width: 900px) { .ibx[data-view="list"] .ib[aria-current]:not(:hover) { background: transparent; } }
-@media (min-width: 601px) { .p-row { grid-template-columns: 20px minmax(0, 1fr) 290px auto; } }
-/* On a phone a palette row is two lines: the name, then its id and state; the name never gives way to them. */
+@media (min-width: 601px) { .p-row { grid-template-columns: 20px minmax(0, 1fr) 290px 48px auto; } }
+/* On a phone a palette row is two lines: the name and its time, then its state; the name never gives way to them. */
 @media (max-width: 600px) {
-  .p-row { grid-template-columns: 20px minmax(0, 1fr); grid-template-rows: auto auto; height: auto; min-height: 52px;
+  .p-row { grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto auto; height: auto; min-height: 52px;
     padding: 6px 12px; row-gap: 1px; }
   .p-row .p-ic { grid-row: 1 / span 2; }
   .p-row .p-s { grid-column: 2; justify-content: flex-start; }
+  .p-row .p-when { grid-area: 1 / 3; }
   .p-row .p-a { display: none; }
   /* A row of a one-state group carries only its time: name left, time right, one line. */
-  .p-row.one { grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto; min-height: 44px; }
+  .p-row.one { grid-template-rows: auto; min-height: 44px; }
   .p-row.one .p-ic { grid-row: auto; }
-  .p-row.one .p-s { grid-column: 3; }
+  .p-row.one .p-s { display: none; }
 }
 /* Text scrolled up out of a job's thread dissolves under its head instead of being cut through its letters. */
 .jd-scroll.scrolled { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
@@ -1929,7 +1932,6 @@ details.out-more > pre.log.ended { max-height: 420px; }
 .p-s > .p-w { flex: none; max-width: 60%; }
 .p-s > span:last-child { flex: 0 1 auto; width: auto; }
 .p-s > * + *::before { content: "·"; margin-right: 8px; color: var(--faint); }
-.p-s > .p-when { flex: none; }
 /* A clash's shared name is the grey line's third phrase; on a phone it is cut to letters that name nothing, so
    the line keeps the state and the time. */
 @media (max-width: 480px) { .p-s > .p-b { display: none; } }

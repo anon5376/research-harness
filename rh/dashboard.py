@@ -3113,12 +3113,13 @@ def _palette(jobs, ctx, keys):
                     # line, which leads with the state so states form one column
                     + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'
                     + '<span class="p-s">' + ("" if same else f'<span class="p-w">{_text(j.word)}</span>')
-                    # the time the sidebar shows, so runs of one brief tell apart at a glance
-                    + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
                     # no id or slug here (typing one still finds the row, by its data-id); only a clash names both
                     + (f'<span class="p-b">{_text(j.label)}</span>' if j.dup else "")
                     + '</span>'
-                    f'<span class="p-a">{_where(j.kind)}</span></a>')
+                    # the time the sidebar shows, in a cell of its own on the title line at every width, so every
+                    # row's time shares one edge and runs of one brief tell apart at a glance
+                    + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
+                    + f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:
         pages.append(("new", "New job", "describe it, pick where it runs", "/new"))

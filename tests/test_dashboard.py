@@ -4546,7 +4546,7 @@ console.log(JSON.stringify([
         self.assertEqual(needs.count('class="p-row"'), badge)
         self.assertNotIn('<p class="p-sec">Jobs</p>', pal)
         row = dashboard.STYLE.split(".p-row {", 1)[1].split("}", 1)[0]
-        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) 240px auto", row)
+        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) 240px 48px auto", row)
         meta = dashboard.STYLE.split(".p-s {", 1)[1].split("}", 1)[0]
         for rule in ("flex-wrap: wrap", "justify-content: flex-end", "height: 20px", "line-height: 20px",
                      "overflow: hidden"):
@@ -4565,15 +4565,50 @@ console.log(JSON.stringify([
         mixed = re.search(r'<a class="p-row" role="option" data-id="broke-job"[^>]*>.*?</a>', pal, re.S).group(0)
         self.assertIn('<span class="p-w">Failed</span>', mixed)
         phone = dashboard.STYLE.split("@media (max-width: 600px) {\n  .p-row {", 1)[1].split("\n}", 1)[0]
-        self.assertIn(".p-row.one { grid-template-columns: 20px minmax(0, 1fr) auto; grid-template-rows: auto;", phone)
-        self.assertIn(".p-row.one .p-s { grid-column: 3;", phone)
+        self.assertIn(".p-row.one { grid-template-rows: auto;", phone)
+        self.assertIn(".p-row.one .p-s { display: none;", phone)
+
+    def test_every_palette_row_keeps_its_time_on_the_title_line(self):
+        # On a phone a 'Needs you' or 'Live' row kept its time in the grey second line ('Failed · 05:31'), while an
+        # 'Ended today' row put it on the title line's right — one list with times in two places, so scanning by
+        # time broke at the group boundary. Every row's time is a cell of its own after the grey line's span, and
+        # the phone sheet's third column holds it on the title line for every row, where the one-line rows always
+        # had it; a row with no time keeps its layout, and the grey line keeps the state word only.
+        view = live_view()
+        view["live"].append({"id": "running-job", "state": "running", "paused": False, "detail": "",
+                             "external_id": None})
+        view["meta"] = {"running-job": {"kind": "local-shell", "started": NOW - 1800},
+                        "finished-job": {"kind": "local-shell", "updated": NOW - 600}}
+        pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        timed = 0
+        for row in re.findall(r'<a class="p-row[^>]*>.*?</a>', pal, re.S):
+            grey = re.search(r'<span class="p-s">[^<]*(?:<span [^>]*>[^<]*</span>)*</span>', row)
+            self.assertIsNotNone(grey)
+            when = row.find('<span class="p-when')
+            if when == -1:
+                continue  # a row with no time keeps its layout
+            timed += 1
+            self.assertNotIn('class="p-when', grey.group(0), "the time is inside the grey line")
+            self.assertEqual(when, grey.end(), "the time is not a cell of its own after the grey line")
+        self.assertGreaterEqual(timed, 3)  # Needs you, Live and Ended today rows all carry a time
+        row = re.search(r'<a class="p-row" role="option" data-id="live-job"[^>]*>.*?</a>', pal, re.S).group(0)
+        self.assertRegex(row, r'<span class="p-s"><span class="p-w">[^<]+</span></span>'
+                              r'<span class="p-when mono num">[^<]+</span>')
+        # the phone sheet gives every row a title-line column for it and pins it there
+        phone = dashboard.STYLE.split("@media (max-width: 600px) {\n  .p-row {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) auto", phone.split("}", 1)[0])
+        self.assertIn(".p-row .p-when { grid-area: 1 / 3", phone)
+        # on a wide window the time's column is one fixed width, so '15:37' and '23 Nov' rows keep the state column on
+        # one edge
+        self.assertIn("@media (min-width: 601px) { .p-row { grid-template-columns: 20px minmax(0, 1fr) 290px 48px auto; } }",
+                      dashboard.STYLE)
 
     def test_on_a_phone_the_clashing_names_brief_leaves_the_grey_line(self):
         # Two listed jobs that share a name tell their palette rows apart with the shared name on the grey line,
-        # in a span of its own after the time; on a phone that third phrase is cut to letters that name nothing
-        # ('In the research-harness …'), so the stylesheet hides it under 480px and the row reads 'Running ·
-        # 13:46'. The id still leads the title, the data-id still finds the row when typed, and a name that does
-        # not clash never carries the span.
+        # in a span of its own after the state word; on a phone that second phrase is cut to letters that name
+        # nothing ('In the research-harness …'), so the stylesheet hides it under 480px and the grey line keeps
+        # the state alone. The id still leads the title, the data-id still finds the row when typed, and a name
+        # that does not clash never carries the span.
         view = live_view()
         view["meta"] = {**view.get("meta", {}),
                         "live-job": {"kind": "local-shell", "brief": "Same brief."},
@@ -4584,8 +4619,8 @@ console.log(JSON.stringify([
             row = re.search(rf'<a class="p-row" role="option" data-id="{jid}"[^>]*>.*?</a>', pal, re.S).group(0)
             self.assertIn(f'<span class="p-t">{jid}</span>', row)
             self.assertRegex(row, r'<span class="p-s"><span class="p-w">[^<]+</span>'
-                                   r'<span class="p-when mono num">[^<]+</span>'
-                                   r'<span class="p-b">Same brief</span>')
+                                   r'<span class="p-b">Same brief</span></span>'
+                                   r'<span class="p-when mono num">[^<]+</span>')
         other = re.search(r'<a class="p-row" role="option" data-id="broke-job"[^>]*>.*?</a>',
                           pal, re.S).group(0)
         self.assertNotIn('class="p-b"', other)

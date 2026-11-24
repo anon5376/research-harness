@@ -2584,6 +2584,23 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Interrupt requested", text(said))
         self.assertNotIn("user-message", said)  # a Stop is not a message: no bubble, no Up next row
 
+    def test_a_steer_sits_8px_under_the_brief_it_continues(self):
+        # r32 F9: the brief and the owner's messages are one group. They live in sibling regions of the job body,
+        # whose 24px gap made a steer read as a new turn; the messages region pulls up to 8px under the brief.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", brief="Tidy the README",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo",
+                                                    "Tidy the README"])
+        view["open"]["inbox"] = [{"id": "a" * 12, "mode": "steer", "text": "use tabs", "state": "steered"}]
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        self.assertRegex(page, r'data-region="j-brief".*?</section>\s*<section[^>]*data-region="j-said"')
+        self.assertIn(".detail .jd-body { width: 100%; max-width: 768px; gap: 24px;", dashboard.STYLE)
+        pull = dashboard.STYLE.index(".detail .jd-body > .s-j-brief + .s-j-said { margin-top: -16px; }")
+        # only where the brief's hover Copy can move beside its bubble; otherwise it would sit on the steer
+        self.assertGreater(pull, dashboard.STYLE.rindex("@supports (anchor-name: --a) {", 0, pull))
+        self.assertRegex(dashboard.STYLE, r"\.s-j-brief:has\(\+ \.s-j-said\) > \.msg-acts\.me \{ position: absolute; "
+                                          r"position-anchor: --brief;[^}]*right: calc\(anchor\(left\) \+ 4px\)")
+
     def test_an_agents_answer_reads_as_its_message(self):
         # An answer that is not shown as a message from the agent that ran, or that loses its text, must fail.
         view = opened(live_view(), "finished-job", kind="local-shell")

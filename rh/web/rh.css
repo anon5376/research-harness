@@ -2915,6 +2915,17 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 /* the owner's messages are one group: 8px apart; a steer's mark is a caption under the bubble (r31 F10) */
 .s-j-said { display: flex; flex-direction: column; gap: 8px; }
 .s-j-said:empty { display: none; }
+/* the brief is the group's first message, in its own region: 8px to the next, not the body's 24 (r32 F9).
+   Its pointer Copy hung in that gap, so with a steer under it, it rests left of the bubble's last line. */
+@supports (anchor-name: --a) {
+  .detail .jd-body > .s-j-brief + .s-j-said { margin-top: -16px; }
+  .s-j-brief:has(+ .s-j-said) > .user-message { anchor-name: --brief; }
+  @media (hover: hover) {
+    .s-j-brief:has(+ .s-j-said) > .msg-acts.me { position: absolute; position-anchor: --brief; height: auto;
+      right: calc(anchor(left) + 4px); bottom: anchor(bottom); margin: 0; }
+    .s-j-brief:has(+ .s-j-said) > .msg-acts.me .msg-copy { margin: 0; }
+  }
+}
 .um-cap { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin: 3px 4px 0 0;
   color: var(--faint); font-size: 11px; }
 .user-message.sending, .talk-dropped .user-message { opacity: .6; }

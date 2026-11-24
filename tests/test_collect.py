@@ -80,6 +80,27 @@ class CollectTest(unittest.TestCase):
         self.assertEqual(git(self.repo, "rev-parse", "cloud/j1").strip(), sha)
         self.assertEqual(gitx.head(self.repo), self.sha, "landing must not move main")
 
+    def test_landed_branch_can_be_checked_out_in_the_repo(self):
+        state, _ = self.collect({"runs/j1/RESULT.json": self.result(), "runs/j1/notes.md": "n\n"},
+                                'accept = "test -s runs/j1/notes.md"')
+        self.assertEqual(state, "done")
+        sha = collect.land({**self.job(), "state": "done"}, self.home)
+        self.assertEqual(git(self.repo, "rev-parse", "cloud/j1").strip(), sha)
+        self.assertEqual(gitx.head(self.repo), self.sha, "landing must not move main")
+        r = subprocess.run(["git", "-C", str(self.repo), "checkout", "cloud/j1"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(gitx.head(self.repo), sha)
+
+    def test_landing_never_moves_an_existing_branch(self):
+        state, _ = self.collect({"runs/j1/RESULT.json": self.result(), "runs/j1/notes.md": "n\n"},
+                                'accept = "test -s runs/j1/notes.md"')
+        self.assertEqual(state, "done")
+        git(self.repo, "branch", "cloud/j1", self.sha)
+        with self.assertRaises(gitx.GitError):
+            collect.land({**self.job(), "state": "done"}, self.home)
+        self.assertEqual(git(self.repo, "rev-parse", "cloud/j1").strip(), self.sha, "an existing branch must not move")
+
     def test_failing_local_gate_fails_a_done_result(self):
         state, rec = self.collect({"runs/j1/RESULT.json": self.result()}, 'accept = "test -f runs/j1/absent.md"')
         self.assertEqual(state, "failed")

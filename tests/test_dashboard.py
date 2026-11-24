@@ -2459,13 +2459,22 @@ class DashboardTest(unittest.TestCase):
         page = dashboard.render(view, NOW, token=TOKEN)
         time_of = lambda jid: re.search(rf'<li class="row" data-key="job:{jid}".*?<span class="time mono num">(.*?)</span></a>',  # noqa: E731
                                         page, re.S).group(1)
-        self.assertIn('<span class="rn">run 2</span>', time_of("web-job"))
+        self.assertIn('<span class="rn">run 2 · </span>', time_of("web-job"))
         self.assertNotIn("run", text(time_of("live-job")))
         pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
         row = re.search(r'<a class="p-row[^"]*" role="option" data-id="web-job".*?</a>', pal, re.S).group(0)
-        self.assertIn('<span class="rn">run 2</span>', row)
+        self.assertIn('<span class="rn">run 2 · </span>', row)
         first = re.search(r'<a class="p-row[^"]*" role="option" data-id="live-job".*?</a>', pal, re.S).group(0)
         self.assertNotIn('class="rn"', first)
+        # r36 F1: the dot between 'run 2' and a time is in the markup. A CSS '.rn:not(:last-child)::after' never
+        # matched, since the time is a bare text node, so Earlier rows read 'run 217:44'.
+        self.assertEqual(dashboard._run_tag(2, "17:44"), '<span class="rn">run 2 · </span>17:44')
+        self.assertEqual(dashboard._run_tag(2, ""), '<span class="rn">run 2</span>')
+        self.assertEqual(dashboard._run_tag(1, "17:44"), "17:44")
+        cell = time_of("web-job")
+        self.assertTrue(cell.startswith('<span class="rn">run 2'), cell)
+        self.assertEqual(" · " in cell, bool(text(cell.split("</span>", 1)[1])))  # a dot only when a time follows
+        self.assertNotIn(".rn:not(:last-child)::after", dashboard.STYLE)
         self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "b"}, "b": {}}), 3)
         self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "x"}}), 2)  # a gone prior ends the walk
         self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "a"}}), 2)  # a loop ends it too

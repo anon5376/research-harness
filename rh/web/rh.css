@@ -780,9 +780,8 @@ html[data-live-app] :is(.when, .mono:not(code, pre, input, textarea), .coord-lin
 .lane .row .sub { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); }
 .lane .row .where { display: none; }
 .lane .row .time { grid-column: 3; grid-row: 1; font-size: 12px; }
-/* a repeat run's 'run 2' leads its time, quieter, with a dot between when a time follows (r33 F4) */
+/* a repeat run's 'run 2' leads its time, quieter; the markup puts the dot before a time (r33 F4, r36 F1) */
 .rn { color: var(--faint); }
-.rn:not(:last-child)::after { content: " \00B7 "; }
 .lane .row .do { position: absolute; inset: 3px 4px auto auto; opacity: 0; transition: opacity .12s; }
 .lane .row:hover .do, .lane .row:focus-within .do { opacity: 1; }
 .lane .row .do .btn { background: var(--surface); }

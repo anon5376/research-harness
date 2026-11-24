@@ -826,9 +826,12 @@ def _run_no(meta, all_meta):
     return n
 
 
-def _run_tag(n):
-    """A repeat run's mark before its time (r33 F4): runs of one chain share a name, so 'run 2' tells them apart."""
-    return f'<span class="rn">run {n}</span>' if n > 1 else ""
+def _run_tag(n, time=""):
+    """A job's time cell: the time alone, or for a repeat run 'run 2' before it (r33 F4: runs of one chain share a
+    name, so the number tells them apart), with a dot between when a time follows (r36 F1)."""
+    if n <= 1:
+        return time
+    return f'<span class="rn">run {n}{_SEP if time else ""}</span>{time}'
 
 
 def _size(n):
@@ -1148,7 +1151,7 @@ class _Job:
         cells = (f'{_ring("env" if self.native else self.state, hue, self.kind, self.past)}'
                  f'<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
-                 f'<span class="time mono num">{_run_tag(self.run_no)}{when}</span>')
+                 f'<span class="time mono num">{_run_tag(self.run_no, when)}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav{tip}>{cells}</a>' if ctx["live"]
                 else f'<div class="item"{tip}>{cells}</div>')
         do = f'<span class="do">{act}</span>' if act else ""
@@ -3364,8 +3367,8 @@ def _palette(jobs, ctx, keys):
                     + '</span>'
                     # the time the sidebar shows, in a cell of its own on the title line at every width, so every
                     # row's time shares one edge and runs of one brief tell apart at a glance
-                    + (f'<span class="p-when mono num">{_run_tag(j.run_no)}'
-                       f'{(_hm(j.since()) if day else _clock(j.since(), ctx["now"])) if j.since() else ""}'
+                    + (f'<span class="p-when mono num">'
+                       f'{_run_tag(j.run_no, (_hm(j.since()) if day else _clock(j.since(), ctx["now"])) if j.since() else "")}'
                        '</span>' if j.since() or j.run_no > 1 else "")
                     + f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]

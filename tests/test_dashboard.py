@@ -777,9 +777,12 @@ class ListsTest(unittest.TestCase):
         top = re.search(r'<span class="top-meta mono">.*?</span></span>', busy, re.S).group(0)
         self.assertNotIn("settled", text(top))
         self.assertIn("Settled today", text(busy))
-        # r24 F1: a settled row steps back as a unit: its reason and id lines sit a step under its grey title
+        # r24 F1: a settled row steps back as a unit: its reason and id lines sit a step under its grey title.
+        # r26 F6: and still read at AA, 4.5:1 or more on a raised (hovered or picked) row: #7f8594 is 4.6:1 on
+        # #1c1c1f and 5.2:1 on the page; #737a8a was 4.4:1
         for sel in (".ib.done .ib-s", ".ib.done .ib-id"):
-            self.assertIn("color: #737a8a", dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0])
+            self.assertIn("color: #7f8594", dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0])
+        self.assertIn("color: #8b92a3", dashboard.STYLE.split("\n.ib.done .ib-t {", 1)[1].split("}", 1)[0])
 
     def test_the_swarm_line_opens_the_swarms_models(self):
         # r19 F3: in swarm mode the model picker stepped aside for grey text, so the one row of controls had a line

@@ -754,6 +754,29 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             self.assertIsNone(led.job("use-a-banned-model"))
 
+    def test_a_running_agents_page_shows_what_became_of_each_message(self):
+        # The job's page rebuilds the conversation from the inbox and the agent's marks: steers that landed, what
+        # waits Up next with its latest words, and nothing the owner removed. A removed message still listed, an
+        # edit not shown, or an edit applied to a message already sent, fails.
+        folder = self.home / "runs" / "talk"
+        folder.mkdir(parents=True)
+        lines = [{"id": "a" * 12, "mode": "steer", "text": "use tabs"},
+                 {"id": "b" * 12, "mode": "queue", "text": "the docs"},
+                 {"id": "c" * 12, "mode": "queue", "text": "the tests"},
+                 {"id": "d" * 12, "mode": "update", "text": "the docs, briefly", "target": "b" * 12},
+                 {"id": "e" * 12, "mode": "remove", "text": "", "target": "c" * 12},
+                 {"id": "f" * 12, "mode": "queue", "text": "sent already"},
+                 {"id": "0" * 12, "mode": "update", "text": "too late", "target": "f" * 12},
+                 {"id": "1" * 12, "mode": "stop", "text": ""}]
+        (folder / "inbox.jsonl").write_text("".join(json.dumps(m) + "\n" for m in lines) + '{"id": "half', "utf-8")
+        (folder / "inbox-state.json").write_text(json.dumps(
+            {"a" * 12: "steered", "b" * 12: "queued", "c" * 12: "queued", "f" * 12: "sent", "0" * 12: "dropped"}))
+        got = self.serve._inbox(folder)
+        self.assertEqual([(m["text"], m["mode"], m["state"]) for m in got],
+                         [("use tabs", "steer", "steered"), ("the docs, briefly", "queue", "queued"),
+                          ("the tests", "queue", "removed"), ("sent already", "queue", "sent")])
+        self.assertEqual(self.serve._inbox(self.home / "runs" / "none"), [])
+
     def test_the_owner_can_steer_queue_or_stop_a_running_claude_job(self):
         # After T3 Code: a running agent takes messages. A message to a job that is not running, not an agent on
         # this Mac, or whose agent cannot take one yet, accepted anyway (it would vanish), or a steer or queue with no

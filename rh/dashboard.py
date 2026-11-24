@@ -142,6 +142,12 @@ _ICONS = {
     "question": ('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"/>'
                  '<path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.8c0 1.5-2.2 2-2.2 2"/><path d="M12 15.5h.01"/>'),
     "check": '<path d="M20 6 9 17l-5-5"/>',
+    # the running job's composer, after T3 Code's: Stop's square, Steer's bent arrow, Queue's list-plus, Edit, Remove
+    "square": '<rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none"/>',
+    "steer": '<path d="m15 14 5-5-5-5"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/>',
+    "queue": '<path d="M11 12H3M16 6H3M16 18H3M18 9v6M21 12h-6"/>',
+    "pencil": '<path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/><path d="m15 5 4 4"/>',
+    "x": '<path d="M18 6 6 18M6 6l12 12"/>',
     "patch": '<path d="M12 4v11M7 10.5l5 5 5-5"/><path d="M4.5 19.5h15"/>',
     "file": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
     "stop": '<circle cx="12" cy="12" r="9"/><path d="M8.6 15.4 15.4 8.6"/>',
@@ -1709,6 +1715,71 @@ def _devin_tags(key):
     return ' data-group="SWE-2 · Free" data-group-tip="SWE-2 models use no quota"'
 
 
+_STEER_TIPS = {"steer": "Steered the active turn",
+               "queue": "Originally queued, then promoted to steer the active turn"}
+
+
+def _talk_said(talk):
+    """What the owner said to a running agent, as their messages in the chat (T3 Code's timeline): a steer that
+    landed wears a Steer badge, a queued message that started its turn reads plainly, one the run ended before
+    says so. What still waits is Up next, not here; a removed one is gone."""
+    out = []
+    for m in talk:
+        state = m.get("state")
+        if state == "removed" or (m.get("mode") == "queue" and state in ("waiting", "queued")):
+            continue
+        said = f'<span class="um-t">{_text(_reflow(str(m.get("text") or "")))}</span>'
+        if state == "steered":
+            tip = _STEER_TIPS.get(m.get("mode"), _STEER_TIPS["steer"])
+            out.append(f'<div class="user-message steered"><span class="um-badge" title="{tip}">{_ic("steer", True)}'
+                       f'Steer</span>{said}</div>')
+        elif state == "dropped":
+            out.append(f'<div class="talk-dropped"><div class="user-message">{said}</div>'
+                       '<p class="um-note">Not sent: the run ended first</p></div>')
+        else:  # sent (it started the next turn), or a steer the agent has not read yet
+            out.append(f'<div class="user-message{" sending" if state == "waiting" else ""}">{said}</div>')
+    return "".join(out)
+
+
+def _up_next(talk):
+    """T3 Code's queued rows: what waits for the turn to end, numbered, each with Edit, Steer and Remove; past three,
+    the first two and 'Show all n queued'. Empty, the region stays (hidden), so the page's regions do not change
+    when one is queued and the composer keeps its draft."""
+    queued = [m for m in talk if m.get("mode") == "queue" and m.get("state") in ("waiting", "queued")]
+    n, rows = len(queued), []
+    for i, m in enumerate(queued, 1):
+        more = " un-more" if n > 3 and i > 2 else ""
+        rows.append(f'<li class="un-row{more}" data-id="{_text(m["id"])}" aria-label="Queued message {i} of {n}, not sent">'
+                    f'<span class="un-i">{i}</span><span class="un-t">{_text(str(m.get("text") or ""))}</span>'
+                    '<span class="un-editing" hidden>Editing in the composer</span><span class="un-acts">'
+                    f'<button type="button" class="ghost un-b" data-q-edit aria-label="Edit queued message" '
+                    f'title="Edit in the composer">{_ic("pencil", True)}</button>'
+                    f'<button type="button" class="ghost un-b un-steer" data-q="promote" '
+                    f'title="Send as a steer instead">{_ic("steer", True)}<span>Steer</span></button>'
+                    f'<button type="button" class="ghost un-b" data-q="remove" aria-label="Remove queued message" '
+                    f'title="Remove from queue">{_ic("x", True)}</button></span></li>')
+    every = (f'<button type="button" class="ghost un-all" data-q-all aria-expanded="false" '
+             f'data-more="Show all {n} queued">Show all {n} queued</button>') if n > 3 else ""
+    body = (f'<p class="un-head"><span>Up next</span><span class="un-n"> · {n} queued</span></p>'
+            f'<ol class="un-list">{"".join(rows)}</ol>{every}') if n else ""
+    return _region("j-up-next", body, "section", "up-next", ' aria-label="Up next"' + ("" if n else " hidden"))
+
+
+def _talk_form(ctx, jid):
+    """The running job's composer, after T3 Code's: Enter steers (joins the turn), Ctrl/⌘ with it queues (the next
+    turn), and empty its button is Stop. The script posts it to /job/message; an edit of a queued row sends update."""
+    icons = "".join(_ic(name).replace('class="ic"', f'class="ic t-{name}"') for name in ("square", "steer", "queue", "check"))
+    return (f'<form class="compose composer talk" method="post" action="/job/message" data-message data-state="stop">'
+            f'{_hidden(ctx, [("job", jid), ("mode", "steer"), ("target", "")])}'
+            f'<label class="sr" for="talk-{_text(jid)}">Message the agent</label>'
+            f'<textarea class="c-text" id="talk-{_text(jid)}" name="text" rows="1" placeholder="Ask anything"></textarea>'
+            '<div class="c-row"><span class="talk-hint">Enter steers · ⌘ Enter queues</span><div class="compose-tools">'
+            '<button type="button" class="ghost talk-cancel" data-q-cancel hidden '
+            'aria-label="Cancel editing queued message">Cancel</button>'
+            '<button class="btn primary send talk-send" aria-label="Stop generation" title="Interrupt" '
+            f'data-tip="Click to steer, Ctrl/⌘-click to queue">{icons}</button></div></div></form>')
+
+
 def _model_picker(policy, kind, draft, only=False):
     """The model and effort pickers for a route: every route's, with all but `kind` hidden (the New job composer), or
     only `kind`'s (`only`, the reply box under a job)."""
@@ -2625,6 +2696,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     elif spec.get("prior"):
         work.append(_region("j-brief", '<p class="run-note">Ran again with no changes</p>', "section", "s-j-brief",
                             ' aria-label="Follow-up"'))
+    talk = [m for m in opened.get("inbox") or [] if isinstance(m, dict) and m.get("id")]
+    talking = isinstance(opened.get("inbox"), list) and state == "running" and ctx["live"]
+    if talk or talking:  # what the owner said to it as it ran; the region stays put, so a draft survives a refresh
+        work.append(_region("j-said", _talk_said(talk), "section", "s-j-said", ' aria-label="Your messages"'))
     check_rows = _checks_of(opened, spec, finished or state not in _PRE)
     checks_at = None  # where the status line counts the checks, if it does
     check_values = [passed for passed, _, _ in check_rows if passed is not None]
@@ -2878,7 +2953,11 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                                primary=lead and again and state != "done")
     else:
         reply = ""
-    if chat_dock:
+    if talking:
+        dock_content = _talk_form(ctx, jid)
+        dock_region = "j-message"
+        dock_label = "Message the agent"
+    elif chat_dock:
         dock_content = chat_dock
         dock_region = "j-chat-reply"
         dock_label = "Save reply"
@@ -2889,7 +2968,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     scroll = f'<div class="jd-scroll"><div class="jd-body">{"".join(work)}</div></div>'
     dock = (_region(dock_region, dock_content, "section", "jd-compose session-dock", f' aria-label="{dock_label}"')
             if dock_content else "")
-    dock = f'<div class="jd-dock">{dock}</div>' if dock else ""
+    dock = f'<div class="jd-dock">{_up_next(talk) if talking else ""}{dock}</div>' if dock else ""
     lines, seen = [], None
     for ev in [e for e in opened.get("events", []) if isinstance(e, dict)][-60:]:
         made = _event(ev, now, kind)

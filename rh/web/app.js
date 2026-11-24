@@ -2322,4 +2322,125 @@ function restoreFolder() {  // a refused draft's folder wins; otherwise the last
 }
 document.addEventListener('rh:page', restoreFolder);
 restoreFolder();
+// <talk>
+// The running job's composer, after T3 Code's (composerDispatch, ComposerPrimaryActions, QueuedRunsControl; MIT,
+// T3 Tools Inc.): Enter steers the turn, Ctrl/⌘ with Enter or a click queues the next one, an empty composer's
+// button is Stop, and a queued row edits in the composer, is sent as a steer, or is removed.
+let talkEdit = null, talkDraft = '', talkAll = false, talkJob = null;
+const talkForm = () => $('form[data-message]');
+const TALK = { stop: 'Stop generation', steer: 'Steer message', queue: 'Queue message', update: 'Update queued message' };
+function talkSync(alt) {
+  const f = talkForm();
+  if (!f) { talkEdit = null; return; }
+  const job = f.elements.namedItem('job').value;
+  if (job !== talkJob) { talkJob = job; talkEdit = null; talkDraft = ''; talkAll = false; }
+  if (talkEdit && !$('.un-row[data-id="' + CSS.escape(talkEdit) + '"]')) {  // started or removed meanwhile
+    talkEdit = null;
+    f.elements.namedItem('text').value = talkDraft; talkDraft = '';
+    toast('Queued message is no longer queued', false, '');
+  }
+  const text = f.elements.namedItem('text').value.trim();
+  const state = talkEdit ? 'update' : !text ? 'stop' : alt ? 'queue' : 'steer';
+  f.dataset.state = state;
+  const b = $('.talk-send', f);
+  b.setAttribute('aria-label', TALK[state]);
+  b.title = state === 'stop' ? 'Interrupt' : state === 'update' ? TALK[state] : b.dataset.tip;
+  b.disabled = state === 'update' && !text;
+  $('[data-q-cancel]', f).hidden = !talkEdit;
+  for (const row of $$('.un-row')) {
+    const on = row.dataset.id === talkEdit;
+    row.classList.toggle('editing', on);
+    $('.un-editing', row).hidden = !on;
+  }
+  const up = $('.up-next'), every = $('[data-q-all]');
+  if (up) up.classList.toggle('all', talkAll);
+  if (every) { every.setAttribute('aria-expanded', talkAll); every.textContent = talkAll ? 'Show fewer' : every.dataset.more; }
+}
+async function talkPost(fields) {
+  const f = talkForm();
+  if (!f) return false;
+  const body = new URLSearchParams({ t: f.elements.namedItem('t').value, job: f.elements.namedItem('job').value, ...fields });
+  try {
+    const r = await fetch(f.action, { method: 'POST', body });
+    if (r.status === 403) { live('ended'); return false; }
+    if (!r.ok) { toast((await r.text()) || 'The message did not send.', false, ''); return false; }
+  } catch (err) { toast('The app did not answer. Is rh serve still running?', false, ''); return false; }
+  clearTimeout(timer); timer = setTimeout(poll, 400);  // the agent reads its inbox every 0.2 s
+  return true;
+}
+async function talkSend(alt) {
+  const f = talkForm();
+  if (!f) return;
+  const box = f.elements.namedItem('text'), btn = $('.talk-send', f), text = box.value, editing = talkEdit;
+  if (editing && !text.trim()) return;
+  const fields = editing ? { mode: 'update', target: editing, text }
+    : !text.trim() ? { mode: 'stop' } : { mode: alt ? 'queue' : 'steer', text };
+  // The box empties at once, as T3 Code's does: what is typed while this one is on its way is the next message.
+  box.value = editing ? talkDraft : '';
+  talkEdit = null; talkDraft = '';
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+  const ok = await talkPost(fields);
+  play(btn, ok ? 'ok' : 'no', ok ? 600 : 400);
+  if (!ok && fields.text && !box.value.trim()) {  // it did not go: the words come back, unless more were typed
+    box.value = fields.text;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+function talkEditRow(row) {
+  const f = talkForm();
+  if (!f || !row) return;
+  const box = f.elements.namedItem('text');
+  if (!talkEdit) talkDraft = box.value;
+  talkEdit = row.dataset.id;
+  box.value = $('.un-t', row).textContent;
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function talkCancel() {
+  const f = talkForm();
+  if (!f || !talkEdit) return;
+  const box = f.elements.namedItem('text');
+  talkEdit = null; box.value = talkDraft; talkDraft = '';
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+}
+document.addEventListener('submit', e => {
+  if (!(e.target instanceof HTMLFormElement) || !e.target.hasAttribute('data-message')) return;
+  e.preventDefault();
+  talkSend(false);
+});
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('form[data-message]')) talkSync(false); });
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-q], [data-q-edit], [data-q-cancel], [data-q-all], .talk-send');
+  if (!t) return;
+  if (t.matches('.talk-send')) { e.preventDefault(); talkSend(e.metaKey || e.ctrlKey); return; }
+  if (t.hasAttribute('data-q-all')) { talkAll = !talkAll; talkSync(false); return; }
+  if (t.hasAttribute('data-q-cancel')) { talkCancel(); return; }
+  const row = t.closest('.un-row');
+  if (!row) return;
+  if (t.hasAttribute('data-q-edit')) { talkEditRow(row); return; }
+  talkPost({ mode: t.dataset.q, target: row.dataset.id }).then(ok => {
+    if (!ok) return;
+    row.classList.add('leaving');
+    if (talkEdit === row.dataset.id) talkCancel();
+  });
+});
+document.addEventListener('keydown', e => {
+  const box = e.target;
+  if (['Meta', 'Control'].includes(e.key)) { talkSync(true); return; }
+  if (!(box instanceof HTMLTextAreaElement) || !box.form || !box.form.hasAttribute('data-message')) return;
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.repeat) {
+    e.preventDefault();
+    if (box.value.trim() || talkEdit) talkSend(e.metaKey || e.ctrlKey);  // Enter on an empty box never stops the run
+  } else if (e.key === 'ArrowUp' && e.altKey && box.selectionStart === 0 && box.selectionEnd === 0) {
+    const rows = $$('.un-row');
+    if (rows.length) { e.preventDefault(); talkEditRow(rows[rows.length - 1]); }
+  } else if (e.key === 'Escape' && talkEdit) { e.preventDefault(); talkCancel(); }
+}, true);
+document.addEventListener('keyup', e => { if (['Meta', 'Control'].includes(e.key)) talkSync(e.metaKey || e.ctrlKey); });
+window.addEventListener('blur', () => talkSync(false));
+document.addEventListener('rh:page', () => talkSync(false));
+talkSync(false);
+// </talk>
 })();

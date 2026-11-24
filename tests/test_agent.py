@@ -463,6 +463,12 @@ class LiveTest(unittest.TestCase):
         self.assertEqual(users, [(None, "slow: build it"), ("now", "a lint pass"), (None, "the docs, briefly")])
         self.assertEqual(answer, "heard the docs, briefly")
         self.assertEqual({k: state[k] for k in ("m1", "m2", "m5")}, {"m1": "sent", "m2": "removed", "m5": "steered"})
+        # each row action says whether it reached a waiting message, so the page can show the edit it made
+        self.assertEqual({k: state[k] for k in ("m3", "m4", "m6")}, {"m3": "applied", "m4": "applied", "m6": "applied"})
+        for name in ("inbox.jsonl", "inbox-state.json"):  # a fresh job folder
+            (self.out / name).unlink()
+        late = self.run_live("slow: build it", ("queue", "the docs"), ("remove", "", "zz"))[3]
+        self.assertEqual(late["m2"], "dropped")  # it named no waiting message
 
     def test_stop_interrupts_the_turn_and_the_session_ends_cleanly(self):
         # Stop that kills the process (no interrupt request), or leaves the job hanging, fails.

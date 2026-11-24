@@ -2393,6 +2393,62 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_running_claude_job_takes_messages_as_t3_codes_composer_does(self):
+        # After T3 Code: while the agent works, the dock is a composer. Empty, its button is Stop ('Stop generation',
+        # tooltip 'Interrupt'); it posts to /job/message. Steers that landed read as the owner's messages with a Steer
+        # badge; queued messages wait Up next, numbered, each with Edit, Steer and Remove; a removed one is gone.
+        # A composer on a job that cannot take messages, or on a finished one, fails.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"])
+        ids = [c * 12 for c in "abcdef"]
+        view["open"]["inbox"] = [
+            {"id": ids[0], "mode": "steer", "text": "use tabs", "state": "steered"},
+            {"id": ids[1], "mode": "queue", "text": "lint it", "state": "steered"},
+            {"id": ids[2], "mode": "queue", "text": "the <docs>", "state": "queued"},
+            {"id": ids[3], "mode": "queue", "text": "gone", "state": "removed"},
+            {"id": ids[4], "mode": "queue", "text": "the tests", "state": "waiting"}]
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        form = [f for f in Forms(page).forms if f["action"] == "/job/message"]
+        self.assertEqual(len(form), 1)
+        self.assertEqual({k: form[0]["fields"].get(k) for k in ("job", "mode", "target", "text")},
+                         {"job": "live-job", "mode": "steer", "target": "", "text": ""})
+        dock = re.search(r'data-region="j-message".*?</form>', page, re.S).group(0)
+        self.assertIn('placeholder="Ask anything"', dock)
+        self.assertRegex(dock, r'<button[^>]*aria-label="Stop generation"[^>]*title="Interrupt"')
+        self.assertIn("Click to steer, Ctrl/⌘-click to queue", dock)
+        badges = re.findall(r'<div class="user-message steered"><span class="um-badge" title="([^"]+)">.*?Steer</span>'
+                            r'<span class="um-t">([^<]*)</span>', page)
+        self.assertEqual(badges, [("Steered the active turn", "use tabs"),
+                                  ("Originally queued, then promoted to steer the active turn", "lint it")])
+        up = re.search(r'data-region="j-up-next".*?</section>', page, re.S).group(0)
+        self.assertIn("Up next", text(up))
+        self.assertIn("· 2 queued", text(up))
+        rows = re.findall(r'<li class="un-row[^"]*" data-id="([0-9a-f]+)" aria-label="([^"]+)"', up)
+        self.assertEqual(rows, [(ids[2], "Queued message 1 of 2, not sent"), (ids[4], "Queued message 2 of 2, not sent")])
+        self.assertIn("the &lt;docs&gt;", up)
+        self.assertNotIn("gone", text(page))
+        for label in ('aria-label="Edit queued message"', 'title="Send as a steer instead"',
+                      'aria-label="Remove queued message" title="Remove from queue"'):
+            self.assertEqual(up.count(label), 2, label)
+        # more than three wait: the first two show, then 'Show all n queued'
+        view["open"]["inbox"] += [{"id": ids[5], "mode": "queue", "text": "and more", "state": "queued"},
+                                  {"id": "9" * 12, "mode": "queue", "text": "and more", "state": "queued"}]
+        up = re.search(r'data-region="j-up-next".*?</section>', pane(dashboard.render(view, NOW, token=TOKEN)), re.S).group(0)
+        self.assertEqual(up.count('class="un-row un-more"'), 2)
+        self.assertIn("Show all 4 queued", text(up))
+        # a job that cannot take messages (no inbox from the app), or one that has ended, has no composer
+        del view["open"]["inbox"]
+        self.assertNotIn('action="/job/message"', dashboard.render(view, NOW, token=TOKEN))
+        done = opened(live_view(), "finished-job", kind="local-shell")
+        done["open"]["inbox"] = [{"id": ids[0], "mode": "steer", "text": "use tabs", "state": "steered"},
+                                 {"id": ids[2], "mode": "queue", "text": "the docs", "state": "dropped"}]
+        page = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertNotIn('action="/job/message"', page)
+        self.assertNotIn('data-region="j-up-next"', page)
+        self.assertIn('<span class="um-t">use tabs</span>', page)
+        self.assertRegex(text(page), "the docs.{0,3}Not sent: the run ended first")
+
     def test_an_agents_answer_reads_as_its_message(self):
         # An answer that is not shown as a message from the agent that ran, or that loses its text, must fail.
         view = opened(live_view(), "finished-job", kind="local-shell")
@@ -3005,6 +3061,11 @@ class DashboardTest(unittest.TestCase):
                                    NOW, token=TOKEN)
                  + inbox(live_view())
                  + dashboard.render(opened(swarm, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN))
+        # and a running Claude job with a message queued, so its composer and Up next row render
+        talk = opened(live_view(), "live-job", kind="local-shell")
+        talk["open"]["job"]["spec"]["command"] = ["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"]
+        talk["open"]["inbox"] = [{"id": "a" * 12, "mode": "queue", "text": "then the docs", "state": "queued"}]
+        pages += dashboard.render(talk, NOW, token=TOKEN)
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())
         self.assertEqual(sorted(selected - made - rendered), [])
         self.assertIn("g-needs", {c[2:] for c in rendered if c.startswith("s-")})  # positive control for the regex
@@ -3451,6 +3512,63 @@ console.log('TANK PLACEMENT PASSED');
         r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(r.stdout.strip(), "TANK PLACEMENT PASSED")
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_running_composer_empties_at_once_and_never_drops_a_message(self):
+        # T3 Code's composer clears as a message goes, so what is typed next is the next message. A box that empties
+        # only when the request returns (it wiped words typed meanwhile), a second message dropped while the first is
+        # on its way, a failed send that loses its words, or an empty Enter that stops the run, must fail.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <talk>"):dashboard.SCRIPT.index("// </talk>")]
+        probe = """
+const posted = [], waiting = [];
+let ok = true;
+const fetch = (url, o) => { posted.push(Object.fromEntries(o.body)); const good = ok;
+  return new Promise(r => waiting.push(() => r({ ok: good, status: good ? 200 : 409, text: async () => 'no' }))); };
+class HTMLTextAreaElement {}
+const box = Object.assign(new HTMLTextAreaElement(), { value: '', dispatchEvent() {}, focus() {}, setSelectionRange() {} });
+const btn = { dataset: { tip: 'tip' }, setAttribute() {}, removeAttribute() {}, getAttribute() { return null } };
+const cancel = { hidden: true }, fields = { t: { value: 'tok' }, job: { value: 'j1' }, text: box };
+const form = { action: '/job/message', dataset: {}, elements: { namedItem: n => fields[n] }, hasAttribute: () => true };
+box.form = form;
+const $ = sel => ({ 'form[data-message]': form, '.talk-send': btn, '[data-q-cancel]': cancel })[sel] || null;
+const $$ = () => [];
+const handlers = {};
+const document = { addEventListener(kind, f) { (handlers[kind] = handlers[kind] || []).push(f); } };
+const window = { addEventListener() {} };
+let timer = 0;
+const poll = () => {}, live = () => {}, toast = () => {}, play = () => {}, CSS = { escape: s => s };
+""" + block + """
+(async () => {
+  box.value = 'one';
+  const a = talkSend(false);
+  const cleared = box.value;
+  box.value = 'two';
+  const b = talkSend(true);
+  waiting.splice(0).forEach(go => go());
+  await Promise.all([a, b]);
+  ok = false; box.value = 'three';
+  const c = talkSend(false);
+  waiting.splice(0).forEach(go => go());
+  await c;
+  const back = box.value;
+  const enter = meta => handlers.keydown.forEach(f => f({ key: 'Enter', target: box, shiftKey: false, altKey: false,
+    metaKey: meta, ctrlKey: false, repeat: false, isComposing: false, keyCode: 13, preventDefault() {} }));
+  ok = true; box.value = '';
+  enter(false);  // an empty box: Enter sends nothing, and never a Stop
+  box.value = 'four';
+  enter(true);  // ⌘ Enter queues
+  waiting.splice(0).forEach(go => go());
+  console.log(JSON.stringify({ cleared, posted: posted.map(p => [p.mode, p.text || '']), back, state: form.dataset.state }));
+})();
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got["cleared"], "")
+        self.assertEqual(got["posted"], [["steer", "one"], ["queue", "two"], ["steer", "three"], ["queue", "four"]])
+        self.assertEqual(got["back"], "three")
+        # on a phone, Up next's rows keep their buttons inside the card: its one column is the card's width
+        self.assertIn(".un-list { display: grid; grid-template-columns: minmax(0, 1fr);", dashboard.STYLE)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_seas_characters_fit_their_cells(self):

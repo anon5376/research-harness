@@ -265,6 +265,7 @@ def _claude(binary, work, prompt, extra, answer, resume=None, thread=None):
         nonlocal stopped
         held = next((h for h in pending if h["id"] == m["target"]), None) if m["target"] else None
         if m["mode"] in ("promote", "remove", "update"):
+            inbox.mark(m["id"], "dropped" if held is None else "applied")  # the page shows an edit once it holds
             if held is None:  # already sent, or never queued: nothing left to change
                 return
             if m["mode"] == "update" and m["text"].strip():

@@ -2871,3 +2871,44 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .composer details.opts > .opts-body, :root[data-live-app] .composer details.opts > .opts-body {
   background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38);
   -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* The running job's composer and its queue, after T3 Code's (MIT, T3 Tools Inc.): one button that is Stop while the
+   box is empty, Steer or Queue once it has words, and the check of an edit; queued messages wait Up next above it. */
+.talk .c-row { align-items: center; }
+.talk-hint { margin-right: auto; color: var(--faint); font-size: 12px; }
+.talk-send .ic { display: none; }
+.talk[data-state="stop"] .t-square, .talk[data-state="steer"] .t-steer, .talk[data-state="queue"] .t-queue,
+.talk[data-state="update"] .t-check { display: block; }
+.talk.composer[data-state="stop"] .compose-tools .talk-send.send { background: var(--red-bg); color: var(--red);
+  box-shadow: inset 0 0 0 1px var(--red-line); }
+.talk-send:disabled { opacity: .5; cursor: default; }
+.talk-cancel { height: 28px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
+.up-next { margin: 0 14px; padding: 8px 10px 6px; border: 1px dashed var(--border); border-bottom: 0;
+  border-radius: 12px 12px 0 0; background: var(--surface); font-size: 13px; }
+.un-head { margin: 0 0 4px 4px; color: var(--muted); font-size: 12px; }
+.un-n { color: var(--faint); }
+.un-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; }
+.un-row { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 2px 4px; border-radius: 8px;
+  color: var(--muted); }
+.un-row:is(:hover, :focus-within) { background: var(--raised); }
+.un-i { flex: none; width: 16px; color: var(--faint); text-align: center; font-variant-numeric: tabular-nums; }
+.un-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.un-row.editing .un-t, .un-row.leaving { opacity: .5; }
+.un-row.leaving { pointer-events: none; }
+.un-editing { flex: none; color: var(--faint); font-size: 12px; }
+.un-acts { display: flex; flex: none; gap: 2px; }
+.un-b { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 26px; height: 26px;
+  padding: 0 6px; border-radius: 6px; color: var(--muted); font-size: 12px; }
+.un-b:is(:hover, :focus-visible) { color: var(--text); }
+.up-next:not(.all) .un-more { display: none; }
+.un-all { margin: 2px 0 0 4px; padding: 2px 4px; color: var(--faint); font-size: 12px; }
+.s-j-said { display: flex; flex-direction: column; gap: 12px; }
+.s-j-said:empty { display: none; }
+.user-message.steered .um-badge { display: flex; align-items: center; gap: 4px; margin-bottom: 2px;
+  color: var(--muted); font-size: 11px; }
+.user-message.sending, .talk-dropped .user-message { opacity: .6; }
+.um-note { margin: 4px 0 0; color: var(--faint); font-size: 12px; text-align: right; }
+@media (max-width: 600px) {
+  .talk-hint, .un-editing, .un-steer span { display: none; }
+  .up-next { margin: 0 8px; }
+}

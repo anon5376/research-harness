@@ -235,9 +235,8 @@ def _message(cfg, fields):
         return 409, "only an agent running on this Mac takes a message; reply when it ends"
     if agent[0] not in LIVE_AGENTS:
         return 409, f"{agent[0].capitalize()} cannot take a message mid-run yet; reply when it ends"
-    home = Path(cfg["home"]).resolve()
-    folder = (home / str(spec.get("write_root") or "")).resolve()
-    if not folder.is_relative_to(home) or folder == home:
+    folder = _job_folder(cfg, spec)
+    if folder is None:
         return 409, "this job has no folder of its own to send to"
     folder.mkdir(parents=True, exist_ok=True)
     mid = secrets.token_hex(6)
@@ -245,6 +244,51 @@ def _message(cfg, fields):
         f.write(json.dumps({"id": mid, "mode": mode, "text": text, **({"target": target} if target else {}),
                             "at": round(time.time(), 3)}) + "\n")
     return 200, json.dumps({"id": mid})
+
+
+def _job_folder(cfg, spec):
+    """The folder a job's agent works in (its write root under the home), or None when it has none of its own."""
+    home = Path(cfg["home"]).resolve()
+    folder = (home / str(spec.get("write_root") or "")).resolve()
+    return folder if folder.is_relative_to(home) and folder != home else None
+
+
+def _inbox(folder):
+    """What the owner sent a job's agent and what became of each, oldest first, for its page: [{id, mode, text,
+    state}], mode steer or queue, state as the agent marked it (steered, queued, sent, removed, dropped) or waiting
+    until it reads it. A row's edit or removal shows at once while its message still waits, and once the agent says
+    it applied; one it dropped (the message had gone) changes nothing."""
+    try:
+        lines = (folder / "inbox.jsonl").read_text(encoding="utf-8", errors="replace").splitlines()[-500:]
+    except OSError:
+        return []
+    try:
+        marks = json.loads((folder / "inbox-state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        marks = {}
+    marks = marks if isinstance(marks, dict) else {}
+    out, by = [], {}
+    for line in lines:
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(m, dict) or not m.get("id"):
+            continue
+        mid, mode, text = str(m["id"]), m.get("mode"), str(m.get("text") or "")
+        if mode in ("steer", "queue"):
+            by[mid] = {"id": mid, "mode": mode, "text": text, "state": str(marks.get(mid) or "waiting")}
+            out.append(by[mid])
+            continue
+        item = by.get(str(m.get("target") or ""))
+        mark = marks.get(mid)
+        if item is None or not (mark == "applied" or (mark is None and item["state"] in ("waiting", "queued"))):
+            continue
+        if mode == "update" and text.strip():
+            item["text"] = text
+        elif mode == "remove":
+            item["state"] = "removed"
+    return out
 
 
 def _auto_id(cfg, fields):
@@ -1250,7 +1294,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                         shown["answer"] = said.read_text(encoding="utf-8", errors="replace")[:_ANSWER]
                     # an agent's base (the commit its changes apply to) is bookkeeping, not a result
                     skip = (("answer.md",) if chat_answer else ()) + (
-                        ("base",) if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
+                        ("base", "inbox.jsonl", "inbox-state.json", "thread.json")  # the chat shows these
+                        if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
                     if shown["job"].get("spec", {}).get("after_any"):  # a swarm judge: its verdicts and the run kept
                         for name, key in (("swarm-checks.json", "swarm_checks"), ("swarm-result.json", "swarm_kept")):
                             found = root / name
@@ -1270,6 +1315,13 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     shown["swarm_stats"] = _swarm_stats(cfg, shown["job"])
                 if shown["job"].get("spec", {}).get("prior"):
                     shown["thread"] = _thread(cfg, shown["job"])  # the chat so far, while this run works too
+                spec = shown["job"].get("spec") or {}
+                agent = dashboard.agent_of(spec.get("command"))
+                folder = _job_folder(cfg, spec) if agent and agent[0] in LIVE_AGENTS else None
+                if folder is not None:  # what the owner said to it mid-run; while it runs, the page's composer
+                    talk = _inbox(folder)
+                    if talk or shown["job"]["state"] == "running":
+                        shown["inbox"] = talk
                 self.page({"open": shown})
             elif (len(parts) == 4 and parts[1] == "job" and parts[3] == "file"
                     and contract.JOB_ID_RE.fullmatch(parts[2])):

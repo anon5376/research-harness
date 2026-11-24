@@ -115,7 +115,7 @@ def _devin(binary, work, brief, extra, answer, resume=None):
             try:
                 opened = call("session/load", {"sessionId": resume, "cwd": str(work), "mcpServers": []})
             except RuntimeError as error:
-                print(f"devin: could not load session {resume[:8]}: {error}", flush=True)
+                print(f"devin: could not load session {resume}: {error}", flush=True)
                 return LOST
             finally:
                 loading[0] = False
@@ -176,7 +176,7 @@ def _claude(binary, work, prompt, extra, answer, resume=None):
     with answer.open("w", encoding="utf-8") as said:
         code = subprocess.run(argv, cwd=work, stdin=subprocess.DEVNULL, stdout=said).returncode
     if resume and code:
-        print(f"claude: could not resume session {resume[:8]} (exit {code})", flush=True)
+        print(f"claude: could not resume session {resume} (exit {code})", flush=True)
         return LOST
     _keep_session(answer, "claude", session, work)
     return code
@@ -390,7 +390,7 @@ def main(argv):
             applied, note = _restore(work, prior)
             turns = _turns(prior, brief)
             if resume:  # its own conversation holds the thread and its files are as it left them
-                print(f"continued the {provider} session {resume['id'][:8]}", flush=True)
+                print(f"continued the {provider} session {resume['id']}", flush=True)
                 if not applied:
                     prompt = f"{note}\n\n{prompt}"
             else:

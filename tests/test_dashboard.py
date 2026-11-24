@@ -2596,6 +2596,29 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Interrupt requested", text(said))
         self.assertNotIn("user-message", said)  # a Stop is not a message: no bubble, no Up next row
 
+    def test_the_up_next_tray_and_the_composer_are_one_glass_object(self):
+        # r32 F1: the tray sat 8px above the composer as a second, brighter card with its own rim, shine and shadow,
+        # the loudest surface on a running job's page. Shown, it joins the composer: one rim, a 1px divider where
+        # they meet, one fill through both (in frosted and in liquid glass), and its words at 60% white.
+        J, LG = ".jd-dock:has(> .up-next:not([hidden]))", "html.lg-on[data-live-app] .jd-dock:has(> .up-next:not([hidden]))"
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        tray, comp = rule(J + " > .up-next"), rule(J + " .composer")
+        for want in ("margin-bottom: 0;", "border-bottom: 0;", "border-radius: 16px 16px 0 0;"):
+            self.assertIn(want, tray)
+        self.assertNotIn("var(--glass-shadow)", tray)
+        for want in ("border-top: 1px solid rgb(255 255 255 / .06);", "border-top-left-radius: 0;",
+                     "border-top-right-radius: 0;"):
+            self.assertIn(want, comp)
+        self.assertNotIn("inset 0 1px 0", comp)  # no top shine on the seam
+        # liquid glass outranks the plain scope, so it has its own join: no lit top-left rim on the composer's seam
+        lg_comp = rule(LG + " .composer")
+        self.assertIn("border-top-color: rgb(255 255 255 / .06);", lg_comp)
+        self.assertNotIn("inset 1.5px 1.5px", lg_comp)
+        self.assertIn("inset 1.5px 1.5px", rule(LG + " > .up-next"))
+        # hidden, the tray changes nothing: the plain rules are as they were
+        self.assertIn("\n.up-next { margin: 0 0 8px;", dashboard.STYLE)
+        self.assertIn("color: rgb(255 255 255 / .6);", rule(".un-row"))
+
     def test_a_steer_sits_8px_under_the_brief_it_continues(self):
         # r32 F9: the brief and the owner's messages are one group. They live in sibling regions of the job body,
         # whose 24px gap made a steer read as a new turn; the messages region pulls up to 8px under the brief.

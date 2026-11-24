@@ -2895,7 +2895,7 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .un-n { color: var(--faint); }
 .un-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin: 0; padding: 0; list-style: none; }
 .un-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 4px; border-radius: 8px;
-  color: var(--muted); }
+  color: rgb(255 255 255 / .6); }
 .un-row:is(:hover, :focus-within) { background: var(--raised); }
 .un-i { flex: none; width: 16px; color: var(--faint); text-align: center; font-variant-numeric: tabular-nums; }
 /* the words are the row's edit button: a tap or click puts them in the composer; it is as tall as its row, so a
@@ -2912,6 +2912,28 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .un-b:is(:hover, :focus-visible) { color: var(--text); }
 .up-next:not(.all) .un-more { display: none; }
 .un-all { margin: 2px 0 0 4px; padding: 2px 4px; color: var(--faint); font-size: 12px; }
+/* shown, the tray and the composer are one glass object: one rim, a 1px divider where they meet, one fill
+   through both; the queue was a second, brighter card on top, the page's loudest surface (r32 F1) */
+.jd-dock:has(> .up-next:not([hidden])) > .up-next { margin-bottom: 0; border-bottom: 0; border-radius: 16px 16px 0 0;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22); }
+.jd-dock:has(> .up-next:not([hidden])) .composer { border-top: 1px solid rgb(255 255 255 / .06); border-top-left-radius: 0;
+  border-top-right-radius: 0; box-shadow: inset 0 -1px 0 rgb(0 0 0 / .25), var(--glass-shadow); }
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .jd-dock:has(> .up-next:not([hidden])) > .up-next { background: linear-gradient(180deg, rgb(255 255 255 / .10), rgb(255 255 255 / .07)); }
+  .jd-dock:has(> .up-next:not([hidden])) .composer { background: linear-gradient(180deg, rgb(255 255 255 / .07), rgb(255 255 255 / .04)); }
+}
+/* liquid glass: the tray takes the composer's lens and lit top-left rim, and the composer's fill and rim go on
+   from where the tray's end */
+html.lg-on[data-live-app] .jd-dock:has(> .up-next:not([hidden])) > .up-next {
+  -webkit-backdrop-filter: var(--lens) blur(1px) saturate(180%) brightness(1.06);
+  backdrop-filter: var(--lens) blur(1px) saturate(180%) brightness(1.06);
+  background: linear-gradient(155deg, rgb(255 255 255 / .10), rgb(255 255 255 / .02) 60%);
+  border: 1px solid rgb(255 255 255 / .12); border-bottom: 0;
+  box-shadow: inset 1.5px 1.5px 0 -0.5px rgb(255 255 255 / .55); }
+html.lg-on[data-live-app] .jd-dock:has(> .up-next:not([hidden])) .composer { border-top-color: rgb(255 255 255 / .06);
+  background: linear-gradient(155deg, rgb(255 255 255 / .02), rgb(255 255 255 / .015) 50%, rgb(255 255 255 / .05));
+  box-shadow: inset -1px -1px 0 -0.5px rgb(255 255 255 / .30), inset 0 0 0 .5px rgb(255 255 255 / .08),
+    inset 0 -14px 28px -22px rgb(255 255 255 / .22), 0 20px 50px -16px rgb(0 0 0 / .6); }
 /* the owner's messages are one group: 8px apart; a steer's mark is a caption under the bubble (r31 F10) */
 .s-j-said { display: flex; flex-direction: column; gap: 8px; }
 .s-j-said:empty { display: none; }

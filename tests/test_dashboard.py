@@ -3794,6 +3794,32 @@ console.log(JSON.stringify([
         sub = dashboard.SCRIPT.split("function sub(", 1)[1].split("\n}", 1)[0]
         self.assertIn("' layers'", sub)
 
+    def test_the_team_radios_draw_an_empty_ring_until_picked(self):
+        # 'Off' had two looks in the /swarm popover: the model ticks read as outlined boxes while the team radios
+        # were native filled discs. The radios draw themselves now — an outlined ring, empty until the team is
+        # picked — so an unticked team reads like an unticked box.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        radio = rule('.swarm-team input[type="radio"]')
+        for spec in ("appearance: none", "width: 14px", "height: 14px", "border-radius: 50%",
+                     "border: 1.5px solid #5b6070", "background: transparent", "place-content: center",
+                     "transition: border-color 120ms"):
+            self.assertIn(spec, radio)
+        self.assertIn("border-color: var(--on)", rule('.swarm-team input[type="radio"]:checked'))
+        dot = rule('.swarm-team input[type="radio"]:checked::before')
+        for spec in ("width: 6px", "height: 6px", "border-radius: 50%", "background: var(--on)"):
+            self.assertIn(spec, dot)
+        self.assertIn("outline: 2px solid var(--on)", rule('.swarm-team input[type="radio"]:focus-visible'))
+        self.assertIn("outline-offset: 2px", rule('.swarm-team input[type="radio"]:focus-visible'))
+        self.assertIn("border-color: #7a8091", rule('.swarm-team:hover input[type="radio"]:not(:checked)'))
+        # and the new-job page still draws one radio per team in the popover
+        from rh import hierarchy
+        presets = {**hierarchy.defaults(), "active": "free-research"}
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "presets": presets,
+                 "choices": ["swe-2-max", "swe-2-flash-high"],
+                 "team_models": [["swe-2-max", "devin"], ["claude-opus-5-5", "claude"], ["gpt-6.2-astra", "codex"]]}
+        page = dashboard.render({**live_view(), "new": True, "swarm": swarm}, NOW, token=TOKEN)
+        self.assertIn('<label class="swarm-team"><input type="radio" name="active"', page)
+
     def test_test_when_done_wears_a_flask_not_a_tick(self):
         # The row's value often reads "Don't test", and everywhere else a tick means done or passed. The row
         # drawn with the check icon's path, or without the flask, must fail.

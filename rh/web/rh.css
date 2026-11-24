@@ -2769,6 +2769,14 @@ html.tm-dragging, html.tm-dragging * { cursor: grabbing !important; }
   padding: 6px 8px; border-radius: 8px; cursor: pointer; transition: background .14s var(--ease); }
 .swarm-team:hover { background: var(--raised); }
 .swarm-team input { grid-row: 1 / span 2; margin: 0; accent-color: var(--on); }
+.swarm-team input[type="radio"] { appearance: none; width: 14px; height: 14px; border-radius: 50%;
+  border: 1.5px solid #5b6070; background: transparent; display: grid; place-content: center;
+  transition: border-color 120ms; }
+.swarm-team input[type="radio"]:checked { border-color: var(--on); }
+.swarm-team input[type="radio"]:checked::before { content: ""; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--on); }
+.swarm-team input[type="radio"]:focus-visible { outline: 2px solid var(--on); outline-offset: 2px; }
+.swarm-team:hover input[type="radio"]:not(:checked) { border-color: #7a8091; }
 .swarm-team-n { color: var(--text); font-size: 13px; }
 .swarm-team-d { grid-column: 2; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .swarm-team-edit { display: flex; align-items: center; gap: 7px; padding: 7px 8px; margin-top: 2px; border-radius: 8px;

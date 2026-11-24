@@ -1126,6 +1126,9 @@ class ListsTest(unittest.TestCase):
         self.assertIn("@media (max-width: 760px)", phone)
         self.assertIn(".tm-canvas[data-shape] .tt ul { position: relative; padding: 0 0 0 24px; }", phone)
         self.assertIn("touch-action: pan-y", phone)
+        # with the lead picked on open, the settings follow the tree in one scroll instead of squeezing it to a sliver
+        small = dashboard.STYLE.split("@media (max-width: 760px) {\n  dialog.team", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn(".tm-main { display: block; overflow: auto; }", small)
         self.assertIn("dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }", dashboard.STYLE)
         self.assertIn("const OUTLINE = matchMedia('(max-width: 760px)')", dashboard.SCRIPT)
         self.assertIn("p.shape === 'vertical' && !OUTLINE.matches ? (x - rect.left)", dashboard.SCRIPT)

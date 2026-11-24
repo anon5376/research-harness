@@ -2572,7 +2572,9 @@ html.tm-dragging, html.tm-dragging * { cursor: grabbing !important; }
   .tm { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .tm-list { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--rule); padding: 8px; }
   .tm-p { flex: none; max-width: 180px; }
-  .tm-main { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr) auto; overflow: auto; }
+  /* one column that scrolls as a whole: the tree at its own height, then the picked agent's settings */
+  .tm-main { display: block; overflow: auto; }
+  .tm-main > .tm-work { overflow: visible; min-height: auto; }
   .tm-ins { grid-row: auto; grid-column: 1; border-left: 0; border-top: 1px solid var(--rule); }
   .tm-bar-r { margin-left: 0; width: 100%; }
   .tn { width: 176px; }

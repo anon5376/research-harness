@@ -3040,6 +3040,25 @@ console.log(JSON.stringify([
                 self.assertIn(f'data-k="{key}"', page.replace(pal, ""))
         self.assertNotIn('id="pal"', dashboard.render(live_view(), NOW))
 
+    def test_a_needs_you_row_in_the_palette_wears_the_sidebar_ring(self):
+        # A job that needs you drawn in ⌘K with its state ring instead of amber (red for a failure), or a job that
+        # needs nothing given amber, must fail.
+        view = live_view()
+        view["live"].append({"id": "running-alone", "state": "running", "paused": False, "detail": "",
+                             "external_id": None})
+        pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        needs = pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]
+
+        def ring(jid, src=pal):
+            row = re.search(rf'<a class="p-row" role="option" data-id="{jid}"[^>]*>.*?</a>', src, re.S).group(0)
+            return re.search(r'<span class="p-ic">(.*?)</span>', row, re.S).group(1)
+        self.assertIn('class="st t-amber"', ring("live-job", needs))  # running, waiting on an answer
+        self.assertIn('class="st t-red"', ring("broke-job", needs))  # a failure that needs you
+        alone = ring("running-alone")
+        self.assertIn('class="st t-accent"', alone)  # its own ring, as the sidebar draws it
+        self.assertNotIn("t-amber", alone)
+        self.assertNotIn("t-amber", ring("finished-job"))
+
     def test_inbox_lists_what_waits_newest_first_and_shows_one(self):
         # An ask missing from the list, the list out of order, the detail showing another item than the one picked, a
         # settled item offered its form again, or an unknown item shown as another, must fail.

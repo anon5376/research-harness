@@ -2933,8 +2933,9 @@ def _palette(jobs, ctx, keys):
         if group(j) != at:
             at = group(j)
             rows.append(f'<p class="p-sec">{names[at]}</p>')
+        hue = ("red" if j.state in _FAILED else "amber") if group(j) == "needs" else None
         rows.append(f'<a class="p-row" role="option" data-id="{_text(j.id)}" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state, kind=j.kind, past=j.past)}</span>'
+                    f'<span class="p-ic">{_ring(j.state, hue, j.kind, j.past)}</span>'
                     # as the sidebar names it: when names clash the id leads and the shared name moves to the grey
                     # line, which leads with the state so states form one column
                     + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'

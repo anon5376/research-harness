@@ -948,6 +948,23 @@ class ListsTest(unittest.TestCase):
         rule = dashboard.STYLE.split("\n.swarm-x {", 1)[1].split("}", 1)[0]
         self.assertIn("border: 1.5px solid #6e7383", rule)
 
+    def test_every_swarm_tick_list_leads_with_its_box(self):
+        # r27 F12: the same tick list put its box on the left in Settings (moved there by an 'order' rule) and on the
+        # right in the composer's /swarm popover. Every row now leads with its 16px box, in the markup, so both lists
+        # draw box, glyph, name and no stylesheet rule reorders them.
+        page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
+                                                          "choices": ["swe-2-max", "swe-2-high", "claude-opus-5-5"]}},
+                                NOW, token=TOKEN)
+        settings = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)
+        pop = re.search(r'<div class="swarm-pop".*?</details>', page, re.S).group(0)
+        for where, part in (("settings", settings), ("popover", pop)):
+            rows = re.findall(r'<label class="swarm-m">.*?</label>', part, re.S)
+            self.assertEqual(len(rows), 3, where)
+            for row in rows:
+                self.assertRegex(row, r'^<label class="swarm-m"><input type="checkbox"[^>]*><span class="swarm-x" '
+                                      r'aria-hidden="true"></span><svg', where)
+        self.assertNotRegex(dashboard.STYLE, r'\.swarm-x \{[^}]*(?<![\w-])order:')
+
     def test_settings_names_the_fusion_pair_and_its_cost_as_the_picker_does(self):
         # A settings row that says only 'Fusion', hiding which pair and which paid API a swarm would run, must fail.
         # r21 F9: cost is said once, by the group's head ('Fusion · API' as 'SWE-2 · Free'), not by a chip on a row.
@@ -996,7 +1013,7 @@ class ListsTest(unittest.TestCase):
         self.assertIn("padding-left: 0", rule(".settings .swarm-opts + .set-hint"))
         # r24 F7: each box sat ~440px right of its name across a 28px row with nothing joining them; a square box sits
         # beside its label, as macOS lists put it: box, glyph, name, 8px apart, on the sheet's text edge
-        self.assertIn("order: -1", rule(".settings .swarm-m > .swarm-x"))
+        # (the box leads in the markup now, in Settings and the popover alike: r27 F12)
         self.assertIn("gap: 8px", rule(".settings .swarm-m"))
 
     def test_settled_inbox_rows_step_back(self):

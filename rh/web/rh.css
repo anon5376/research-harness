@@ -2121,8 +2121,6 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
    legend, as the wallpapers do. */
 .settings .swarm-models { margin-bottom: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .settings .swarm-m { min-height: 28px; gap: 8px; padding: 0 8px; margin: 0 -8px; border-radius: 6px; }
-/* a square box sits beside its label, as a macOS list puts it: box, glyph, name read as one unit */
-.settings .swarm-m > .swarm-x { order: -1; }
 .settings .swarm-g { padding: 6px 0 2px; line-height: 16px; }
 /* the Judge and 'Check each run' follow the ticks as the description reads, plain rows on the sheet's text edge:
    the group 24px under the last tick row, its rows 16px apart with no hairline — that line splits rows in a panel */

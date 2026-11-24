@@ -1820,10 +1820,11 @@ def _swarm_rows(swarm, form=""):
     for m in choices:
         groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
     def row(prov, m):
-        return (f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
-                +
-                f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}{owner} '
-                f'data-name="{_text(_names([m]))}"><span class="swarm-x" aria-hidden="true"></span></label>')
+        # box, glyph, name in every list that draws these rows: Settings and the composer's popover alike (r27 F12)
+        return (f'<label class="swarm-m"><input type="checkbox" name="models" value="{_text(m)}"'
+                f'{" checked" if m in ticked else ""}{owner} data-name="{_text(_names([m]))}">'
+                f'<span class="swarm-x" aria-hidden="true"></span>{_ic(prov, True)}'
+                f'<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span></label>')
     parts = []
     for prov, models in groups.items():
         if prov != "devin":

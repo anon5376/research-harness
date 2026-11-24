@@ -79,7 +79,8 @@ _TASK = re.compile(r"task_e_[0-9a-f]{16,}")
 # the UUID task ids of the new environment system, as its task URLs show them (/codex/tasks/<id>, /local/<id>)
 _TASK_URL = re.compile(r"(?i)chatgpt\.com/(?:codex/tasks|local)/(?P<v>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})")
 # an id labelled as an account, org, user or workspace id (the codex CLI's error.log prints account_id=<uuid>)
-_ACCOUNT = re.compile(r"(?i)\b(?:chatgpt-)?(?:account|org(?:anization)?|user|workspace)[_-]?id\b[\"']?(?:\s+[a-z]+)?\s*[:=]?\s*[\"']?"
+# (not after a letter or digit, rather than \b: snake_case labels such as aws_account_id= have no \b before the label)
+_ACCOUNT = re.compile(r"(?i)(?<![A-Za-z0-9])(?:chatgpt-)?(?:account|org(?:anization)?|user|workspace)[_-]?id\b[\"']?(?:\s+[a-z]+)?\s*[:=]?\s*[\"']?"
                       r"(?P<v>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_-]{16,})")
 _BOMS = (
     (codecs.BOM_UTF32_LE, "utf-32"), (codecs.BOM_UTF32_BE, "utf-32"),

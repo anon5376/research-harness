@@ -445,6 +445,18 @@ class AccountIdTest(unittest.TestCase):
                 self.assertEqual([f.rule for f in found], ["account-id"])
                 self.assertNotIn(self.UUID, found[0].excerpt)
 
+    def test_a_label_glued_to_a_prefix_by_an_underscore_is_flagged_too(self):
+        # 'aws-account-id=' was flagged but 'aws_account_id=' was not: \b sees no boundary inside snake_case, the
+        # form env dumps and .env files use most (found by the SWE-2 Max load test, lt-privacy)
+        for line in (f"aws_account_id={self.UUID}", f"my_user_id: {self.UUID}", f"OWNER_ORG_ID={self.UUID}",
+                     f"client_workspace_id = '{self.UUID}'"):
+            with self.subTest(line=line):
+                self.assertEqual(self.rules(line), ["account-id"])
+        # a word that only ends in a label's letters is still not one
+        for line in (f"subaccount_id={self.UUID}", f"nonuser_id={self.UUID}"):
+            with self.subTest(line=line):
+                self.assertEqual(self.rules(line), [])
+
     def test_placeholders_and_slugs_pass(self):
         for line in ("account_id = <your account id>", "user_id=00000000-0000-0000-0000-000000000000",
                      'user_id = "my-test-user-name"', "account id: see the settings page"):

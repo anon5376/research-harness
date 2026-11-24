@@ -1141,7 +1141,8 @@ function applyMode() {
   document.documentElement.dataset.mode = mode;
   for (const t of $$('[role="tab"][data-mode]')) t.setAttribute('aria-selected', String(t.dataset.mode === mode));
   const title = $('#compose-title');
-  if (title) title.textContent = mode === 'research' ? 'What should we find out?' : (title.dataset.repo || 'What are we building?');
+  // a folder menu stays in the title; the stylesheet swaps it for the research question
+  if (title && !title.querySelector('.folder-btn')) title.textContent = mode === 'research' ? 'What should we find out?' : (title.dataset.repo || 'What are we building?');
   for (const kind of $$('form.compose select[name="kind"]')) {
     const research = kind.value === 'gpt-chat';
     if (research !== (mode === 'research')) {
@@ -2246,4 +2247,78 @@ let seamTimer = 0;
 addEventListener('resize', () => { clearTimeout(seamTimer); seamTimer = setTimeout(seamTokens, 150); });
 document.addEventListener('rh:page', seamTokens);
 seamTokens();
+
+// The composer's title is the folder a This Mac job works in. Its menu lists the folders jobs used and the
+// configured repository; Choose folder… opens the app's native folder dialog, or in a browser takes a typed path.
+// The pick fills the form's folder field and is kept for the next visit; the server refuses a non-git folder.
+const FOLDER_KEY = 'rh-folder';
+function folderMenu() { return $('#folder-menu'); }
+function setFolder(path, keep = true) {
+  const btn = $('.folder-btn'), menu = folderMenu();
+  if (!btn || !menu || !path) return;
+  for (const f of $$('form.compose input[name="folder"]')) f.value = path;
+  const name = path.replace(/\/+$/, '').split('/').pop() || path;
+  $('.fb-name', btn).textContent = name;
+  btn.title = path;
+  btn.closest('h1').dataset.repo = name;
+  // the branch under the title is the configured repository's: another folder's is not known here
+  for (const chip of $$('.where-chip[title="Branch"]')) chip.hidden = path !== btn.dataset.home;
+  for (const row of $$('[data-folder]', menu)) row.setAttribute('aria-checked', String(row.dataset.folder === path));
+  if (keep) { try { localStorage.setItem(FOLDER_KEY, path); } catch { /* the pick lasts this page only */ } }
+}
+function openFolders(open) {
+  const btn = $('.folder-btn'), menu = folderMenu();
+  if (!btn || !menu) return;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if (!open) { $('.fm-path', menu).hidden = true; return; }
+  ($('[data-folder][aria-checked="true"]', menu) || $('[data-folder]', menu) || $('[data-folder-choose]', menu)).focus();
+}
+async function chooseFolder() {
+  const api = window.pywebview && window.pywebview.api;
+  if (api && api.choose_folder) {  // the desktop app: macOS's own folder dialog
+    openFolders(false);
+    const path = await api.choose_folder();
+    if (path) setFolder(path);
+    $('.folder-btn').focus();
+    return;
+  }
+  const field = $('.fm-path', folderMenu());  // a browser cannot read a picked folder's path: type it
+  field.hidden = false;
+  $('input', field).focus();
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.folder-btn'), menu = folderMenu();
+  if (btn) { openFolders(menu.hidden); return; }
+  if (!menu || menu.hidden) return;
+  const row = e.target.closest('[data-folder]');
+  if (row) { setFolder(row.dataset.folder); openFolders(false); $('.folder-btn').focus(); return; }
+  if (e.target.closest('[data-folder-choose]')) { chooseFolder(); return; }
+  if (!e.target.closest('#folder-menu')) openFolders(false);
+});
+document.addEventListener('keydown', e => {
+  const menu = folderMenu();
+  if (!menu || menu.hidden || !menu.contains(document.activeElement) && e.key !== 'Escape') return;
+  if (e.key === 'Escape') { e.preventDefault(); openFolders(false); $('.folder-btn').focus(); return; }
+  if (e.key === 'Enter' && e.target.closest('.fm-path')) {
+    e.preventDefault();
+    const path = e.target.value.trim();
+    if (path) { setFolder(path); openFolders(false); $('.folder-btn').focus(); }
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {  // the rows move as a menu's do
+    e.preventDefault();
+    const rows = $$('.fm-row', menu), at = rows.indexOf(document.activeElement);
+    rows[(at + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length].focus();
+  }
+});
+function restoreFolder() {  // a refused draft's folder wins; otherwise the last pick (the server checks it on send)
+  const field = $('form.compose input[name="folder"]');
+  if (!field || field.value) { if (field) setFolder(field.value, false); return; }
+  let kept = '';
+  try { kept = localStorage.getItem(FOLDER_KEY) || ''; } catch { return; }
+  if (kept) setFolder(kept, false);
+}
+document.addEventListener('rh:page', restoreFolder);
+restoreFolder();
 })();

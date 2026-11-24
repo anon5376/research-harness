@@ -1973,12 +1973,42 @@ def _composer(ctx, draft, ready, policy):
     # the repository heads the page, so the line under it names only the branch
     where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}<span class="wc-t">{_text(workspace[key])}</span></span>'
                     for key, icon, title in (("branch", "branch", "Branch"),) if workspace.get(key))
-    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx), options=fields, opened=opened,
+    # the folder the title's menu picked; empty works in the configured repository
+    folder = (f'<input type="hidden" name="folder" value="{value("folder")}">' if ctx.get("folders") is not None
+              else "")
+    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx) + folder,
+                          options=fields, opened=opened,
                           controls="".join(controls), where=f'<div class="where-bar">{runner}{where}</div>', files=True,
                           picked=draft.get("input_path", "") if isinstance(draft.get("input_path"), str) else "")
     body = f'<div class="body">{form}{_swarm_pick_form(ctx)}</div>'
     return (f'<div class="s-compose" data-region="compose" data-key="section:compose" '
             f'data-sig="{_sig("compose", body)}">{body}</div>')
+
+
+def _folder_title(ctx, current):
+    """The composer's title as the folder a This Mac job works in, with a menu of the folders jobs used, the
+    configured repository and Choose folder… (a native dialog in the app, a typed path in a browser). The server
+    takes only a git working tree; cloud jobs stay on the configured repository."""
+    name = Path(current).name if current else "Choose a folder"  # none configured: the menu is how to pick one
+    home = str(Path.home())
+    rows = "".join(
+        f'<button type="button" class="fm-row" role="menuitemradio" aria-checked="{str(path == current).lower()}" '
+        f'data-folder="{_text(path)}" title="{_text(path)}">{_ic("folder", True)}'
+        f'<span class="fm-n">{_text(fname)}</span>'
+        f'<span class="fm-p">{_text("~" + path[len(home):] if path.startswith(home + "/") else path)}</span>'
+        f'{_ic("check", True)}</button>' for path, fname in ctx["folders"])
+    return (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(name)}">'
+            f'<button type="button" class="folder-btn" aria-haspopup="menu" aria-expanded="false" '
+            f'aria-controls="folder-menu" title="{_text(current)}" data-home="{_text(ctx["repo_path"])}">'
+            f'<span class="fb-name">{_text(name)}</span>'
+            f'{_ic("chev", True)}</button><span class="ct-research">What should we find out?</span></h1>'
+            f'<div class="folder-menu" id="folder-menu" role="menu" aria-label="Working folder" hidden>'
+            f'<p class="fm-head">Work in</p>{rows}<span class="fm-rule" role="separator"></span>'
+            f'<button type="button" class="fm-row fm-choose" role="menuitem" data-folder-choose>{_ic("plus", True)}'
+            '<span class="fm-n">Choose folder…</span></button>'
+            '<label class="fm-path" hidden><input type="text" class="mono" aria-label="Path to a git folder" '
+            'placeholder="~/Projects/app" autocomplete="off" spellcheck="false">'
+            '</label></div>')
 
 
 def _compose_strip(ctx, view, focus=False):
@@ -1988,8 +2018,16 @@ def _compose_strip(ctx, view, focus=False):
         form = form.replace('<textarea class="c-text" id="brief"', '<textarea class="c-text" id="brief" autofocus', 1)
     # A coding job works in this repository, so its name heads the page; with none known, the page asks.
     repo = str((ctx.get("workspace") or {}).get("repo") or "")
-    title = (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(repo)}">{_text(repo)}</h1>'
-             if repo else '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1>')
+    draft = view.get("compose") if isinstance(view.get("compose"), dict) else {}
+    picked = str(draft.get("folder") or "").strip()
+    if ctx.get("folders") is not None and ctx["live"]:
+        current = picked or (ctx["repo_path"] if repo else "")
+        title = _folder_title(ctx, current)
+        repo = Path(current).name if current else ""
+    else:
+        title = (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(repo)}">{_text(repo)}'
+                 '</h1>' if repo else
+                 '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1>')
     # On its own page the composer names the keys it answers to; the shortcuts sheet lists them for a reader.
     hint = (f'<p class="compose-hint" aria-hidden="true"><kbd>/</kbd> commands{_SEP_HTML}'
             '<kbd>⌘K</kbd> jump to anything</p>' if focus else "")
@@ -2254,13 +2292,15 @@ def _stops(ctx, entry):
     return _region("j-stops", '<h2>Pauses and stops</h2>' + "".join(parts), "section")
 
 
-def _job_head(title, kind, tip="", sub=""):
+def _job_head(title, kind, tip="", sub="", folder=""):
     """A compact, persistent title, named as the sidebar names the job (its id when another listed job shares its
     name, with the name on hover), and its worker crumb; `sub` is a second quiet line under it, when one is due."""
     tip = f' title="{_text(tip)}"' if tip else ""
     body = ('<div class="jd-head-in">'
             f'<h1 tabindex="-1" data-clear{tip}>{_text(title)}</h1>'
-            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p>{sub}</div>')
+            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span>'
+            + (f'{_SEP_HTML}<span class="job-folder" title="{_text(folder)}">{_text(Path(folder).name)}</span>'
+               if folder else "") + f'</p>{sub}</div>')
     return _region("j-head", body, "section", "jd-head")
 
 
@@ -2524,7 +2564,11 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         acts.append(_cancel(ctx, jid, stalled=state == "stalled"))
     named = entry.label if entry.label != entry.title else (_lead(spec)[0] or jid)  # as the sidebar names it
     swarm = _swarm_run(ctx, jid)  # a swarm's own run says so on a quiet line under its head
-    head = _job_head(jid, kind, entry.label, swarm) if entry.dup else _job_head(named, kind, sub=swarm)
+    command = spec.get("command")  # a This Mac agent in a folder other than the configured repository names it
+    folder = (str(command[4]) if agent_of(command) and ctx.get("repo_path")
+              and str(Path(str(command[4])).resolve()) != ctx["repo_path"] else "")
+    head = (_job_head(jid, kind, entry.label, swarm, folder) if entry.dup
+            else _job_head(named, kind, sub=swarm, folder=folder))
     work = []
     if feedback:
         work.append(feedback)
@@ -3399,6 +3443,10 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     back = f"/job/{named}" if named else "/new" if compose else None
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
            "workspace": view.get("workspace") or {},
+           # the composer's folder menu, when the server offers one (it may list none yet)
+           "folders": None if view.get("folders") is None else
+           [tuple(f) for f in view["folders"] if isinstance(f, (list, tuple)) and len(f) == 2],
+           "repo_path": str(view.get("repo_path") or ""),
            "states": states, "swarms": swarms,
            "swarm": view.get("swarm") if isinstance(view.get("swarm"), dict) else {},
            "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),

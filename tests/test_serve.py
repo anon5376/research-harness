@@ -205,7 +205,8 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(code, 200)
         for group in ("Needs you", "Live", "Up next", "Ended today"):
             self.assertIn(f">{group}</h3>", page)
-        self.assertRegex(page, r'id="compose-title" tabindex="-1" data-repo="[^"]+">[^<]+</h1>')  # the repository heads it
+        self.assertRegex(page, r'id="compose-title" tabindex="-1" data-repo="[^"]+"><button type="button" '
+                               r'class="folder-btn"[^>]*><span class="fb-name">[^<]+</span>')  # the repository heads it
         self.assertIn('data-mode="coding"', page)
         self.assertIn('data-mode="research"', page)
         self.assertIn('/actions?t=serve-test-key', page)
@@ -318,14 +319,15 @@ class ServeTest(unittest.TestCase):
         self.cfg["repo"]["path"] = str(named)
         page = self.request("/new")[2]
         # the configured repository heads the page; the line under it names the branch
-        self.assertIn('data-repo="harness-visual-test">harness-visual-test</h1>', page)
+        self.assertIn('data-repo="harness-visual-test">', page)
+        self.assertIn('<span class="fb-name">harness-visual-test</span>', page)
         self.assertNotIn('title="Repository"', page)
         self.assertRegex(page, r'<span class="where-chip" title="Branch"><svg[^>]*>.*?</svg><span class="wc-t">main</span></span>')
         self.assertNotIn('compose-trail', page)
         self.cfg["repo"]["path"] = str(self.base / "missing")
         page = self.request("/new")[2]
         self.assertNotIn('where-chip"', page)
-        self.assertIn('tabindex="-1">What are we building?</h1>', page)  # no repository known: the page asks
+        self.assertIn('<span class="fb-name">Choose a folder</span>', page)  # no repository known: the page asks
         # A folder that is no git working tree is no workspace: the packaged desktop app's default repo path is its
         # own bundle's Contents/Resources, which headed a fresh install's page as 'Resources' (Devin macOS DMG check)
         bundle = self.base / "Research Harness.app" / "Contents" / "Resources"
@@ -333,7 +335,8 @@ class ServeTest(unittest.TestCase):
         self.cfg["repo"]["path"] = str(bundle)
         page = self.request("/new")[2]
         self.assertNotIn('data-repo="Resources"', page)
-        self.assertIn('tabindex="-1">What are we building?</h1>', page)
+        self.assertNotIn('data-folder="' + str(bundle.resolve()), page)
+        self.assertIn('<span class="fb-name">Choose a folder</span>', page)
 
     def test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address(self):
         # An Inbox that opens on an older item, a hand launch opened from it without its prompt, or an item address
@@ -750,6 +753,58 @@ class ServeTest(unittest.TestCase):
             self.request("/job", {"id": "", "kind": "local-agent", "brief": "use a banned model", "model": "gpt-9"})
         with self.ledger() as led:
             self.assertIsNone(led.job("use-a-banned-model"))
+
+    def test_a_local_agent_works_in_the_folder_the_composer_picked(self):
+        # The owner: "where is working folder selection?" A This Mac job (or swarm) that still works in the configured
+        # repository, a folder that is not a git working tree let through, a cloud job sent to a folder the cloud
+        # cannot see, a refused folder that is not kept on the form, or a picked folder missing from the menu after,
+        # must fail.
+        other = self.base / "other"
+        (other / "sub").mkdir(parents=True)
+        for args in (("init", "-q", "-b", "main"), ("config", "user.name", "test"),
+                     ("config", "user.email", "test@example.com"), ("commit", "-q", "--allow-empty", "-m", "start")):
+            subprocess.run(["git", "-C", str(other), *args], check=True, capture_output=True)
+        plain = self.base / "plain"
+        plain.mkdir()
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/codex"):
+            for jid, folder in (("in-other", other), ("in-sub", other / "sub")):
+                self.assertEqual(self.request("/job", {"id": jid, "kind": "local-agent", "brief": "fix it",
+                                                       "folder": str(folder)})[0], 303)
+            for jid, folder in (("in-plain", plain), ("relative", "other"), ("gone", self.base / "gone")):
+                self.request("/job", {"id": jid, "kind": "local-agent", "brief": "fix it", "folder": str(folder)})
+        with self.ledger() as led:
+            for jid in ("in-other", "in-sub"):  # a folder inside a repository works at that repository's root
+                self.assertEqual(led.job(jid)["spec"]["command"][4], str(other.resolve()))
+            for jid in ("in-plain", "relative", "gone"):
+                self.assertIsNone(led.job(jid))
+        self.request("/job", {"id": "in-plain", "kind": "local-agent", "brief": "fix it", "folder": str(plain)})
+        _, _, page = self.request("/new")
+        self.assertIn("is not a git repository", page)
+        self.assertIn(f'name="folder" value="{plain}"', page)  # the refused folder stays on the form to correct
+        self.request("/job", {"id": "cloud-other", "kind": "codex-cloud", "brief": "fix it", "folder": str(other)})
+        with self.ledger() as led:
+            self.assertIsNone(led.job("cloud-other"))
+        # the composer's folder menu lists the folders jobs used, newest first, and the configured repository
+        _, _, page = self.request("/new")
+        menu = page.split('class="folder-menu"', 1)[1].split("</div>", 1)[0]
+        self.assertLess(menu.index(f'data-folder="{other.resolve()}"'),
+                        menu.index(f'data-folder="{Path(self.cfg["repo"]["path"]).resolve()}"'))
+        self.assertIn("Choose folder", menu)
+        # a /swarm sends every run, and its judge, to the picked folder
+        config.set_value("swarm.models", "swe-2-max", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/devin"):
+            self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Fix it there", "folder": str(other)})
+        with self.ledger() as led:
+            runs = [j for j in led.jobs() if j["id"].startswith("fix-it-there.")]
+        self.assertTrue(runs)
+        for job in runs:
+            self.assertEqual(job["spec"]["command"][4], str(other.resolve()))
+        # the job's page names the folder beside where it runs, since it is not the configured repository
+        _, _, page = self.request("/job/in-other")
+        self.assertIn('<span class="job-folder"', page.split('class="job-worker"', 1)[1].split("</p>", 1)[0])
+        _, _, page = self.request("/job/fix-it-there.w1")
+        self.assertIn("other", page.split('class="job-worker"', 1)[1].split("</p>", 1)[0])
 
     def test_slash_swarm_runs_the_brief_on_every_swarm_model_then_a_judge_on_what_they_did(self):
         # /swarm must fan out to each model Settings names, and the judge must wait for all of them, see each run's

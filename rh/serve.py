@@ -156,7 +156,7 @@ def _upload(cfg, job, suffix, text):
 def _draft(fields):
     """The New job form as typed, kept so a refused job can be corrected rather than retyped."""
     draft = {name: _value(fields, name) for name in ("id", "kind", "brief", "command", "accept", "timeout_min",
-                                                    "model", "effort", "input_path", "answer")}
+                                                    "model", "effort", "input_path", "answer", "folder")}
     draft["needs"] = fields.get("needs", [])
     return draft
 
@@ -222,9 +222,53 @@ def _auto_id(cfg, fields):
     fields["id"] = [name]
 
 
+def _folder(path):
+    """The git working tree a This Mac job works in, from the folder the composer picked: its root, resolved, so a
+    folder inside a repository works at that repository's root. Anything else is refused, said plainly."""
+    folder = Path(path).expanduser()
+    if not folder.is_absolute():
+        raise ValueError(f"the folder must be a full path, like ~/Projects/app, not {path}")
+    if not folder.is_dir():
+        raise ValueError(f"there is no folder {folder}")
+    top = gitx.git(folder, "rev-parse", "--show-toplevel", check=False)
+    if top.returncode:
+        raise ValueError(f"{folder} is not a git repository: an agent works on a copy of one, so pick a folder "
+                         "inside a git working tree")
+    return str(Path(top.stdout.strip()).resolve())
+
+
+def _folders(cfg, limit=6):
+    """The folders the composer offers, as [(path, name)]: those This Mac jobs worked in, newest first, then the
+    configured repository, each once, and only those still there."""
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        jobs = led.jobs()
+    finally:
+        led.close()
+    configured = str(Path(cfg["repo"]["path"]).resolve())
+    used = []
+    for job in reversed(jobs):
+        spec = job.get("spec") if isinstance(job.get("spec"), dict) else {}
+        if dashboard.agent_of(spec.get("command")):
+            path = str(spec["command"][4])
+            if path != configured and path not in used and Path(path).is_dir():
+                used.append(path)
+    top = gitx.git(configured, "rev-parse", "--show-toplevel", check=False) if Path(configured).is_dir() else None
+    root = top is not None and top.returncode == 0 and str(Path(top.stdout.strip()).resolve()) == configured
+    picks = used[:limit - 1] + ([configured] if root else [])  # a bundle's Resources folder is no workspace
+    return [(path, Path(path).name) for path in picks]
+
+
 def _job_file(draft, repo):
     """The TOML file `rh job add` reads for a New job form; the contract rejects what it would reject."""
     agent = draft["kind"] == "local-agent"  # Codex on this Mac: a local job whose command is rh/agent.py
+    if (draft.get("folder") or "").strip():  # the composer's folder menu: This Mac works there, the cloud cannot
+        picked = _folder(draft["folder"].strip())
+        if agent:
+            repo = picked
+        elif picked != str(Path(repo).resolve()):
+            raise ValueError(f"a {draft['kind']} job works on the configured repository; pick This Mac to work in "
+                             f"{Path(picked).name}")
     spec = {"id": draft["id"].strip(), "kind": "local-shell" if agent else draft["kind"],
             "brief": draft["brief"].replace("\r\n", "\n")}
     if item := _repository_input(draft["input_path"], repo):
@@ -1050,6 +1094,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                          "tint": cfg.get("appearance", {}).get("tint"),
                          "swarm": _swarm_view(cfg),
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
+                         "folders": _folders(cfg), "repo_path": str(Path(cfg["repo"]["path"]).resolve()),
                          "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
                          **(extra or {})})
             policy_path = config.REPO / "policy.toml"

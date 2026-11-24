@@ -824,6 +824,7 @@ body[data-background="off"] { --art: none; }
   font-size: 12px; color: rgb(255 255 255 / .5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .where-chip .ic { flex: none; opacity: .8; }
 @media (max-width: 620px) { .where-chip { display: none; } }
+.where-chip[hidden] { display: none; }
 
 /* The inspector occupies space only while open. On compact windows it floats above the work. */
 .detail:has(.jd) { position: relative; }
@@ -2250,6 +2251,47 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
    leaves it room. */
 .c-strip .compose-intro { margin-bottom: 52px; }
 .c-strip.has-repo .compose-title { letter-spacing: -.01em; }
+/* The title is the folder a job on this machine works in: the name and a quiet chevron that turns down while its menu is
+   open; the menu drops centred under it on the popovers' surface, rows as the model picker's. */
+.compose-intro { position: relative; }
+.folder-btn { display: inline-flex; align-items: center; gap: 8px; max-width: min(560px, 90vw); padding: 2px 6px 2px 12px;
+  border: 0; border-radius: 12px; background: transparent; color: inherit; font: inherit; letter-spacing: inherit;
+  text-shadow: inherit; cursor: pointer; transition: background .15s var(--ease); }
+.folder-btn:hover, .folder-btn[aria-expanded="true"] { background: rgb(255 255 255 / .07); }
+.folder-btn:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.fb-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-btn .ic { flex: none; width: 18px; height: 18px; color: var(--muted); transform: rotate(90deg);
+  transition: transform .2s var(--ease), color .15s var(--ease); }
+.folder-btn:hover .ic { color: var(--text); }
+.folder-btn[aria-expanded="true"] .ic { transform: rotate(-90deg); }
+.ct-research, html[data-mode="research"] .folder-btn { display: none; }
+html[data-mode="research"] .ct-research { display: inline; }
+.folder-menu { position: absolute; top: calc(100% + 8px); left: 50%; z-index: 90; display: flex; flex-direction: column;
+  gap: 2px; width: min(360px, calc(100vw - 32px)); padding: 6px; translate: -50% 0; border-radius: 12px;
+  border: 1px solid rgb(170 185 235 / .14); color: var(--text); font: 13px/1.2 var(--ui); text-shadow: none;
+  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38 / .96);
+  -webkit-backdrop-filter: blur(40px) saturate(160%); backdrop-filter: blur(40px) saturate(160%);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .12), 0 24px 60px -12px rgb(0 0 0 / .7);
+  animation: mp-in .14s var(--ease, ease-out); }
+.folder-menu[hidden] { display: none; }
+/* on a phone the composer, and so the title, sits low: the menu opens upward into the empty sea */
+@media (max-width: 600px) { .folder-menu { top: auto; bottom: calc(100% + 8px); } }
+.fm-head { margin: 2px 8px 4px; color: var(--faint); font-size: 12px; }
+.fm-row { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border: 0; border-radius: 6px;
+  background: transparent; color: rgb(255 255 255 / .85); font: 13px var(--ui); text-align: left; cursor: pointer; }
+.fm-row:hover, .fm-row:focus-visible { background: rgb(255 255 255 / .08); color: #fff; outline: none; }
+.fm-row .ic { flex: none; width: 16px; height: 16px; color: var(--muted); }
+.fm-n { flex: none; max-width: 45%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fm-p { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--faint);
+  font-size: 12px; }
+.fm-row > .ic:last-child { visibility: hidden; width: 14px; height: 14px; color: rgb(255 255 255 / .8); }
+.fm-row[aria-checked="true"] > .ic:last-child { visibility: visible; }
+.fm-choose .fm-n { max-width: none; }
+.fm-rule { height: 1px; margin: 4px 2px; background: rgb(255 255 255 / .07); }
+.fm-path { display: block; padding: 4px 2px 2px; }
+.fm-path[hidden] { display: none; }
+.fm-path input { width: 100%; box-sizing: border-box; height: 32px; padding: 0 10px; border-radius: 8px; font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .folder-menu { animation: none; } .folder-btn .ic { transition: none; } }
 /* One quiet line under the composer names the keys it answers to; while the brief holds text it steps aside but
    keeps its room, so the page does not jump. */
 .compose-hint { margin: 16px 0 0; font: 12px var(--ui); color: #6e7383; text-align: center;

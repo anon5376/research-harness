@@ -14,6 +14,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from rh import config, serve
 
 
+class Api:
+    """What the page may ask of the window: the composer's Choose folder… opens macOS's own folder dialog and gets
+    the picked path back ("" when cancelled). The server still decides whether it is a git working tree."""
+
+    def __init__(self, webview):
+        self._webview, self._window = webview, None  # private: pywebview hands public attributes to the page
+
+    def choose_folder(self):
+        kinds = getattr(self._webview, "FileDialog", None)  # pywebview 5 names it FileDialog.FOLDER; 4, FOLDER_DIALOG
+        kind = kinds.FOLDER if kinds is not None else self._webview.FOLDER_DIALOG
+        picked = self._window.create_file_dialog(kind) if self._window is not None else None
+        return str(picked[0]) if picked else ""
+
+
 def main(argv: list[str] | None = None) -> int:
     """Run the local board, or check its HTTP endpoint without importing webview."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -42,8 +56,9 @@ def main(argv: list[str] | None = None) -> int:
 
         import webview
 
-        webview.create_window("Research Harness", url, width=1280, height=800,
-                              min_size=(1024, 640))
+        api = Api(webview)
+        api._window = webview.create_window("Research Harness", url, width=1280, height=800,
+                                           min_size=(1024, 640), js_api=api)
         webview.start()
         return 0
     finally:

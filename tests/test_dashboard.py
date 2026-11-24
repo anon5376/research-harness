@@ -2998,7 +2998,9 @@ class DashboardTest(unittest.TestCase):
                          "fix.best": {**base, "updated": NOW - 5, "model": "swe-2-max", "goal": "fix", "after": ["fix.w1"]}}
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
                  + dashboard.render({**live_view(), "new": True, "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
-                                    "choices": ["swe-2-max"]}}, NOW, token=TOKEN)  # and the composer's swarm popover
+                                    "choices": ["swe-2-max"]},  # and the composer's swarm popover and folder menu
+                                    "folders": [["/w/rh", "rh"]], "repo_path": "/w/rh", "workspace": {"repo": "rh", "branch": "main"}},
+                                   NOW, token=TOKEN)
                  + inbox(live_view())
                  + dashboard.render(opened(swarm, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN))
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())

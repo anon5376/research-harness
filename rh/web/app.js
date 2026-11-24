@@ -1271,7 +1271,8 @@ function move(step) {
 function placePop(at, room, w, h, gap) {
   const below = room.bottom - at.bottom - gap, above = at.top - room.top - gap;
   const up = h > below && above > below;
-  return { up, right: at.left + w > room.right && at.right - w >= room.left, max: Math.max(80, Math.floor(up ? above : below) - 8) };
+  // 24px clear of the room's edge on the side it opens toward: jammed against the window edge, a popover reads as unplaced.
+  return { up, right: at.left + w > room.right && at.right - w >= room.left, max: Math.max(80, Math.floor(up ? above : below) - 24) };
 }
 // A composer's popover floats 8px clear of the composer's edge, below it when it fits, else above its trigger.
 function dropTop(trigger, h) {

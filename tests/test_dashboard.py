@@ -3752,9 +3752,9 @@ console.log(JSON.stringify([
         r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         foot, head, short = json.loads(r.stdout)
-        self.assertEqual(foot, {"up": True, "right": True, "max": 586})  # over the button, against its right edge
-        self.assertEqual(head, {"up": False, "right": False, "max": 496})  # under it, from its left edge
-        self.assertEqual(short, {"up": True, "right": False, "max": 126})  # the roomier side, scrolling within
+        self.assertEqual(foot, {"up": True, "right": True, "max": 570})  # over the button, against its right edge
+        self.assertEqual(head, {"up": False, "right": False, "max": 480})  # under it, from its left edge
+        self.assertEqual(short, {"up": True, "right": False, "max": 110})  # the roomier side, scrolling within
         rule = lambda sel: dashboard.STYLE.split(sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("bottom: calc(100% + 6px)", rule(".opts-body.up"))
         self.assertIn("top: auto", rule(".opts-body.up"))
@@ -3773,6 +3773,28 @@ console.log(JSON.stringify([
         self.assertIn("if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;", dashboard.SCRIPT)
         self.assertIn("bottom: calc(100% + 8px)", rule(".swarm-pop.up"))
         self.assertIn("top: auto", rule(".swarm-pop.up"))
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_a_popover_keeps_24px_clear_of_the_room_edge(self):
+        # The /swarm popover opened upward with its top 10px from the window's top and its last row cut. placePop
+        # must leave 24px between the popover and the room's edge on the side it opens toward, so it never hugs it.
+        fn = dashboard.SCRIPT[dashboard.SCRIPT.index("function placePop("):]
+        block = fn[:fn.index("\n}\n") + 3]
+        probe = block + """
+const room = { top: 0, right: 1440, bottom: 900, left: 0 };
+const at = { top: 700, bottom: 732, left: 560, right: 640 };
+console.log(JSON.stringify([
+  placePop(at, room, 320, 600, 6),
+  placePop(at, room, 320, 100, 6),
+  placePop(at, { top: 690, right: 1440, bottom: 740, left: 0 }, 320, 600, 6),
+]));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        tall, short, tiny = json.loads(r.stdout)
+        self.assertEqual(tall, {"up": True, "right": False, "max": 670})  # over the button: 700 - 6 - 24
+        self.assertEqual(short, {"up": False, "right": False, "max": 138})  # under it: 900 - 732 - 6 - 24
+        self.assertEqual(tiny, {"up": True, "right": False, "max": 80})  # a tiny room still floors at 80
 
     def test_the_swarm_popover_drops_the_tick_lists_box_and_fades_its_foot(self):
         # The /swarm popover drew the tick list as a second box inside its own, and a popover capped to the

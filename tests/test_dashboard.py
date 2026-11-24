@@ -975,8 +975,8 @@ class ListsTest(unittest.TestCase):
 
     def test_settings_shows_every_swarm_group_when_it_opens(self):
         # r23 F3: a fourth tick group still started at the sheet's foot, and the ticks sat in a filled, bordered box
-        # inside the sheet. In Settings the ticks sit on the sheet (no box), rows are 28px, group heads 24px, and the
-        # Colour swatches share their label's row. The composer's popover keeps its own box.
+        # inside the sheet. In Settings the ticks sit on the sheet (no box), rows are 28px, group heads 24px. The
+        # composer's popover keeps its own box.
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         box = rule(".settings .swarm-models")
         for spec in ("padding: 0", "border: 0", "background: none"):
@@ -998,9 +998,6 @@ class ListsTest(unittest.TestCase):
         # beside its label, as macOS lists put it: box, glyph, name, 8px apart, on the sheet's text edge
         self.assertIn("order: -1", rule(".settings .swarm-m > .swarm-x"))
         self.assertIn("gap: 8px", rule(".settings .swarm-m"))
-        legend = rule(".settings fieldset:has(.tint-choices) > legend")
-        for spec in ("float: left", "line-height: 24px"):
-            self.assertIn(spec, legend)
 
     def test_settled_inbox_rows_step_back(self):
         # r23 F1: settled rows wore the white 15px title, row height and id line of the rows that need you; only the
@@ -1212,6 +1209,26 @@ class ListsTest(unittest.TestCase):
         page = dashboard.render(live_view(), NOW, token=TOKEN)
         sheet = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)
         self.assertRegex(sheet, r'</header><div class="settings-body"><form action="/appearance".*</footer></div></dialog>$')
+
+    def test_colour_swatches_take_their_own_line_under_the_legend(self):
+        # 'Colour' floated its legend left so the tint dots shared the label's row, while 'Background' stacked its
+        # label over the wallpaper grid. The swatches now take their own line under the legend, starting at the same
+        # left edge and under the same gap: neither legend carries a rule of its own.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("padding: 0", rule(".settings fieldset"))  # legend and choices share the fieldset's edge
+        # each choices box is a block-level container on its own line: a grid for the wallpapers, a flex row for
+        # the tints
+        self.assertIn("display: grid", rule(".background-choices"))
+        choices = rule(".tint-choices")
+        self.assertIn("display: flex", choices)
+        self.assertIn("gap: 10px", choices)
+        # and neither legend is special-cased, so both take the shared .settings legend gap below the label
+        for sel, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", dashboard.STYLE):
+            if "legend" in sel:
+                self.assertNotIn("tint-choices", sel)
+                self.assertNotIn("background-choices", sel)
+        legend = dashboard.STYLE.split("\n.settings legend {")[-1].split("}", 1)[0]
+        self.assertIn("margin-bottom: 12px", legend)
 
     def test_an_agent_pages_status_reads_on_its_model_line(self):
         # An agent page whose Done/checks/time floats at the column's right edge, outside the answer's measure,

@@ -2101,7 +2101,8 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .swarm-opts > .swarm-judge + .swarm-judge { border-top: 1px solid rgb(255 255 255 / .06); }
 .swarm-g { margin: 0; padding: 8px 10px 4px; font-size: 11px; color: var(--faint); }
 /* In Settings the ticks sit on the sheet, not in a box inside it, at 28px rows under 24px heads, so every group shows
-   when the sheet opens; the composer's popover keeps its box. The Colour swatches share their label's row. */
+   when the sheet opens; the composer's popover keeps its box. The Colour swatches take their own line under the
+   legend, as the wallpapers do. */
 .settings .swarm-models { margin-bottom: 0; padding: 0; border: 0; border-radius: 0; background: none; }
 .settings .swarm-m { min-height: 28px; gap: 8px; padding: 0 8px; margin: 0 -8px; border-radius: 6px; }
 /* a square box sits beside its label, as a macOS list puts it: box, glyph, name read as one unit */
@@ -2113,7 +2114,6 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 .settings .swarm-opts > .swarm-judge { padding: 0; }
 .settings .swarm-opts > .swarm-judge + .swarm-judge { margin-top: 16px; border-top: 0; }
 .settings .swarm-opts + .set-hint { padding-left: 0; }  /* the hint starts on the plain row's text edge */
-.settings fieldset:has(.tint-choices) > legend { float: left; margin: 0 16px 0 0; line-height: 24px; }
 .swarm-m { position: relative; display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px;
   border: 0; border-radius: 7px; background: none; cursor: pointer; }
 .swarm-m:has(:checked) { border: 0; background: none; }

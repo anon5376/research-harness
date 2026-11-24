@@ -2638,8 +2638,15 @@ html.tm-dragging, html.tm-dragging * { cursor: grabbing !important; }
   border-left: 1.5px solid var(--text); border-bottom: 1.5px solid var(--text); rotate: -45deg; translate: 0 -2px; }
 .tm-ef-h { display: flex; justify-content: space-between; }
 .tm-ef-h b { color: var(--text); font-weight: 600; }
-.tm-ef { height: 22px; margin: 2px 0 0; }
-.tm-ef .ef-thumb { width: 20px; height: 20px; }
+/* In the inspector the slider is one setting of one agent, so it stays quiet beside the tree (critic r29 F3): a 4px
+   rail with 4px stops and a 14px thumb. The composer's popover, where it is the only control, keeps its full size. */
+.tm-ef { height: 14px; margin: 4px 0 0; }
+.tm-ef .ef-track { top: 5px; bottom: auto; height: 4px; border-radius: 2px; background: #2a3042; box-shadow: none; }
+.tm-ef .ef-range { border-radius: 2px 0 0 2px; }
+.tm-ef .ef-tick { background: #5a6070; }
+.tm-ef .ef-tick.on { background: rgb(255 255 255 / .55); }
+.tm-ef .ef-tick.current { background: #fff; box-shadow: none; }
+.tm-ef .ef-thumb { width: 14px; height: 14px; border: 0; box-shadow: 0 1px 2px rgb(0 0 0 / .4); }
 .tm-ef-f .ef-ends { margin: 4px 0 0; font-size: 11px; }
 .tm-step { display: inline-flex; align-items: center; gap: 10px; }
 .tm-step button { width: 26px; height: 26px; border-radius: 7px; background: var(--raised); color: var(--text);

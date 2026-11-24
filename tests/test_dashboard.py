@@ -1204,6 +1204,18 @@ class ListsTest(unittest.TestCase):
         self.assertIn("overflow: auto", rule(".tm-mp-pop"))
         # the menu closes on Escape without closing the dialog, and on a click outside it
         self.assertIn("if (e.key === 'Escape' && $('.tm-mp-pop'))", dashboard.SCRIPT)
+        # r29 F3: at the composer's size the slider (a 14px saturated track, 20px thumb) was the loudest mark in the
+        # dialog, ahead of the tree it exists to shape. In the inspector it is a 4px rail with 4px stops and a 14px
+        # thumb; the composer's popover, where it is the only control, keeps its size.
+        track = rule(".tm-ef .ef-track")
+        for want in ("height: 4px", "background: #2a3042", "box-shadow: none"):
+            self.assertIn(want, track)
+        self.assertIn("height: 14px", rule(".tm-ef"))
+        for want in ("width: 14px", "height: 14px", "box-shadow: 0 1px 2px rgb(0 0 0 / .4)"):
+            self.assertIn(want, rule(".tm-ef .ef-thumb"))
+        self.assertIn("background: #5a6070", rule(".tm-ef .ef-tick"))
+        self.assertIn("box-shadow: none", rule(".tm-ef .ef-tick.current"))
+        self.assertIn("height: 28px", rule(".ef-thumb"))  # the composer's own thumb is unchanged
 
     def test_the_team_dialogs_head_is_one_quiet_row(self):
         # r28 F4/F8: a 600px boxed name field sat over a row of six controls, Delete as loud as Duplicate, and the

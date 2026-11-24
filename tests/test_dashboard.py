@@ -3347,6 +3347,19 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="st t-red"', row)
         self.assertIn('data-tone="bad"', row)
 
+    def test_the_phone_front_doors_field_stays_behind_its_controls(self):
+        # r33 F1: on a phone the New page's field peaked near-white right behind the sidebar button, which lost its
+        # edge, and the glow outranked the folder title and the composer. On a phone it is three-quarters strong,
+        # held at 15% under the top bar, full from 200px, and gone by 80% of the height, where the composer sits.
+        # The composer stays at the foot (under the thumb); job pages keep their own dim wash.
+        rule = dashboard.STYLE.split("@media (max-width: 600px) { html[data-live-app] .app:has(.sea-page) .bg-field {", 1)
+        self.assertEqual(len(rule), 2)
+        body = rule[1].split("} }", 1)[0]
+        self.assertIn("opacity: .75;", body)
+        self.assertIn("mask-image: linear-gradient(to bottom, rgb(0 0 0 / .15) 64px, #000 200px, #000 50%, transparent 80%);",
+                      body)
+        self.assertIn("html[data-live-app] .app:not(:has(.sea-page)) .bg-field { opacity: .2;", dashboard.STYLE)
+
     def test_each_earlier_day_is_a_group_in_the_sidebar_and_in_the_palette(self):
         # r33 F3: a second day's heading sat on the row above it while 'Yesterday' had the group gap; every day
         # heading is a group heading's 24px box, and a later one sits 16px down, as the groups do. F5: the palette

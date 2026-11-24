@@ -1091,6 +1091,11 @@ html[data-live-app] .pane { background: transparent; }
 html[data-live-app] .app:not(:has(.sea-page)) .bg-field { opacity: .2;
   -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / .35), #000 90%); mask-image: linear-gradient(to bottom, rgb(0 0 0 / .35), #000 90%); }
 body[data-background="quiet"] .bg-field { opacity: 1; }
+/* a phone's front door: the field stays behind its controls, calm under the top bar and gone where the
+   composer sits, so the folder title and the composer lead, not the glow (r33 F1) */
+@media (max-width: 600px) { html[data-live-app] .app:has(.sea-page) .bg-field { opacity: .75;
+  -webkit-mask-image: linear-gradient(to bottom, rgb(0 0 0 / .15) 64px, #000 200px, #000 50%, transparent 80%);
+  mask-image: linear-gradient(to bottom, rgb(0 0 0 / .15) 64px, #000 200px, #000 50%, transparent 80%); } }
 html[data-live-app] .jd-main:has(.jd-dock)::before { display: none; }
 html[data-live-app] .sea-page::before { background: radial-gradient(ellipse at center, rgb(5 6 10 / .45), transparent 62%); }
 /* The shade sits behind the desktop's centred composer; a phone's composer is at the foot, so there it only shaded

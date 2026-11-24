@@ -1649,7 +1649,9 @@ class ListsTest(unittest.TestCase):
         # r19 F1: at 15px #c3c8d2 the pane had no title at all, so the eye fell on whatever came next. The brief
         # is the pane's title again: 17px semibold, a step under the page headings, the failure banner's red still
         # carrying the second look
-        self.assertIn("font: 600 17px/22px var(--ui)", face)
+        # r29 F4: at 17px semibold for four lines it was a slab, heavier than any title in the app: 16/24 at 500,
+        # the first line at 600, so it still reads as the pane's title without the weight of a paragraph in bold
+        self.assertIn("font: 500 16px/24px var(--ui)", face)
         self.assertIn("color: #e6e8ee", face)
         self.assertIn("max-width: 600px", face)
         more = dashboard.STYLE.split(".q-head .q-title.user-message + .ask-more {", 1)[1].split("}", 1)[0]
@@ -3800,6 +3802,19 @@ console.log(JSON.stringify([
             self.assertIn("var(--on)", body)
             self.assertNotIn("var(--accent)", body)
 
+    def test_the_inbox_title_reads_as_a_title_and_its_show_all_ends_its_last_line(self):
+        # r29 F4: the brief set as a 17px semibold slab, heavier than any title in the app, with its Show all 90px
+        # below where the text fades, must fail. Folded, Show all sits at the end of the fourth line, in its fade.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        title = rule(".q-head .q-title.user-message")
+        self.assertIn("500 16px/24px", title)
+        self.assertNotIn("600 17px", title)
+        self.assertIn("font-weight: 600", rule(".q-head .q-title.user-message::first-line"))
+        folded = rule(".q-head .q-head-in > .q-title.user-message:not(.whole) + .ask-more")
+        for want in ("grid-row: 1", "align-self: end", "justify-self: end"):
+            self.assertIn(want, folded)
+        self.assertIn("13px", folded)
+
     def test_the_palette_has_a_way_out_without_a_keyboard(self):
         # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.
         pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(live_view(), NOW, token=TOKEN), re.S).group(0)
@@ -4508,8 +4523,8 @@ console.log(JSON.stringify([
         for spec in ("-webkit-line-clamp: unset", "overflow: visible", "max-height: none"):
             self.assertIn(spec, bubble)
         self.assertIn("b.querySelector(':scope > .um-t') || b", dashboard.SCRIPT)
-        # the Inbox title fades the same way
-        self.assertIn("linear-gradient(to right, #000 calc(100% - 64px), transparent)",
+        # the Inbox title fades the same way, gone by where its Show all starts at the end of that line
+        self.assertIn("linear-gradient(to right, #000 calc(100% - 150px), transparent calc(100% - 68px))",
                       rule(".q-head .q-title.user-message:has(+ .ask-more):not(.whole)"))
 
     def test_a_files_preview_toggle_sits_on_its_row(self):

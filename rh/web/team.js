@@ -302,14 +302,108 @@ function palette(p) {
       h('span', {class: 'tm-grip', 'aria-hidden': 'true'}), r.name)));
 }
 
-function optionList(p, n) {
-  const role = roleOf(p, n.role), all = T.data.models.map(m => m.id);
-  const extra = [...new Set([...role.models.filter(m => !all.includes(m)), ...(all.includes(n.model) || role.models.includes(n.model) ? [] : [n.model])])];
-  const opt = id => { const m = model(id); return h('option', {value: id, selected: id === n.model},
-    m.name + (m.off ? ' · not in policy' : m.plan ? ' · ChatGPT plan' : '')); };
-  return [h('optgroup', {label: `Allowed for ${role.name}`}, role.models.map(opt)),
-          h('optgroup', {label: 'Other models'}, [...all.filter(m => !role.models.includes(m)), ...extra.filter(m => !role.models.includes(m))].map(opt))];
+// The inspector chooses with the app's own controls, not form selects (critic r28 F5): Role is a segmented switch
+// like Shape, Model the composer's kind of picker (vendor mark, name, the card's lock), Effort the composer's slider.
+function seg(name, items, value) {
+  return h('div', {class: 'tm-seg tm-seg-f', role: 'radiogroup', 'aria-label': name},
+    items.map(([v, label]) => h('button', {type: 'button', role: 'radio', 'aria-checked': v === value ? 'true' : 'false',
+      'data-seg': name.toLowerCase(), 'data-v': v}, label)));
 }
+// what a model row says after its name: the lock the cards use for a model the policy leaves out, else a plan note
+function modelMarks(m) {
+  return m.off ? h('span', {class: 'tn-lock', role: 'img', 'aria-label': 'not in policy', title: 'Not in the model policy'})
+    : m.plan ? h('span', {class: 'tm-mp-note'}, 'ChatGPT plan') : null;
+}
+function modelButton(n) {
+  const m = model(n.model);
+  return h('button', {type: 'button', class: 'tm-mp', 'data-mp': '', 'aria-haspopup': 'listbox', 'aria-expanded': 'false'},
+    h('span', {class: 'tm-mp-ic', html: icon(m.prov)}), h('span', {class: 'tm-mp-n'}, m.name), modelMarks(m),
+    h('span', {class: 'tm-mp-chev', 'aria-hidden': 'true'}));
+}
+function closeModelMenu(refocus) {
+  const menu = $('.tm-mp-pop');
+  if (!menu) return;
+  menu.remove();
+  const b = $('#team .tm-mp');
+  if (b) { b.setAttribute('aria-expanded', 'false'); if (refocus) b.focus(); }
+}
+// the menu floats in the dialog under its button (over it when the room is above), grouped as the role allows
+function modelMenu(p, n, at) {
+  closeModelMenu(false);
+  const role = roleOf(p, n.role);
+  const others = [...new Set([...T.data.models.map(m => m.id), n.model])].filter(id => !role.models.includes(id));
+  const row = id => {
+    const m = model(id);
+    return h('button', {type: 'button', role: 'option', class: 'tm-mp-row', 'data-model': id,
+      'aria-selected': id === n.model ? 'true' : 'false'},
+      h('span', {class: 'tm-mp-ic', html: icon(m.prov)}), h('span', {class: 'tm-mp-n'}, m.name), modelMarks(m));
+  };
+  const group = (label, ids) => ids.length ? [h('div', {class: 'tm-mp-g', role: 'presentation'}, label), ...ids.map(row)] : [];
+  const menu = h('div', {class: 'tm-mp-pop', role: 'listbox', 'aria-label': 'Model'},
+    group(`Allowed for ${role.name}`, role.models), group('Other models', others));
+  const box = $('#team'), r = at.getBoundingClientRect(), d = box.getBoundingClientRect();
+  box.append(menu);
+  const below = d.bottom - r.bottom - 12, above = r.top - d.top - 12, up = menu.offsetHeight > below && above > below;
+  menu.style.width = r.width + 'px';
+  menu.style.left = (r.left - d.left) + 'px';
+  menu.style.maxHeight = Math.max(120, up ? above : below) + 'px';
+  menu.style.top = (up ? r.top - d.top - 4 - Math.min(menu.offsetHeight, above) : r.bottom - d.top + 4) + 'px';
+  at.setAttribute('aria-expanded', 'true');
+  ($('[aria-selected="true"]', menu) || $('.tm-mp-row', menu))?.focus();
+}
+// Effort as the composer draws it: a track with a stop per level, Auto (the CLI's own default) first
+function effortSlider(n, efforts) {
+  const stops = ['', ...efforts], i = Math.max(0, stops.indexOf(n.effort || ''));
+  const word = s => s ? WORDS[s] : 'Auto';
+  const at = k => `calc(14px + ${k} * (100% - 28px) / ${stops.length - 1})`;
+  return h('div', {class: 'tm-f tm-ef-f'},
+    h('span', {class: 'tm-ef-h'}, 'Effort', h('b', {}, word(stops[i]))),
+    h('div', {class: 'ef-slider tm-ef', role: 'slider', tabindex: '0', 'aria-label': 'Effort', 'aria-valuemin': '0',
+      'aria-valuemax': String(stops.length - 1), 'aria-valuenow': String(i), 'aria-valuetext': word(stops[i]),
+      'data-stops': stops.join(' ')},
+      h('div', {class: 'ef-track'}, h('div', {class: 'ef-range', style: `width: ${at(i)}`}),
+        stops.map((s, k) => h('span', {class: 'ef-tick' + (k <= i ? ' on' : '') + (k === i ? ' current' : ''),
+          style: `left: ${at(k)}`, title: word(s)}))),
+      h('span', {class: 'ef-thumb', style: `left: ${at(i)}`})),
+    h('div', {class: 'ef-ends'}, h('span', {}, 'Auto'), h('span', {}, WORDS[efforts[efforts.length - 1]])));
+}
+// set the picked agent's effort to a stop, and keep the slider in focus across the redraw
+function setEffort(stops, k) {
+  const v = stops[Math.max(0, Math.min(stops.length - 1, k))];
+  change(q => { find(q.tree, T.sel).node.effort = v; }, false);
+  $('#team .tm-ef')?.focus();
+}
+function stopAt(slider, x) {
+  const stops = slider.dataset.stops.split(' '), r = slider.getBoundingClientRect();
+  return Math.max(0, Math.min(stops.length - 1, Math.round((x - r.left - 14) / Math.max(1, r.width - 28) * (stops.length - 1))));
+}
+// a drag moves the thumb with the pointer and lights the stop under it; letting go sets that stop (one redraw, so
+// the slider is not rebuilt under the pointer mid-drag)
+document.addEventListener('pointerdown', e => {
+  const slider = e.target instanceof Element && e.target.closest('#team .tm-ef');
+  if (!slider) return;
+  e.preventDefault();
+  slider.focus();
+  slider.setPointerCapture(e.pointerId);
+  slider.classList.add('dragging');
+  const stops = slider.dataset.stops.split(' '), thumb = $('.ef-thumb', slider), range = $('.ef-range', slider);
+  const ticks = $$('.ef-tick', slider), word = slider.closest('.tm-ef-f').querySelector('.tm-ef-h b');
+  let k = stopAt(slider, e.clientX);
+  const follow = ev => {
+    const r = slider.getBoundingClientRect(), x = Math.min(Math.max(ev.clientX - r.left, 14), r.width - 14);
+    thumb.style.left = range.style.width = x + 'px';
+    k = stopAt(slider, ev.clientX);
+    ticks.forEach((t, n) => { t.classList.toggle('on', n <= k); t.classList.toggle('current', n === k); });
+    word.textContent = stops[k] ? WORDS[stops[k]] : 'Auto';
+  };
+  follow(e);
+  slider.addEventListener('pointermove', follow);
+  slider.addEventListener('lostpointercapture', () => {
+    slider.removeEventListener('pointermove', follow);
+    slider.classList.remove('dragging');
+    setEffort(stops, k);
+  }, {once: true});
+});
 
 function inspector(p) {
   const f = T.sel && find(p.tree, T.sel);
@@ -325,12 +419,9 @@ function inspector(p) {
   walk(p.tree, 0);
   return h('aside', {class: 'tm-ins'},
     h('h3', {}, root ? 'The lead' : 'Agent'),
-    h('label', {class: 'tm-f'}, h('span', {}, 'Role'), h('select', {'data-f': 'role'},
-      p.roles.map(r => h('option', {value: r.id, selected: r.id === n.role}, r.name)))),
-    h('label', {class: 'tm-f'}, h('span', {}, 'Model'), h('select', {'data-f': 'model'}, optionList(p, n))),
-    efforts.length ? h('label', {class: 'tm-f'}, h('span', {}, 'Effort'), h('select', {'data-f': 'effort'},
-      h('option', {value: '', selected: !n.effort}, 'Default'),
-      efforts.map(e => h('option', {value: e, selected: e === n.effort}, WORDS[e])))) : null,
+    h('div', {class: 'tm-f'}, h('span', {}, 'Role'), seg('Role', p.roles.map(r => [r.id, r.name]), n.role)),
+    h('div', {class: 'tm-f'}, h('span', {}, 'Model'), modelButton(n)),
+    efforts.length ? effortSlider(n, efforts) : null,
     root ? h('p', {class: 'soft tm-note'}, p.plan ? 'Writes the plan every agent reads first, then judges the layer under it.'
       : 'Judges the layer under it and keeps the best work.') :
       h('div', {class: 'tm-f'}, h('span', {}, 'Copies'), h('span', {class: 'tm-step'},
@@ -376,6 +467,7 @@ function roles(p) {
 function render(animate) {
   const body = $('[data-team-body]');
   if (!body || !data()) return;
+  closeModelMenu(false);  // its button is about to be redrawn
   const p = preset();
   // a team opens with its lead picked, so the inspector shows an agent to edit rather than a help paragraph
   if (p && !(T.sel && find(p.tree, T.sel))) T.sel = p.tree._k;
@@ -522,6 +614,26 @@ document.addEventListener('click', e => {
   }
   if (!t.closest('#team')) return;
   const p = preset();
+  // the inspector's own controls: a click outside the model menu closes it
+  const opener = t.closest('[data-mp]'), menuOpen = $('.tm-mp-pop');
+  if (menuOpen && !t.closest('.tm-mp-pop')) { closeModelMenu(false); if (opener) return; }
+  const me = p && T.sel && find(p.tree, T.sel);
+  if (opener && me) { modelMenu(p, me.node, opener); return; }
+  const picked = t.closest('[data-model]');
+  if (picked && me) {
+    const id = picked.dataset.model;
+    closeModelMenu(false);
+    change(q => { const n = find(q.tree, T.sel).node; n.model = id;
+                  if (!(EFFORTS[model(id).prov] || []).includes(n.effort)) n.effort = ''; }, false);
+    $('#team .tm-mp')?.focus();
+    return;
+  }
+  const segment = t.closest('[data-seg="role"]');
+  if (segment && me) {
+    change(q => { find(q.tree, T.sel).node.role = segment.dataset.v; }, false);
+    $(`#team [data-seg="role"][data-v="${segment.dataset.v}"]`)?.focus();
+    return;
+  }
   const pick = t.closest('[data-pick]');
   if (pick) { T.cur = pick.dataset.pick; T.sel = null; render(false); return; }
   if (t.closest('[data-new]')) {
@@ -607,6 +719,22 @@ document.addEventListener('click', e => {
   if (tn && e.detail === 0) { T.sel = tn.dataset.k; render(false); $(`.tn[data-k="${tn.dataset.k}"]`)?.focus(); }  // keyboard
 });
 document.addEventListener('keydown', e => {
+  // the model menu takes Escape first, so the dialog stays open, and moves between its rows with the arrows
+  if (e.key === 'Escape' && $('.tm-mp-pop')) { e.preventDefault(); e.stopPropagation(); closeModelMenu(true); return; }
+  const row = e.target instanceof Element && e.target.closest('.tm-mp-row');
+  if (row && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+    e.preventDefault();
+    const rows = $$('.tm-mp-row', row.parentElement), i = rows.indexOf(row);
+    rows[(i + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length].focus();
+    return;
+  }
+  const ef = e.target instanceof Element && e.target.closest('#team .tm-ef');
+  if (ef) {
+    const stops = ef.dataset.stops.split(' '), i = Number(ef.getAttribute('aria-valuenow'));
+    const to = {ArrowRight: i + 1, ArrowUp: i + 1, ArrowLeft: i - 1, ArrowDown: i - 1, Home: 0, End: stops.length - 1}[e.key];
+    if (to !== undefined) { e.preventDefault(); if (to !== i && to >= 0 && to < stops.length) setEffort(stops, to); }
+    return;
+  }
   const tn = e.target instanceof Element && e.target.closest('#team .tm-canvas .tn');
   if (tn && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); tn.click(); }
 });

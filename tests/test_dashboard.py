@@ -1174,6 +1174,37 @@ class ListsTest(unittest.TestCase):
             self.assertIn(want, pill)
         self.assertIn('content: "+"', rule(".tm-add-under::before"))
 
+    def test_the_inspector_chooses_with_the_apps_own_controls(self):
+        # r28 F5: Role, Model and Effort were plain form selects beside a custom canvas, and Model read 'GPT-6.2 Astra
+        # · not in policy' as flat text, unlike the composer's picker and the card's lock. Role is a segmented switch
+        # like Shape; Model is a picker button (vendor mark, name, the card's 12px lock) over a menu grouped like the
+        # old one; Effort is the composer's slider, with Auto as its first stop. Only 'Reports to' stays a select.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        ins = dashboard.SCRIPT.split("function inspector(p) {", 1)[1].split("\n}", 1)[0]
+        for field in ("role", "model", "effort"):
+            self.assertNotIn(f"h('select', {{'data-f': '{field}'}}", ins)
+        self.assertIn("h('select', {'data-f': 'parent'}", ins)
+        self.assertIn("seg('Role', p.roles.map(r => [r.id, r.name]), n.role)", ins)
+        self.assertIn("modelButton(n)", ins)
+        self.assertIn("effortSlider(n, efforts)", ins)
+        button = dashboard.SCRIPT.split("function modelButton(n) {", 1)[1].split("\n}", 1)[0]
+        for want in ("icon(m.prov)", "modelMarks(m)", "'aria-haspopup': 'listbox'"):
+            self.assertIn(want, button)
+        # the button and the menu rows mark a model the policy leaves out with the cards' own 12px lock
+        marks = dashboard.SCRIPT.split("function modelMarks(m) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("m.off ? h('span', {class: 'tn-lock'", marks)
+        menu = dashboard.SCRIPT.split("function modelMenu(p, n, at) {", 1)[1].split("\n}", 1)[0]
+        for want in ("`Allowed for ${role.name}`", "'Other models'", "role: 'option'", "'aria-selected'"):
+            self.assertIn(want, menu)
+        slider = dashboard.SCRIPT.split("function effortSlider(n, efforts) {", 1)[1].split("\n}", 1)[0]
+        for want in ("['', ...efforts]", "class: 'ef-slider tm-ef'", "role: 'slider'", "'ef-thumb'", "'Auto'"):
+            self.assertIn(want, slider)
+        self.assertIn("height: 28px", rule(".tm-seg-f button"))
+        self.assertIn("height: 32px", rule(".tm-mp"))
+        self.assertIn("overflow: auto", rule(".tm-mp-pop"))
+        # the menu closes on Escape without closing the dialog, and on a click outside it
+        self.assertIn("if (e.key === 'Escape' && $('.tm-mp-pop'))", dashboard.SCRIPT)
+
     def test_the_team_dialogs_head_is_one_quiet_row(self):
         # r28 F4/F8: a 600px boxed name field sat over a row of six controls, Delete as loud as Duplicate, and the
         # white 'Use for /swarm' was a rounded box where the Inbox's primary is a pill. The name's own borderless

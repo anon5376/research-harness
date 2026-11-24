@@ -440,7 +440,6 @@ input[type="checkbox"] { accent-color: var(--on); margin: 0; }
 /* every log card opens on the Output row's terminal glyph, so the cards read as one component */
 .out .head h2 { display: flex; align-items: center; gap: 10px; }
 .out .head h2 > .ic { flex: none; color: var(--faint); }
-.livetag { display: inline-flex; align-items: center; gap: 6px; font: 12px var(--ui); color: var(--accent); }
 .out .head .lines { margin-left: auto; color: var(--faint); }
 pre.log, pre.peek { margin: 0; padding: 12px 14px; font-size: 13px; line-height: 20px; color: var(--muted);
   white-space: pre-wrap; overflow: auto; max-height: 420px; outline: none; }
@@ -1699,11 +1698,6 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .worked pre.log[data-follow] { max-height: min(460px, max(240px, calc(100dvh - 300px))); }
 /* The fold's chevron sits in the 14px icon slot, so its words line up with the status rows'. */
 :is(.worked, .file-preview) > summary::before { width: 14px; text-align: center; }
-/* live is the running blue, breathing */
-.livetag { color: var(--muted); }
-.livetag .dot { background: var(--ef-accent); animation: rh-breathe 1.6s ease-in-out infinite; }
-@keyframes rh-breathe { 50% { opacity: .4; } }
-@media (prefers-reduced-motion: reduce) { .livetag .dot { animation: none; } }
 /* The page you are on is lit in the sidebar, the composer's page too. */
 body[data-open="new"] .ws .new-job { background: rgb(255 255 255 / .09); }
 /* The palette names where a job runs only when it is not this Mac. */

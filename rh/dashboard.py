@@ -2923,7 +2923,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
     # a card holds its whole output in its own foot; a page without one folds the output here
     if (not finished or log) and not card and not (swarming and not log):
-        tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
+        # the status line says Running with its moving ring; the fold names only its output (r32 F8)
         last = "last " if opened.get("log_cut") else ""
         # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing; a
         # live log shows whole in the open fold, so its count stays only for a kept tail ('last N') or a log long
@@ -2940,7 +2940,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         count = f'<span class="lines mono">{_text(line_count)}</span>' if log and line_count else ""
         # folded, a glyph where a file row's icon sits starts 'Output' on the file name's edge
         work_summary = (f'<summary class="worked-summary">{_ic("term", True)}'
-                        f'<span class="worked-output">{output_status}</span>{tag}{count}</summary>')
+                        f'<span class="worked-output">{output_status}</span>{count}</summary>')
         # past its limit and quiet a while, the card says its output stopped, a hairline under its last line
         quiet_row = (f'<span class="log-quiet">no output since {_text(_clock(opened["log_at"], now))}'
                      f'{_SEP_HTML}{_when(opened["log_at"], now, "j:quiet", short=True)}</span>'

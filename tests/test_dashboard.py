@@ -2472,6 +2472,17 @@ class DashboardTest(unittest.TestCase):
         shell = pane(dashboard.render(opened(live_view(), "live-job", kind="local-shell"), NOW, token=TOKEN))
         self.assertIn('<p class="job-result" data-region="job-result"', shell)
 
+    def test_a_running_job_says_running_once(self):
+        # r32 F8: the status line said 'Running' with its moving ring, and 34px below the Output fold said it again
+        # with a breathing blue dot and 'live'. One running signal: the fold names only its output.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["log"] = "step 1\n"
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        fold = re.search(r'<summary class="worked-summary">.*?</summary>', page, re.S).group(0)
+        self.assertNotIn("live", text(fold).lower())
+        self.assertNotIn("livetag", page + dashboard.STYLE)
+        self.assertRegex(text(re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)), "Running")
+
     def test_a_running_job_with_no_output_yet_shows_its_output_card_waiting(self):
         # r31 F6: an empty log was two bare lines saying one thing twice ('No output received yet' over 'The worker
         # has not produced output yet.') above an empty band. A running job's output is one card, so the empty one

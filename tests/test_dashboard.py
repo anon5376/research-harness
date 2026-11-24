@@ -2103,6 +2103,28 @@ class DashboardTest(unittest.TestCase):
         # Positive control: #777 on white is just under the floor.
         self.assertLess(contrast("#777777", "#ffffff"), 4.5)
 
+    def test_the_type_scale_has_no_half_pixel_step(self):
+        # A 12.5px size beside 12px reads as drift, not a level: any declaration or shorthand still carrying
+        # 12.5px, a rule that lost its size in the fold to 12px, or the log card's comment naming the old size
+        # must fail.
+        self.assertNotIn("12.5px", dashboard.STYLE)
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for sel, spec in (
+            ("input.mono, textarea.mono", "font-size: 12px"),
+            ('.mode-tabs [role="tab"]', "font: 500 12px/1 var(--ui)"),
+            (".op-edit input.mono", "font: 12px var(--mono)"),
+            (".swarm-note", "font-size: 12px; line-height: 18px"),
+            ('.swarm-judge input[type="text"]', "font-size: 12px"),
+            (".who-status", "font-size: 12px; font-weight: 400"),
+            (".lt-m", "font-size: 12px"),
+        ):
+            with self.subTest(selector=sel):
+                self.assertIn(spec, rule(sel))
+        # the empty-box Run again pill's selector opens three other rules; the font lives in the one that
+        # also sizes it to its word
+        self.assertIn("border-radius: 14px; font: 500 12px var(--ui)", dashboard.STYLE)
+        self.assertIn("12px on 21px", dashboard.STYLE)  # the running log card's comment
+
     def test_all_text_fields_are_present_and_escaped(self):
         # Any unescaped or silently omitted visible string field must fail.
         # A known state, kind or scope is shown in plain words; an unknown one is shown as the harness gave it.

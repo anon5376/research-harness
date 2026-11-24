@@ -171,7 +171,7 @@ input[type="text"], textarea { display: block; width: 100%; margin-top: 4px; pad
   border: 1px solid var(--control); border-radius: var(--r-control); color: var(--text); font-size: 14px; line-height: 20px;
   outline: none; transition: border-color .12s; }
 input[type="text"]:focus, textarea:focus { border-color: var(--faint); }
-input.mono, textarea.mono { font-size: 12.5px; }
+input.mono, textarea.mono { font-size: 12px; }
 textarea { resize: vertical; }
 ::placeholder { color: var(--faint); opacity: 1; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
@@ -1043,7 +1043,7 @@ dialog.settings:has(.settings-body.scrolled) header::after {
 .mode-tabs { position: relative; display: grid; grid-template-columns: 1fr 1fr; height: 32px; padding: 3px;
   border-radius: 10px; background: rgb(0 0 0 / .28);
   box-shadow: inset 0 1px 2px rgb(0 0 0 / .35), inset 0 0 0 1px rgb(255 255 255 / .05); }
-.mode-tabs [role="tab"] { position: relative; z-index: 1; border-radius: 7px; font: 500 12.5px/1 var(--ui);
+.mode-tabs [role="tab"] { position: relative; z-index: 1; border-radius: 7px; font: 500 12px/1 var(--ui);
   color: rgb(255 255 255 / .55); transition: color .15s; }
 .mode-tabs [role="tab"]:hover { color: rgb(255 255 255 / .85); }
 .mode-tabs [role="tab"][aria-selected="true"] { color: #fff; }
@@ -1248,7 +1248,7 @@ html.lg-on[data-live-app] .app > .side.side { border: 0; border-radius: 0;
 .op-hint { margin: 0; font-size: 12px; line-height: 16px; color: rgb(255 255 255 / .45); }
 .op-edit input[type="text"] { width: 100%; height: 32px; padding: 0 10px; border-radius: 8px;
   border: 1px solid rgb(255 255 255 / .1); background: rgb(0 0 0 / .25); color: var(--text); font-size: 13px; }
-.op-edit input.mono { font: 12.5px var(--mono); }
+.op-edit input.mono { font: 12px var(--mono); }
 .op-edit input[type="text"]::placeholder { color: rgb(255 255 255 / .3); }
 .op-edit input[type="text"]:focus { outline: none; border-color: rgb(255 255 255 / .28); }
 .segs { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1680,7 +1680,7 @@ html[data-live-app] .jd-dock::before { content: ""; position: absolute; left: 0;
 .jd-scroll.scrolled { -webkit-mask-image: linear-gradient(transparent, #000 28px); mask-image: linear-gradient(transparent, #000 28px); }
 /* An empty reply box runs the job again, which can cost hours: its button says so instead of looking like send. */
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] { width: auto; padding: 0 12px;
-  border-radius: 14px; font: 500 12.5px var(--ui); }
+  border-radius: 14px; font: 500 12px var(--ui); }
 .composer:has(.c-text:placeholder-shown) .compose-tools .send[data-followup] .ic { display: none; }
 /* its glyph is the Inbox's Run again one, before the word, so the action reads as one thing everywhere */
 .compose-tools .send[data-followup] .ic.again { display: none; }
@@ -1890,7 +1890,7 @@ details.out-more > summary:focus-visible { outline: 2px solid var(--accent); out
 details.out-more:not([open]) .om-hide, details.out-more[open] .om-show { display: none; }
 details.out-more > pre.log.ended { max-height: 420px; }
 /* A running log is the page: it fills the height left under its status, newest lines pinned at the bottom, and
-   wears the same card as Last output and Where it stopped (header row inside, 12.5px on 21px). */
+   wears the same card as Last output and Where it stopped (header row inside, 12px on 21px). */
 .worked:has(> .worked-content > pre.log[data-follow]) { border: 1px solid var(--border); border-radius: var(--r-card);
   background: rgb(255 255 255 / .025); overflow: hidden; }
 .worked:has(> .worked-content > pre.log[data-follow]) > summary { width: auto; height: 38px; pointer-events: none; cursor: default; padding: 0 14px 0 10px;
@@ -1996,7 +1996,7 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .slash-n { color: var(--text); }
 .slash-d { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swarm-note { display: flex; align-items: center; gap: 12px; min-width: 0; margin: 0 0 0 4px; color: var(--muted);
-  font-size: 12.5px; line-height: 18px; }
+  font-size: 12px; line-height: 18px; }
 .swarm-note > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swarm-note[hidden], .slash[hidden] { display: none; }
 @media (max-width: 600px) { .slash-o { grid-template-columns: 16px auto; } .slash-d { grid-column: 2; white-space: normal; } }
@@ -2078,7 +2078,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 /* a run's diff size, as the added and removed counts a patch preview shows */
 .sw-d { display: inline-flex; gap: 6px; margin-left: 10px; font: 12px var(--mono); font-variant-numeric: tabular-nums; }
 .swarm-judge input[type="text"] { min-width: 0; width: 60%; height: 32px; padding: 0 10px; border: 1px solid var(--border);
-  border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12.5px; }
+  border-radius: 8px; background: var(--surface); color: var(--text); font-size: 12px; }
 .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 16px 112px 236px minmax(0, 1fr); }
 @media (max-width: 600px) { .sw-runs:has(.sw-c) .sw-run { grid-template-columns: 16px minmax(0, 1fr) auto; } }
 .swarm-judge select { width: 60%; max-width: none; }
@@ -2175,7 +2175,7 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
 /* An agent turn opens with one line: who answered on the left, how the run went at the far right. */
 .msg.ai .who:has(.who-status) { display: flex; align-items: center; }
 .who-status { display: inline-flex; align-items: center; gap: 6px; min-width: 0;
-  color: var(--faint); font-size: 12.5px; font-weight: 400; white-space: nowrap; }
+  color: var(--faint); font-size: 12px; font-weight: 400; white-space: nowrap; }
 /* The run's state follows the model on its line, inside the reading column, as a shell page leads with it. */
 .who-status::before { content: "·"; margin: 0; color: var(--faint); }
 .who-status .job-result-status { color: var(--faint); }
@@ -2797,7 +2797,7 @@ html.tm-dragging, html.tm-dragging * { cursor: grabbing !important; }
 a.lt-n:hover { background: var(--active); }
 .lt-r { font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lt-r .mono { color: var(--faint); font-size: 10.5px; }
-.lt-m { grid-column: 1 / -1; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden;
+.lt-m { grid-column: 1 / -1; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden;
   text-overflow: ellipsis; margin-top: 3px; }
 .lt-t { grid-column: 1 / -1; font-size: 11px; color: var(--muted); min-height: 15px; font-variant-numeric: tabular-nums; }
 .lt-n.s-wait { opacity: .62; }

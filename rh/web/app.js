@@ -1272,12 +1272,14 @@ function dropTop(trigger, h) {
   return innerHeight - box.bottom - 16 >= h || r.top < h + 14 ? box.bottom + 8 : r.top - h - 8;
 }
 // </place>
-// Options opens inside what shows of the page: over its button when the composer sits low, as it does docked at the
-// foot of the sea, and scrolling within itself when even that side is short.
+// Options and the /swarm popover open inside what shows of the page: over the button when the composer sits low, as
+// it does docked at the foot of the sea, and scrolling within themselves when even that side is short. (A phone's
+// swarm popover is a sheet above the composer, set by rh.css, so it is left alone.)
 function place(d) {
-  const body = $('.opts-body', d), s = $('summary', d);
+  const body = $(':scope > .opts-body, :scope > .swarm-pop', d), s = $('summary', d);
   if (!body || !s) return;
-  body.classList.remove('up', 'right'); body.style.maxHeight = '';
+  body.classList.remove('up', 'right'); body.style.maxHeight = ''; body.style.top = ''; body.style.bottom = '';
+  if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;
   let room = { top: 0, right: innerWidth, bottom: innerHeight, left: 0 };
   for (let el = d.parentElement; el && el !== document.body; el = el.parentElement) {
     if (getComputedStyle(el).overflow === 'visible') continue;
@@ -1285,11 +1287,18 @@ function place(d) {
     room = { top: Math.max(room.top, b.top), right: Math.min(room.right, b.right), bottom: Math.min(room.bottom, b.bottom),
       left: Math.max(room.left, b.left) };
   }
-  const p = placePop(s.getBoundingClientRect(), room, body.offsetWidth, body.scrollHeight, 6);
+  // by a composer it floats the same 8px clear of the glass as the model and effort popovers, above or below, so the
+  // room on each side is measured from the glass's edge, not the button's
+  const box = d.closest('.composer'), cb = body.offsetParent, at = s.getBoundingClientRect();
+  const glass = box && box.getBoundingClientRect();
+  const from = glass ? {top: Math.min(at.top, glass.top - 2), right: at.right, left: at.left,
+                        bottom: Math.max(at.bottom, glass.bottom + 2)} : at;
+  const p = placePop(from, room, body.offsetWidth, body.scrollHeight, 6);
   body.classList.toggle('up', p.up); body.classList.toggle('right', p.right); body.style.maxHeight = p.max + 'px';
-  // below a composer it floats the same 8px clear of the glass as the model and effort popovers
-  const box = d.closest('.composer'), cb = body.offsetParent;
-  body.style.top = !p.up && box && cb ? (box.getBoundingClientRect().bottom + 8 - cb.getBoundingClientRect().top) + 'px' : '';
+  if (glass && cb) {  // top and bottom count from the positioned box's padding edge, inside its border
+    const c = cb.getBoundingClientRect(), inTop = c.top + cb.clientTop, inBottom = inTop + cb.clientHeight;
+    if (p.up) body.style.bottom = (inBottom - glass.top + 8) + 'px'; else body.style.top = (glass.bottom + 8 - inTop) + 'px';
+  }
 }
 function closeOthers(keep) { for (const d of $$('details.act[open]')) if (d !== keep) d.open = false; }
 const field = d => $('input:not([type="hidden"]):not([type="checkbox"]), textarea', d);
@@ -1300,7 +1309,7 @@ function activate(c) {
 }
 document.addEventListener('toggle', e => {
   const d = e.target;
-  if (d instanceof HTMLDetailsElement && d.open && d.matches('.opts')) place(d);
+  if (d instanceof HTMLDetailsElement && d.open && d.matches('.opts, .swarm-pick')) place(d);
   if (!(d instanceof HTMLDetailsElement) || !d.open || !d.matches('.act')) return;
   closeOthers(d);
   // Opened by mouse or key, the popover's first field takes focus so typing lands in it.

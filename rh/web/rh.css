@@ -2182,6 +2182,9 @@ a.sw-run:hover { background: rgb(255 255 255 / .04); }
   background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38);
   box-shadow: 0 16px 40px rgb(0 0 0 / .55); color: var(--text); font-size: 13px; }
 .swarm-pop > .swarm-models { display: block; }
+/* app.js's place() caps it to what shows of the window and opens it over the line when the room is above */
+.swarm-pop.up { top: auto; bottom: calc(100% + 8px); }
+.swarm-pop.right { left: auto; right: -8px; }
 .swarm-pop > .swarm-opts { display: block; margin-top: 6px; }
 @media (prefers-reduced-motion: reduce) { .swarm-pick > summary { transition: none; } }
 /* On a phone the models line is a glyph-only ghost button beside the chip — its words stay hidden, the chevron
@@ -2684,3 +2687,10 @@ a.lt-n:hover { background: var(--active); }
   .tm-canvas[data-shape] .tn.drop-after::after { left: 10px; right: 10px; bottom: -6px; top: auto; width: auto; height: 3px; }
 }
 dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
+
+/* A composer's Options menu is solid, as its swarm popover is: inside the glass composer its own blur never reaches the
+   page, so any see-through let the title behind it show crisp through the rows. (Specific enough to beat the docks'
+   shared popover fill.) */
+.composer details.opts > .opts-body, :root[data-live-app] .composer details.opts > .opts-body {
+  background: linear-gradient(180deg, rgb(170 185 235 / .05), rgb(170 185 235 / .015)), rgb(19 24 38);
+  -webkit-backdrop-filter: none; backdrop-filter: none; }

@@ -3300,7 +3300,19 @@ console.log(JSON.stringify([
         self.assertIn("top: auto", rule(".opts-body.up"))
         self.assertIn("right: 0", rule(".opts-body.right"))
         self.assertIn("overflow: auto", rule(".opts-body"))
-        self.assertIn("d.matches('.opts')) place(d);", dashboard.SCRIPT)
+        self.assertIn("d.matches('.opts, .swarm-pick')) place(d);", dashboard.SCRIPT)
+        # r27 F5: the /swarm popover ran past the window's foot, its last ticks cut mid-glyph. It is placed as Options
+        # is: capped to what shows, over the line when the room is above, measured from the composer's glass, and a
+        # phone's sheet above the composer is left to rh.css.
+        self.assertIn("$(':scope > .opts-body, :scope > .swarm-pop', d)", dashboard.SCRIPT)
+        self.assertIn("bottom: Math.max(at.bottom, glass.bottom + 2)", dashboard.SCRIPT)
+        self.assertIn("if (p.up) body.style.bottom = (inBottom - glass.top + 8) + 'px'", dashboard.SCRIPT)
+        # inside the glass composer a popover's own blur never reaches the page, so see-through let the title show
+        solid = dashboard.STYLE.split(":root[data-live-app] .composer details.opts > .opts-body {", 1)[1].split("}", 1)[0]
+        self.assertRegex(re.search(r"background:[^;]*", solid).group(0), r"rgb\(19 24 38\)$")
+        self.assertIn("if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;", dashboard.SCRIPT)
+        self.assertIn("bottom: calc(100% + 8px)", rule(".swarm-pop.up"))
+        self.assertIn("top: auto", rule(".swarm-pop.up"))
 
     def test_test_when_done_wears_a_flask_not_a_tick(self):
         # The row's value often reads "Don't test", and everywhere else a tick means done or passed. The row

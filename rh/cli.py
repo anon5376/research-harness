@@ -238,10 +238,25 @@ def cmd_mcp(args, cfg):
 
 def _recent(jobs, now):
     """The ten newest ended jobs, plus any failure from the last day: it still waits on a person, so newer ends
-    (a swarm alone ends three) must not push it out of the status view and off the app's Needs you."""
+    must not push it out of the status view and off the app's Needs you. Ended jobs that share a spec goal (a
+    /swarm's runs and its judge) count once toward the ten: the slot is taken when the goal's newest ended job
+    is reached, and every job of a goal that got a slot is kept, so the app still folds the swarm into its
+    judge row."""
     ended = sorted((j for j in jobs if j["state"] in TERMINAL), key=lambda j: -j["updated"])
-    return [j for n, j in enumerate(ended) if n < 10 or (j["state"] not in ("done", "cancelled")
-                                                         and now - j["updated"] < 86400)]
+    kept, slots, goals = [], 0, set()
+    for j in ended:
+        goal = (j.get("spec") or {}).get("goal")
+        if goal and goal in goals:
+            kept.append(j)
+            continue
+        if slots < 10:
+            slots += 1
+            if goal:
+                goals.add(goal)
+            kept.append(j)
+        elif j["state"] not in ("done", "cancelled") and now - j["updated"] < 86400:
+            kept.append(j)
+    return kept
 
 
 def cmd_status(args, cfg):

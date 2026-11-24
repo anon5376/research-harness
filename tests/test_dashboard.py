@@ -1132,6 +1132,29 @@ class ListsTest(unittest.TestCase):
         drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
         self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
 
+    def test_the_team_dialog_is_the_apps_own_glass(self):
+        # r27 F3/F7/F8/F11/F14/F2: the teams dialog was a grey stock panel with a white 'In use' pill, amber 'Not in
+        # policy' chips (amber means 'needs you'), a count that included the lead's plan, the same subtitle on every
+        # team, and a help paragraph where an agent's settings belong.
+        from rh import hierarchy
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        glass = dashboard.STYLE.split("/* Neutral glass lets the artwork supply its colour. */", 1)[1].split("}", 1)[0]
+        self.assertIn("dialog.team", glass)
+        self.assertNotIn("background", rule("dialog.team"))
+        self.assertNotIn("background", rule(".tm-use"))
+        lock = rule(".tn-tag.lock")
+        self.assertNotIn("amber", lock)
+        self.assertNotIn("amber", rule(".tm-mchip.off"))
+        self.assertNotIn("dashed", rule(".tm-new"))
+        self.assertNotIn("'tn-tag warn'", dashboard.SCRIPT)
+        self.assertIn("agents: workers + judges", dashboard.SCRIPT)
+        self.assertIn("if (p && !(T.sel && find(p.tree, T.sel))) T.sel = p.tree._k;", dashboard.SCRIPT)
+        free, astra = hierarchy.defaults()["presets"]
+        self.assertEqual(dashboard._team_size(astra), 7)  # lead, two managers, four workers; the plan is the lead's
+        self.assertEqual(dashboard._team_sub(free), "SWE-2 Max · 3 layers")
+        self.assertEqual(dashboard._team_sub(astra), "GPT-6.2 Astra · 3 layers")
+        self.assertEqual(dashboard._team_sub({**free, "shape": "horizontal"}), "SWE-2 Max · side by side")
+
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the

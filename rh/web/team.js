@@ -63,7 +63,8 @@ function census(p) {
     workers = all(p.tree); judges = 1; depth = workers ? 1 : 0;
   } else walk(p.tree, 0);
   if (!p.tree.children.length) workers = 0;
-  return {workers, judges, depth, jobs: workers + judges + (p.plan ? 1 : 0)};
+  // jobs counts the lead's plan as its own run (the swarm's limit); agents counts who is drawn, as the owner reads it
+  return {workers, judges, depth, agents: workers + judges, jobs: workers + judges + (p.plan ? 1 : 0)};
 }
 function fits(p) {
   const c = census(p);
@@ -125,7 +126,12 @@ function line(el, text) {
   if (at < 0) { el.textContent = text; return; }
   el.replaceChildren(text.slice(0, at), h('span', {class: 'sep'}, '·'), text.slice(at + 3));
 }
-function size(p) { return census(p).jobs; }
+function size(p) { return census(p).agents; }
+// a team's subtitle, the same in the list, the composer and the page: its lead's model, then its layers or 'side by side'
+function sub(p) {
+  const c = census(p);
+  return `${model(p.tree.model).name} · ${p.shape === 'vertical' ? c.depth + 1 + ' layers' : 'side by side'}`;
+}
 function sync() {
   const d = T.data, active = d.presets.active;
   const named = active === 'quick' ? 'Quick swarm' : (presets().find(p => p.id === active) || {}).name || 'Quick swarm';
@@ -135,7 +141,7 @@ function sync() {
     const form = pick.querySelector('input')?.getAttribute('form') || 'team-pick-f';
     const quickSays = pick.querySelector('input[value="quick"]')?.dataset.says || '';
     const rows = [['quick', 'Quick swarm', 'the models ticked below', quickSays]].concat(presets().map(p =>
-      [p.id, p.name, `${size(p)} agents, ${p.shape === 'vertical' ? 'layers' : 'side by side'}`,
+      [p.id, p.name, sub(p),
        `${p.name} · ${size(p)} agents`]));
     const edit = pick.querySelector('[data-team-open]');
     pick.replaceChildren(...rows.map(([id, name, sub, says]) => h('label', {class: 'swarm-team'},
@@ -172,13 +178,14 @@ function card(p, n, depth) {
   const tags = [];
   if (n.effort) tags.push(h('span', {class: 'tn-tag'}, WORDS[n.effort] || n.effort));
   if ((n.count || 1) > 1) tags.push(h('span', {class: 'tn-tag tn-n'}, '×' + n.count));
-  if (m.off) tags.push(h('span', {class: 'tn-tag warn', title: 'The model policy does not allow this model yet: the swarm will not start'}, 'Not in policy'));
+  // amber means 'needs you' in this app: a blocked model is a neutral mark with a lock, and its card steps back
+  if (m.off) tags.push(h('span', {class: 'tn-tag lock', title: 'The model policy does not allow this model yet: the swarm will not start'}, 'Not in policy'));
   else if (m.plan) tags.push(h('span', {class: 'tn-tag plan', title: 'Runs on Codex: uses your ChatGPT plan'}, 'ChatGPT plan'));
-  if (!scope && !m.off) tags.push(h('span', {class: 'tn-tag warn', title: `${role.name} does not list this model`}, 'Outside role'));
+  if (!scope && !m.off) tags.push(h('span', {class: 'tn-tag note', title: `${role.name} does not list this model`}, 'Outside role'));
   const lead = depth === 0;
   const what = lead ? (p.plan ? 'Plans, then judges' : 'Judges') : n.children.length && p.shape === 'vertical' ? 'Judges its team'
     : 'Works';
-  return h('div', {class: 'tn' + (T.sel === n._k ? ' sel' : '') + (lead ? ' root' : ''), 'data-k': n._k, tabindex: 0,
+  return h('div', {class: 'tn' + (T.sel === n._k ? ' sel' : '') + (lead ? ' root' : '') + (m.off ? ' off' : ''), 'data-k': n._k, tabindex: 0,
                    role: 'button', 'aria-pressed': T.sel === n._k ? 'true' : 'false',
                    'aria-label': `${role.name}, ${m.name}${lead ? ', the lead' : ''}. ${what}.`},
     h('span', {class: 'tn-ic', html: icon(m.prov)}),
@@ -222,7 +229,7 @@ function fit(box) {
   if (!tt) return;
   tt.style.zoom = '';
   if (OUTLINE.matches) return;
-  const room = box.clientWidth - 36, need = tt.scrollWidth;
+  const room = box.clientWidth - 24, need = tt.scrollWidth;  // the canvas's 12px sides
   tt.style.zoom = need > room ? String(Math.max(.62, room / need)) : '';
 }
 addEventListener('resize', () => { const box = $('#team[open] .tm-canvas'); if (box) fit(box); });
@@ -236,7 +243,7 @@ function list() {
   const q = d.quickNames;
   return h('nav', {class: 'tm-list', 'aria-label': 'Teams'},
     row('quick', 'Quick swarm', q.models.length ? `${q.models.join(', ')} · judge ${q.judge}` : 'the ticks in Settings'),
-    presets().map(p => row(p.id, p.name, `${size(p)} agents · ${p.shape === 'vertical' ? 'layers' : 'side by side'}`)),
+    presets().map(p => row(p.id, p.name, sub(p))),
     h('button', {type: 'button', class: 'tm-new', 'data-new': ''}, '+ New team'));
 }
 
@@ -262,7 +269,7 @@ function bar(p) {
     h('label', {class: 'tm-tog'}, h('input', {type: 'checkbox', 'data-plan': '', checked: !!p.plan}),
       h('span', {class: 'tm-sw', 'aria-hidden': 'true'}), 'Lead plans first'),
     h('span', {class: 'tm-census mono', 'aria-live': 'polite'},
-      `${c.jobs} agents · ${c.workers} work · ${p.shape === 'vertical' ? c.depth + 1 + ' layers' : 'peers'}`),
+      `${c.agents} agents · ${c.workers} ${c.workers === 1 ? 'worker' : 'workers'} · ${p.shape === 'vertical' ? c.depth + 1 + ' layers' : 'peers'}`),
     h('span', {class: 'tm-bar-r'},
       h('button', {type: 'button', class: 'btn small' + (active ? ' quiet' : ' primary'), 'data-use': p.id, disabled: active},
         active ? 'In use for /swarm' : 'Use for /swarm'),
@@ -352,6 +359,8 @@ function render(animate) {
   const body = $('[data-team-body]');
   if (!body || !data()) return;
   const p = preset();
+  // a team opens with its lead picked, so the inspector shows an agent to edit rather than a help paragraph
+  if (p && !(T.sel && find(p.tree, T.sel))) T.sel = p.tree._k;
   const scroll = $('.tm-work', body)?.scrollTop || 0;
   const main = p ? h('section', {class: 'tm-main'}, bar(p),
     h('div', {class: 'tm-work'}, h('div', {class: 'tm-stage'}, palette(p), h('div', {class: 'tm-canvas lines-in'})), roles(p)),

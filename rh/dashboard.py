@@ -1857,7 +1857,7 @@ def _swarm_note(ctx):
             data = _team_presets(swarm)
             # each radio carries its line as plain text, 'A · B'; team.js puts the dot back as the page draws it
             rows = [("quick", "Quick swarm", "the models ticked below", f"{ran} · {judged}")] + [
-                (p["id"], p["name"], f'{_team_size(p)} agents, {"layers" if p.get("shape") == "vertical" else "side by side"}',
+                (p["id"], p["name"], _team_sub(p),
                  f'{p["name"]} · {_team_size(p)} agents')
                 for p in data["presets"] if isinstance(p, dict) and p.get("id")]
             teams = ('<div class="swarm-teams" role="radiogroup" aria-label="Team" data-team-pick>'
@@ -3193,13 +3193,24 @@ def _active_team(swarm):
     return next((p for p in data["presets"] if isinstance(p, dict) and p.get("id") == data.get("active")), None)
 
 
+def _team_sub(preset):
+    """A team's subtitle, as team.js's sub() writes it: its lead's model, then its layers or 'side by side'."""
+    def depth(node):
+        kids = node.get("children") if isinstance(node, dict) and isinstance(node.get("children"), list) else []
+        return 1 + max((depth(k) for k in kids if isinstance(k, dict)), default=0)
+    tree = preset.get("tree") if isinstance(preset.get("tree"), dict) else {}
+    lead = _names([tree["model"]]) if isinstance(tree.get("model"), str) and tree["model"] else "No lead"
+    return f'{lead} · {f"{depth(tree)} layers" if preset.get("shape") == "vertical" else "side by side"}'
+
+
 def _team_size(preset):
-    """How many agents a preset runs: every copy of every node, plus the lead's plan."""
+    """How many agents a preset has, as its editor draws them: every copy of every node. The lead's plan is the lead's
+    own first pass, so it is not counted again."""
     def count(node):
         kids = node.get("children") if isinstance(node, dict) and isinstance(node.get("children"), list) else []
         return sum(max(1, int(k.get("count") or 1)) * count(k) for k in kids if isinstance(k, dict)) + 1
     tree = preset.get("tree") if isinstance(preset.get("tree"), dict) else {}
-    return count(tree) + (1 if preset.get("plan") else 0)
+    return count(tree)
 
 
 def _team_dialog(ctx):

@@ -2427,8 +2427,12 @@ class DashboardTest(unittest.TestCase):
         for t3 in ("square", "steer", "queue"):
             self.assertNotIn(t3, dashboard._ICONS)
         self.assertNotIn("var(--red-bg); color: var(--red);\n  box-shadow: inset 0 0 0 1px var(--red-line)", dashboard.STYLE)
-        badges = re.findall(r'<div class="user-message steered"><span class="um-badge" title="([^"]+)">.*?Steer</span>'
-                            r'<span class="um-t">([^<]*)</span>', page)
+        # r31 F10: the mark is a caption under the bubble, set like a timestamp, not a label line inside it
+        badges = [(tip, said) for said, tip in re.findall(
+            r'<div class="talk-steered"><div class="user-message"><span class="um-t">([^<]*)</span></div>'
+            r'<p class="um-cap" title="([^"]+)">.*?Steered</p></div>', page)]
+        self.assertNotIn("um-badge", page + dashboard.STYLE)
+        self.assertIn(".s-j-said { display: flex; flex-direction: column; gap: 8px;", dashboard.STYLE)
         self.assertEqual(badges, [("Steered the active turn", "use tabs"),
                                   ("Originally queued, then promoted to steer the active turn", "lint it")])
         up = re.search(r'data-region="j-up-next".*?</section>', page, re.S).group(0)

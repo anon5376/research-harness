@@ -1718,8 +1718,8 @@ _STEER_TIPS = {"steer": "Steered the active turn",
 
 def _talk_said(talk):
     """What the owner said to a running agent, as their messages in the chat (T3 Code's timeline): a steer that
-    landed wears a Steer badge, a queued message that started its turn reads plainly, one the run ended before
-    says so. What still waits is Up next, not here; a removed one is gone."""
+    landed has a 'Steered' caption under it, set like a timestamp; a queued message that started its turn reads
+    plainly; one the run ended before says so. What still waits is Up next, not here; a removed one is gone."""
     out = []
     for m in talk:
         state = m.get("state")
@@ -1732,8 +1732,8 @@ def _talk_said(talk):
         said = f'<span class="um-t">{_text(_reflow(str(m.get("text") or "")))}</span>'
         if state == "steered":
             tip = _STEER_TIPS.get(m.get("mode"), _STEER_TIPS["steer"])
-            out.append(f'<div class="user-message steered"><span class="um-badge" title="{tip}">{_ic("up", True)}'
-                       f'Steer</span>{said}</div>')
+            out.append(f'<div class="talk-steered"><div class="user-message">{said}</div>'
+                       f'<p class="um-cap" title="{tip}">{_ic("up", True)}Steered</p></div>')
         elif state == "dropped":
             out.append(f'<div class="talk-dropped"><div class="user-message">{said}</div>'
                        '<p class="um-note">Not sent: the run ended first</p></div>')

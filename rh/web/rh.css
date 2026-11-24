@@ -2903,10 +2903,11 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .un-b:is(:hover, :focus-visible) { color: var(--text); }
 .up-next:not(.all) .un-more { display: none; }
 .un-all { margin: 2px 0 0 4px; padding: 2px 4px; color: var(--faint); font-size: 12px; }
-.s-j-said { display: flex; flex-direction: column; gap: 12px; }
+/* the owner's messages are one group: 8px apart; a steer's mark is a caption under the bubble (r31 F10) */
+.s-j-said { display: flex; flex-direction: column; gap: 8px; }
 .s-j-said:empty { display: none; }
-.user-message.steered .um-badge { display: flex; align-items: center; gap: 4px; margin-bottom: 2px;
-  color: var(--muted); font-size: 11px; }
+.um-cap { display: flex; align-items: center; justify-content: flex-end; gap: 3px; margin: 3px 4px 0 0;
+  color: var(--faint); font-size: 11px; }
 .user-message.sending, .talk-dropped .user-message { opacity: .6; }
 .um-note { margin: 4px 0 0; color: var(--faint); font-size: 12px; text-align: right; }
 .talk-stop { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }

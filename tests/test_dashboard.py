@@ -2649,6 +2649,36 @@ class DashboardTest(unittest.TestCase):
         pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
         self.assertNotIn('data-press="w"', pal)
 
+    def test_a_swarm_runs_page_says_it_is_one_run_of_a_swarm(self):
+        # A run opened straight (from the judge's Swarm card or a shared link) must say it is one run of a swarm,
+        # what the judge made of it, and give the way back; a page that stays silent leaves no path to the swarm.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "g"}
+        view["recent"] = [*view["recent"], *({"id": j, "state": "done", "paused": False, "detail": "",
+                                             "external_id": None} for j in ("g.w1", "g.w2", "g.best"))]
+        view["meta"] = {**view.get("meta", {}),
+                        "g.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "g.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "g.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                   "kept": "w2", "after": ["g.w1", "g.w2"]}}
+        head = lambda page: re.search(r'data-region="j-head".*?</section>', page, re.S).group(0)  # noqa: E731
+        page = dashboard.render(opened(view, "g.w1", kind="local-shell", state="done"), NOW, token=TOKEN)
+        self.assertIn("Run 1 of 2 in a swarm", head(page))
+        self.assertIn("Not kept", head(page))
+        self.assertIn('href="/job/g.best?t=', head(page))
+        page = dashboard.render(opened(view, "g.w2", kind="local-shell", state="done"), NOW, token=TOKEN)
+        self.assertIn("Run 2 of 2 in a swarm", head(page))
+        self.assertIn("Kept", head(page))
+        self.assertNotIn("Not kept", head(page))
+        self.assertIn('href="/job/g.best?t=', head(page))
+        # a job that is no swarm's run shows no swarm line, and the static page says the same without the link
+        page = dashboard.render(opened(view, "finished-job", kind="local-shell", state="done"), NOW, token=TOKEN)
+        self.assertNotIn("in a swarm", page)
+        page = dashboard.render(opened(view, "g.w2", kind="local-shell", state="done"), NOW)
+        self.assertIn("Run 2 of 2 in a swarm", head(page))
+        self.assertNotIn('href="/job/g.best', head(page))
+
     def test_a_composer_keeps_its_draft_across_pages(self):
         # A reply typed on one job and left for another came back empty, since the page swap renders a new form
         # (T3 Code keeps each thread's draft). Each composer saves its words per page and box as they are typed,

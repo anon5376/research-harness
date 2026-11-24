@@ -2254,13 +2254,13 @@ def _stops(ctx, entry):
     return _region("j-stops", '<h2>Pauses and stops</h2>' + "".join(parts), "section")
 
 
-def _job_head(title, kind, tip=""):
+def _job_head(title, kind, tip="", sub=""):
     """A compact, persistent title, named as the sidebar names the job (its id when another listed job shares its
-    name, with the name on hover), and its worker crumb."""
+    name, with the name on hover), and its worker crumb; `sub` is a second quiet line under it, when one is due."""
     tip = f' title="{_text(tip)}"' if tip else ""
     body = ('<div class="jd-head-in">'
             f'<h1 tabindex="-1" data-clear{tip}>{_text(title)}</h1>'
-            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p></div>')
+            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p>{sub}</div>')
     return _region("j-head", body, "section", "jd-head")
 
 
@@ -2346,6 +2346,39 @@ def _swarm_again(ctx, runs):
             '<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button></form>')
 
 
+def _swarm_verdict(kept, rid, runs):
+    """One run's verdict under its judge's kept: "kept" for the run the judge kept whole, "lost" for one it passed
+    over for a sibling, "combined" when the judge merged the runs and "none" when it kept none of them; "" before
+    the judge has finished."""
+    if kept in (rid, rid.rsplit(".", 1)[-1]):
+        return "kept"
+    if kept == "combined":
+        return "combined"
+    if kept:
+        return "lost" if kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "none"
+    return ""
+
+
+def _swarm_run(ctx, jid):
+    """A swarm run's own line under its page's head: 'Run 1 of 2 in a swarm', the judge's verdict on it — 'Kept',
+    'Not kept' or 'Combined' once the judge has finished, 'Judge still working' before — and, on a live page, a
+    way back to the swarm. "" for a job that is no swarm's run."""
+    judge, runs = next(((j, rs) for j, rs in (ctx.get("swarms") or {}).items() if jid in rs), ("", []))
+    if not judge:
+        return ""
+    m = ctx["meta"].get(judge)
+    kept = str(m.get("kept") or "") if isinstance(m, dict) else ""
+    verdict = _swarm_verdict(kept, jid, runs)
+    word = {"kept": "Kept", "combined": "Combined"}.get(verdict)
+    if not word:
+        ended = ctx["states"].get(judge) in ("done", "cancelled", *_FAILED)
+        word = "Not kept" if verdict or ended else "Judge still working"
+    line = f"Run {runs.index(jid) + 1} of {len(runs)} in a swarm{_SEP_HTML}{word}"
+    if ctx["live"]:
+        line += f'{_SEP_HTML}<a href="{_url(ctx, "/job/" + judge)}" data-nav>Open swarm ›</a>'
+    return f'<p class="job-swarm" data-clear>{line}</p>'
+
+
 def _swarm_card(ctx, runs, checks=None, kept=None, stats=None, final=None):
     """A swarm's runs on its judge's page: each run's model, state, time, diff size, check verdict and first
     answer line, linked to its page; a judge that combined them gets the kept work's check verdict in the head."""
@@ -2376,10 +2409,10 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None, final=None):
                  f'<span class="sw-s">{_SEP_HTML.join(x for x in (state, took) if x)}</span>'
                  + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))
         short = rid.rsplit(".", 1)[-1]
-        won = kept in (rid, short)
-        cls = "sw-run kept" if won else "sw-run lost" if kept and kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "sw-run"
+        mark = _swarm_verdict(kept, rid, runs)
+        cls = f"sw-run {mark}" if mark in ("kept", "lost") else "sw-run"
         inner = f'<span class="sw-id mono">{_text(short)}</span>' + inner + (
-            '<span class="sw-k">Kept</span>' if won else "")
+            '<span class="sw-k">Kept</span>' if mark == "kept" else "")
         # a row opens its run, and says so as 'Show ›' does
         go = f'<span class="sw-go" aria-hidden="true">{_ic("chev", True)}</span>'
         live = " data-live" if st in _LIVE else ""  # a run at work wears a slow sheen (rh.css)
@@ -2490,7 +2523,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
         acts.append(_cancel(ctx, jid, stalled=state == "stalled"))
     named = entry.label if entry.label != entry.title else (_lead(spec)[0] or jid)  # as the sidebar names it
-    head = _job_head(jid, kind, entry.label) if entry.dup else _job_head(named, kind)
+    swarm = _swarm_run(ctx, jid)  # a swarm's own run says so on a quiet line under its head
+    head = _job_head(jid, kind, entry.label, swarm) if entry.dup else _job_head(named, kind, sub=swarm)
     work = []
     if feedback:
         work.append(feedback)

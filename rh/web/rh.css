@@ -842,6 +842,13 @@ body[data-background="off"] { --art: none; }
 .detail .jd-head.echo :is(h1, .job-worker) { opacity: 0; }
 @media (prefers-reduced-motion: reduce) { .detail .jd-head-in > :is(h1, .job-worker) { transition: none; } }
 .job-worker { flex: none; color: var(--faint); font-size: 12px; }
+/* A swarm run's own line under its head: which run it was and what the judge made of it, in the worker crumb's
+   quiet grey, then a link back to the swarm. It takes a second row only where one is there to take. */
+.detail .jd-head-in:has(.job-swarm) { flex-wrap: wrap; }
+.job-swarm { flex: 0 0 100%; margin: 0 0 8px; color: var(--faint); font-size: 12px; }
+.job-swarm a { color: var(--text); text-decoration: underline; text-decoration-color: var(--control);
+  text-underline-offset: 3px; }
+.job-swarm a:hover { text-decoration-color: var(--accent); }
 .jd-scroll { flex: 1; min-height: 0; overflow: auto; }
 .detail .jd-body { width: 100%; max-width: 768px; gap: 24px; margin: 0 auto; padding: 16px 24px 24px; font-size: 13px; }
 .job-result { display: flex; align-items: center; gap: 8px; font-size: 13px; font-variant-numeric: tabular-nums; }

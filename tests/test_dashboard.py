@@ -1675,6 +1675,11 @@ class ListsTest(unittest.TestCase):
         self.assertIn("font-size: 12px", rule(".q-who.q-sub"))
         # r16 F5: Show all shares the meta line, and on a desktop the id is left to the selected row beside it
         self.assertIn("grid-column: 2; grid-row: 2;", rule(".q-head .q-head-in > .q-title.user-message + .ask-more"))
+        # r31 F11: folded, Show all sat on the fourth line's end, over the words fading out under it ('Chec  Show
+        # all'). It keeps its place on the meta line folded too, and the fourth line fades out downward instead
+        self.assertNotIn(".q-title.user-message:not(.whole) + .ask-more {", dashboard.STYLE)
+        self.assertIn("mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent)", fold)
+        self.assertNotIn("to right", fold)
         self.assertIn(".q-who.q-sub > .mono:last-child", dashboard.STYLE)
         short = re.search(r'data-region="ib-detail".*?</section>',
                           inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
@@ -4160,16 +4165,16 @@ console.log(JSON.stringify({
 
     def test_the_inbox_title_reads_as_a_title_and_its_show_all_ends_its_last_line(self):
         # r29 F4: the brief set as a 17px semibold slab, heavier than any title in the app, with its Show all 90px
-        # below where the text fades, must fail. Folded, Show all sits at the end of the fourth line, in its fade.
+        # below where the text fades, must fail. r31 F11: at the fourth line's end it sat over the words fading out,
+        # so folded or not, Show all is on the meta line right under the title, 8px below where the text fades.
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         title = rule(".q-head .q-title.user-message")
         self.assertIn("500 16px/24px", title)
         self.assertNotIn("600 17px", title)
         self.assertIn("font-weight: 600", rule(".q-head .q-title.user-message::first-line"))
-        folded = rule(".q-head .q-head-in > .q-title.user-message:not(.whole) + .ask-more")
-        for want in ("grid-row: 1", "align-self: end", "justify-self: end"):
-            self.assertIn(want, folded)
-        self.assertIn("13px", folded)
+        placed = rule(".q-head .q-head-in > .q-title.user-message + .ask-more")
+        for want in ("grid-column: 2", "grid-row: 2", "margin: 8px 0 0"):
+            self.assertIn(want, placed)
 
     def test_the_folder_title_reads_as_a_control_and_its_menu_names_the_default(self):
         # r30 F1, F7: a folder picker drawn as a bare page title (no glyph, a faint chevron, no hover shape), rows
@@ -4981,8 +4986,8 @@ console.log('ECHO TITLE PASSED');
         for spec in ("-webkit-line-clamp: unset", "overflow: visible", "max-height: none"):
             self.assertIn(spec, bubble)
         self.assertIn("b.querySelector(':scope > .um-t') || b", dashboard.SCRIPT)
-        # the Inbox title fades the same way, gone by where its Show all starts at the end of that line
-        self.assertIn("linear-gradient(to right, #000 calc(100% - 150px), transparent calc(100% - 68px))",
+        # the Inbox title fades too, its last line downward, with its Show all on the meta line under it (r31 F11)
+        self.assertIn("linear-gradient(to bottom, #000 calc(100% - 1lh), transparent)",
                       rule(".q-head .q-title.user-message:has(+ .ask-more):not(.whole)"))
 
     def test_a_files_preview_toggle_sits_on_its_row(self):

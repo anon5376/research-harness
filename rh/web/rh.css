@@ -607,10 +607,6 @@ a.ib:hover { background: var(--surface); }
 .q-head-in:has(> .ask-more) > .q-title { grid-column: 1 / -1; grid-row: 1; }
 .q-head-in:has(> .ask-more) > .q-sub { grid-column: 1; grid-row: 2; }
 .q-head .q-head-in > .q-title.user-message + .ask-more { grid-column: 2; grid-row: 2; margin: 8px 0 0; }
-/* folded, Show all ends the fourth line, in the fade it opens, at the title box's right edge (600px at most) */
-.q-head .q-head-in > .q-title.user-message:not(.whole) + .ask-more { grid-column: 1 / -1; grid-row: 1;
-  justify-self: end; align-self: end; margin: 0 max(0px, calc(100% - 600px)) 0 0; font-size: 13px; line-height: 24px;
-  position: relative; z-index: 1; }  /* above the masked title, which paints in a layer of its own */
 @media (min-width: 601px) {
   .q-who.q-sub > .mono:last-child, .q-who.q-sub > .sep:nth-last-child(2) { display: none; }
 }
@@ -2344,15 +2340,13 @@ body:has(> .mp-pop, > .ef-pop) .compose-hint, .c-strip:has(.opts[open], .slash:n
 .q-fu blockquote { margin: 0; font-size: 14px; line-height: 20px; color: #c9ced8; display: -webkit-box; -webkit-box-orient: vertical;
   -webkit-line-clamp: 3; overflow: hidden; overflow-wrap: anywhere; }
 .q-head .q-title.user-message:has(+ .ask-more) { padding: 0; border-bottom: 0; }
-/* Folded, its fourth line fades out at the end rather than taking the clamp's "…" (which after a full stop reads
-   "...."), and is gone by the time Show all starts at that end, so the two never touch */
+/* Folded, its fourth line fades out downward rather than taking the clamp's "…" (which after a full stop reads
+   "...."); Show all keeps its place on the meta line under it, clear of the words (r31 F11: on the fourth line's
+   end it sat over the words fading out) */
 .q-head .q-title.user-message:has(+ .ask-more):not(.whole) { padding: 0; border-bottom: 0; display: block;
   -webkit-line-clamp: unset; max-height: 4lh; overflow: hidden; white-space: normal;
-  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 150px), transparent calc(100% - 68px));
-  mask-image: linear-gradient(#000, #000), linear-gradient(to right, #000 calc(100% - 150px), transparent calc(100% - 68px));
-  -webkit-mask-size: 100% calc(100% - 1lh), 100% 1lh; mask-size: 100% calc(100% - 1lh), 100% 1lh;
-  -webkit-mask-position: top, bottom; mask-position: top, bottom;
-  -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat; }
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent); }
 .q-head .q-title.user-message + .ask-more { position: static; display: block; width: fit-content; height: auto;
   margin: 6px max(0px, calc(100% - 600px)) 0 auto; padding: 0; color: var(--faint); }
 /* Header actions are the app's pills, as Run again and Open job are; a phone draws them as glass squares. */

@@ -784,6 +784,63 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             self.assertIsNone(led.job("do-more.best"))
 
+    def test_a_hierarchy_preset_runs_a_plan_then_teams_then_their_managers_then_the_lead(self):
+        # Settings > Swarm presets: a vertical team. The lead plans first; each worker reads that plan and runs with
+        # its role's system prompt; each manager judges its own team; the lead judges the managers and lists the plan,
+        # so its page shows the whole team.
+        from rh import hierarchy
+        config.set_value("swarm.check", "python3 -I tests/run.py", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        w = lambda m: {"role": "worker", "model": m, "effort": "", "count": 1, "children": []}  # noqa: E731
+        team = {"id": "deep", "name": "Deep", "shape": "vertical", "plan": True, "roles": hierarchy._roles(),
+                "tree": {"role": "lead", "model": "claude-opus-5-5", "effort": "max", "count": 1, "children": [
+                    {"role": "manager", "model": "swe-2-max", "effort": "", "count": 1,
+                     "children": [w("swe-2-max"), w("swe-2-flash-high")]},
+                    {"role": "manager", "model": "swe-2-high", "effort": "", "count": 1, "children": [w("swe-2-high")]}]}}
+        code, _, _ = self.request("/settings/swarm-presets", {"data": json.dumps({"active": "deep", "presets": [team]})})
+        self.assertEqual(code, 204)
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
+            code, headers, _ = self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Fix the typo"})
+        self.assertEqual(code, 303)
+        self.assertEqual(headers["Location"], "/job/fix-the-typo.best?t=" + self.token)
+        with self.ledger() as led:
+            jobs = {j["id"].split(".", 1)[1]: j["spec"] for j in led.jobs() if j["id"].startswith("fix-the-typo.")}
+        self.assertEqual(sorted(jobs), ["best", "m1", "m2", "plan", "w1", "w2", "w3"])
+        home = Path(self.cfg["home"])
+        arg = lambda spec, flag: [spec["command"][i + 1] for i, a in enumerate(spec["command"]) if a == flag]  # noqa: E731
+        self.assertTrue(jobs["plan"]["brief"].startswith(hierarchy.PLAN_ASK))
+        self.assertIn("lead agent", arg(jobs["plan"], "--role")[0])
+        for wid in ("w1", "w2", "w3"):
+            self.assertEqual(jobs[wid]["after"], ["fix-the-typo.plan"])
+            self.assertEqual(arg(jobs[wid], "--context"), [str(home / "runs" / "fix-the-typo.plan" / "answer.md")])
+            self.assertIn("worker agent", arg(jobs[wid], "--role")[0])
+            self.assertEqual(jobs[wid]["brief"], "Fix the typo")
+        self.assertEqual((jobs["m1"]["after"], jobs["m1"]["after_any"]), (["fix-the-typo.w1", "fix-the-typo.w2"], True))
+        self.assertEqual(arg(jobs["m1"], "--swarm"), [str(home / "runs" / f"fix-the-typo.{x}") for x in ("w1", "w2")])
+        self.assertEqual(arg(jobs["m1"], "--check"), ["python3 -I tests/run.py"])
+        self.assertEqual(jobs["m2"]["after"], ["fix-the-typo.w3"])
+        self.assertEqual(jobs["best"]["after"], ["fix-the-typo.plan", "fix-the-typo.m1", "fix-the-typo.m2"])
+        self.assertEqual(arg(jobs["best"], "--swarm"), [str(home / "runs" / f"fix-the-typo.{x}") for x in ("m1", "m2")])
+        self.assertEqual(jobs["best"]["command"][2:4], ["claude", "/usr/local/bin/claude"])
+        self.assertEqual(arg(jobs["best"], "--effort"), ["max"])
+        # a preset that names a model the policy does not allow starts nothing, and says which agent
+        code, _, _ = self.request("/settings/swarm-active", {"active": "astra-lead"})
+        self.assertEqual(code, 400)  # 'deep' replaced the defaults, so there is no such preset
+        hierarchy.save(self.cfg["home"], {**hierarchy.defaults(), "active": "astra-lead"})
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
+            code, headers, _ = self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Do more"})
+        self.assertEqual((code, headers["Location"].split("?")[0]), (303, "/new"))  # back to the form, with why
+        self.assertIn("swarm preset Astra lead: its lead (plan): model gpt-6.2-astra is not in the model policy",
+                      html.unescape(self.request("/new")[2]))
+        with self.ledger() as led:
+            self.assertIsNone(led.job("do-more.best"))
+        # bad presets are refused with the reason, as plain text
+        code, headers, page = self.request("/settings/swarm-presets", {"data": json.dumps({"presets": [{"id": "Bad"}]})})
+        self.assertEqual((code, headers["Content-Type"]), (400, "text/plain; charset=utf-8"))
+        self.assertIn("bad preset id", page)
+        code, _, _ = self.request("/settings/swarm-active", {"active": "quick"})
+        self.assertEqual((code, hierarchy.load(self.cfg["home"])["active"]), (204, "quick"))
+
     def test_the_swarm_again_form_posts_a_goal_add(self):
         # The ended Swarm card's 'Swarm again' form posts the fields its page renders: the composer's /job post
         # with '/swarm ' back in front of the runs' brief. Through _action they must send `rh goal add` of the

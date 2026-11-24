@@ -202,6 +202,41 @@ class NoResultTest(unittest.TestCase):
         self.assertEqual(collect.collect_local(shell, 66, Path("."))[0], "failed")
 
 
+class RoleAndPlanTest(unittest.TestCase):
+    """A hierarchy swarm gives each agent its role's system prompt and, under a planning lead, the lead's plan."""
+
+    @unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script")
+    def test_the_role_leads_and_the_plan_follows_the_request(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: shutil.rmtree(tmp, ignore_errors=True))
+        repo, out = tmp / "repo", tmp / "out"
+        for d in (repo, out):
+            d.mkdir()
+        git(repo, "init", "--quiet")
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
+        git(repo, "add", "a.txt")
+        git(repo, "commit", "--quiet", "-m", "start")
+        plan = tmp / "plan.md"
+        plan.write_text("Split it in two; check the parser first.\n", encoding="utf-8")
+        fake = fake_agent(tmp, "claude", "import sys\nprint(sys.argv[sys.argv.index('-p') + 1])\n")
+        cwd = Path.cwd()
+        try:
+            os.chdir(out)
+            code = agent.main(["agent.py", "claude", str(fake), str(repo), "Fix the parser.",
+                               "--role", "You are a worker agent.", "--context", str(plan)])
+            said = (out / "answer.md").read_text(encoding="utf-8")
+            self.assertEqual(code, 0)
+            self.assertTrue(said.startswith("You are a worker agent.\n\n---\n\nFix the parser."), said)
+            self.assertIn("lead's plan", said)
+            self.assertIn("Split it in two; check the parser first.", said)
+            # a plan that was never written leaves the brief as it is
+            plan.unlink()
+            agent.main(["agent.py", "claude", str(fake), str(repo), "Fix the parser.", "--context", str(plan)])
+            self.assertEqual((out / "answer.md").read_text(encoding="utf-8").strip(), "Fix the parser.")
+        finally:
+            os.chdir(cwd)
+
+
 class SwarmJudgeTest(unittest.TestCase):
     @unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script and its prompt's newlines "
                                           "cannot pass through a .cmd")

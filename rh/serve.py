@@ -23,7 +23,7 @@ import tomllib
 import urllib.parse
 import webbrowser
 
-from rh import chat, cli, config, contract, dashboard, gitx, goals, lease, oslock, seats
+from rh import chat, cli, config, contract, dashboard, gitx, goals, hierarchy, lease, oslock, seats
 from rh.ledger import TERMINAL, Ledger
 from rh.supervisor import AlreadyRunning, single_instance
 
@@ -46,7 +46,8 @@ _ART = {f"/{name}": dashboard._WEB / name for name in dashboard.BACKGROUNDS}
 _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance", "/settings/swarm")
+          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance", "/settings/swarm",
+          "/settings/swarm-presets", "/settings/swarm-active")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -276,37 +277,68 @@ def swarm_choices():
     return [m for table in ("devin-local", "claude-local") for m in policy.get(table, {}).get("models", [])]
 
 
+def team_models():
+    """Every model a swarm preset may name, as [(model, provider)], in the policy's order: Devin's free SWE-2 models,
+    Claude's, then Codex's, which spend the ChatGPT plan and say so in the editor."""
+    policy_path = config.REPO / "policy.toml"
+    policy = contract.load_policy(policy_path) if policy_path.is_file() else {}
+    return [(m, prov) for table, prov in (("devin-local", "devin"), ("claude-local", "claude"), ("codex-cloud", "codex"))
+            for m in policy.get(table, {}).get("models", [])]
+
+
+def _swarm_view(cfg):
+    """What the page needs to draw the swarm: the quick ticks, the presets and which is active, and the models."""
+    return {**cfg.get("swarm", {}), "choices": swarm_choices(), "presets": hierarchy.load(cfg["home"]),
+            "team_models": team_models()}
+
+
 def _swarm_file(cfg, draft):
     """A /swarm from the composer as a goal file, (judge id, TOML): one run of the brief on each model Settings
     names (w1, w2, ...), then a judge that waits until they have all ended and keeps the best work of those that
     finished, as its own answer and changes."""
     swarm = cfg.get("swarm", {})
-    models = [m for m in swarm.get("models", []) if m][:SWARM_MAX]
-    judge = swarm.get("judge") or (models[0] if models else "")
-    if not models:
-        raise ValueError("no swarm models are set: choose them in Settings")
-    allowed = swarm_choices()
-    if bad := [m for m in (*models, judge) if m not in allowed]:
-        raise ValueError(f"swarm model {bad[0]} is not a Claude or Devin model in the policy: allowed {allowed}")
+    presets = hierarchy.load(cfg["home"])
+    preset = hierarchy.find(presets, presets["active"])
+    if preset is None:  # the quick swarm: the models Settings ticks, Claude's and Devin's only
+        models = [m for m in swarm.get("models", []) if m][:SWARM_MAX]
+        judge = swarm.get("judge") or (models[0] if models else "")
+        if not models:
+            raise ValueError("no swarm models are set: choose them in Settings")
+        allowed = swarm_choices()
+        if bad := [m for m in (*models, judge) if m not in allowed]:
+            raise ValueError(f"swarm model {bad[0]} is not a Claude or Devin model in the policy: allowed {allowed}")
+        preset = hierarchy.quick(models, judge)
     gid, home = draft["id"].strip(), Path(cfg["home"])
+    planned = hierarchy.plan(preset)
+    lead_plans = any(p["plan"] for p in planned)
     jobs = []
-    for n, model in enumerate(models, 1):
-        _, text = _job_file({**draft, "id": f"w{n}", "kind": "local-agent", "model": model, "effort": ""},
-                            cfg["repo"]["path"])
-        jobs.append(tomllib.loads(text))
-    _, text = _job_file({**draft, "id": "best", "kind": "local-agent", "model": judge, "effort": ""},
-                        cfg["repo"]["path"])
-    best = tomllib.loads(text)
-    for job in jobs:
-        best["command"] += ["--swarm", str(home / "runs" / f"{gid}.{job['id']}")]
-    if swarm.get("check"):  # the harness checks each run's changes before the judge reads them
-        best["command"] += ["--check", str(swarm["check"])]
-    best["after"], best["after_any"] = [job["id"] for job in jobs], True
+    for p in planned:
+        brief = hierarchy.PLAN_ASK + "\n\n" + draft["brief"] if p["plan"] else draft["brief"]
+        try:
+            _, text = _job_file({**draft, "id": p["id"], "kind": "local-agent", "model": p["model"],
+                                 "effort": p["effort"], "brief": brief}, cfg["repo"]["path"])
+        except ValueError as e:
+            raise ValueError(f"swarm preset {preset['name']}: its {p['name'].lower()} ({p['id']}): {e}") from None
+        job = tomllib.loads(text)
+        if p["prompt"]:
+            job["command"] += ["--role", p["prompt"]]
+        if lead_plans and p["work"] and not p["plan"]:  # every agent that works reads its lead's plan first
+            job["command"] += ["--context", str(home / "runs" / f"{gid}.plan" / "answer.md")]
+            job["after"] = ["plan"]
+        if p["team"]:  # a judge: it compares its team's work, each checked first when Settings names a check
+            for t in p["team"]:
+                job["command"] += ["--swarm", str(home / "runs" / f"{gid}.{t}")]
+            if swarm.get("check"):
+                job["command"] += ["--check", str(swarm["check"])]
+            # the lead also lists the plan, so its page shows the whole team
+            job["after"] = (["plan"] if lead_plans and p["id"] == "best" else []) + list(p["team"])
+            job["after_any"] = True
+        jobs.append(job)
     said = draft["brief"].replace("\r\n", "\n").strip()
     card = {"said": said, "form": "the chosen run's answer and its changes",
             "done_when": "the judge has kept the best work of the runs that finished"}
     text = (_toml({"id": gid}) + "\n[card]\n" + _toml(card)
-            + "".join("\n[[jobs]]\n" + _toml(job) for job in (*jobs, best)))
+            + "".join("\n[[jobs]]\n" + _toml(job) for job in jobs))
     for raw in goals.expand(tomllib.loads(text)):
         contract.normalize(raw)
     return f"{gid}.best", text
@@ -1016,7 +1048,7 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             view.update({"can_add": True, "compose": draft or {}, "meta": meta, "settled": settled,
                          "background": cfg.get("appearance", {}).get("background"),
                          "tint": cfg.get("appearance", {}).get("tint"),
-                         "swarm": {**cfg.get("swarm", {}), "choices": swarm_choices()},
+                         "swarm": _swarm_view(cfg),
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
                          "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
                          **(extra or {})})
@@ -1247,6 +1279,25 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                         self.reply(500)
                         return
                     cfg.setdefault("appearance", {}).update(chosen)
+                self.reply(204)
+                return
+            if path in ("/settings/swarm-presets", "/settings/swarm-active"):
+                with _CLI_LOCK:
+                    try:
+                        if path == "/settings/swarm-presets":  # the editor sends the whole set as JSON
+                            data = json.loads(_value(fields, "data") or "{}")
+                        else:
+                            data = {**hierarchy.load(cfg["home"]), "active": _value(fields, "active")}
+                        stored = hierarchy.save(cfg["home"], data)
+                    except (ValueError, TypeError) as e:
+                        self.reply(400, str(e)[:300], content_type="text/plain; charset=utf-8")
+                        return
+                    except OSError:
+                        self.reply(500)
+                        return
+                if path == "/settings/swarm-active" and stored["active"] != (_value(fields, "active") or hierarchy.QUICK):
+                    self.reply(400, "no such preset", content_type="text/plain; charset=utf-8")
+                    return
                 self.reply(204)
                 return
             if path == "/settings/swarm":

@@ -216,6 +216,16 @@ def _judge(work, runs, brief, repo=None, check="", out=None, scratch=None):
             "why in two or three sentences.\n\nThe request:\n\n" + brief)
 
 
+def _with_plan(brief, plan):
+    """A swarm agent's brief with its lead's plan after it, read when the agent starts (the plan is written by then)."""
+    try:
+        text = plan.read_text(encoding="utf-8", errors="replace").strip()[:20000]
+    except OSError:
+        return brief
+    return brief + ("\n\nYour lead's plan for this request (follow it; where it is wrong, say so):\n\n" + text
+                    if text else "")
+
+
 def main(argv):
     provider, binary, repo, brief, extra = argv[1], argv[2], argv[3], argv[4], argv[5:]
     prior, runs = None, []
@@ -226,6 +236,13 @@ def main(argv):
         at = extra.index("--swarm")
         runs.append(Path(extra[at + 1]))
         extra = extra[:at] + extra[at + 2:]
+    role, plan = "", None
+    if "--role" in extra[:-1]:  # a swarm agent's system prompt: who it is in the team
+        at = extra.index("--role")
+        role, extra = extra[at + 1], extra[:at] + extra[at + 2:]
+    if "--context" in extra[:-1]:  # a swarm agent's lead's plan, by the path its answer is written to
+        at = extra.index("--context")
+        plan, extra = Path(extra[at + 1]), extra[:at] + extra[at + 2:]
     check = ""
     if "--check" in extra[:-1]:  # a swarm's judge: the command that checks each run's changes first
         at = extra.index("--check")
@@ -235,10 +252,14 @@ def main(argv):
     work = scratch / "repo"
     try:
         subprocess.run(["git", "clone", "--quiet", "--shared", repo, str(work)], check=True)
+        if plan is not None:
+            brief = _with_plan(brief, plan)
         if prior:
             brief = _continue(work, prior, brief)
         if runs:
             brief = _judge(work, runs, brief, repo, check, out, scratch)
+        if role:  # the role leads, apart from the request, so the request reads as the person wrote it
+            brief = f"{role.strip()}\n\n---\n\n{brief}"
         base = subprocess.run(["git", "-C", str(work), "rev-parse", "HEAD"], capture_output=True, text=True,
                               encoding="utf-8", check=True).stdout.strip()
         (out / "base").write_text(base + "\n", encoding="utf-8")  # the commit the changes apply to

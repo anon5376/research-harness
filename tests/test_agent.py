@@ -66,6 +66,39 @@ FAKE = textwrap.dedent('''
 ''')
 
 
+# Claude runs as `claude -p --input-format stream-json --output-format stream-json`, as T3 Code's Agent SDK drives
+# it: the prompt arrives on stdin and the answer leaves as JSON events. A plain stand-in body (one that reads its
+# prompt after -p and prints its answer) runs inside this shim, which hands it the prompt there and turns what it
+# printed into the CLI's events; a body that exits non-zero prints as it is, as the CLI does when it cannot start.
+CLAUDE_SHIM = """import contextlib, io, json, sys
+first = json.loads(sys.stdin.readline())
+content = first["message"]["content"]
+prompt = content if isinstance(content, str) else "".join(b.get("text", "") for b in content if b.get("type") == "text")
+at = sys.argv.index("-p")
+sys.argv[at + 1:at + 1] = [prompt]
+out, code = io.StringIO(), 0
+with contextlib.redirect_stdout(out):
+    try:
+        exec(compile(BODY, "fake", "exec"))
+    except SystemExit as stop:
+        code = stop.code if isinstance(stop.code, int) else (1 if stop.code else 0)
+text = out.getvalue()
+if code:
+    sys.stdout.write(text)
+    sys.exit(code)
+emit = lambda event: print(json.dumps(event), flush=True)
+given = [sys.argv[sys.argv.index(f) + 1] for f in ("--session-id", "--resume") if f in sys.argv]
+emit({"type": "system", "subtype": "init", "session_id": given[0] if given else "fake"})  # as the CLI echoes it
+emit({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}})
+emit({"type": "result", "subtype": "success", "is_error": False, "result": text})
+"""
+
+
+def claude_fake(directory, body):
+    """A stand-in `claude` that speaks stream-json around a plain body (see CLAUDE_SHIM)."""
+    return fake_agent(directory, "claude", CLAUDE_SHIM.replace("BODY", repr(body)))
+
+
 def fake_agent(directory, name, script):
     """Write a stand-in agent as a `#!` script and return it as the binary to run. Windows cannot exec a `#!`
     script, so there the same script gets a .cmd launcher that runs it with this interpreter."""
@@ -144,7 +177,7 @@ class FollowUpTest(unittest.TestCase):
                 "diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1,2 @@\n one\n+two\n", encoding="utf-8")
             git(repo, "commit", "--quiet", "--allow-empty", "-m", "moved on")  # the repo moved since that run
             # A stand-in claude: prints the prompt it got and the file as it found it, then adds line three.
-            fake = fake_agent(tmp, "claude", "import sys, pathlib\np = pathlib.Path('a.txt')\n"
+            fake = claude_fake(tmp, "import sys, pathlib\np = pathlib.Path('a.txt')\n"
                               "print(sys.argv[2]); print('FILE', p.read_text().split())\n"
                               "p.write_text(p.read_text() + 'three\\n')\n")
             cwd = Path.cwd()
@@ -208,7 +241,7 @@ class ResumeTest(unittest.TestCase):
     def test_a_claude_follow_up_resumes_its_own_session_in_the_same_folder(self):
         # A follow-up that starts a new conversation, runs in another folder (Claude keys sessions by folder),
         # re-sends the whole brief and the earlier answer, or loses the earlier changes, must fail.
-        fake = fake_agent(self.tmp, "claude", self.CLAUDE)
+        fake = claude_fake(self.tmp, self.CLAUDE)
         code, first = self.run_in("first", "claude", fake, "Add a line.")
         self.assertEqual(code, 0)
         argv, said = self.argv(first)
@@ -234,7 +267,7 @@ class ResumeTest(unittest.TestCase):
     def test_a_lost_session_falls_back_to_a_replay_of_the_thread(self):
         # A follow-up whose session is gone (expired, another machine) that fails instead of handing off, or a
         # hand-off that drops the earlier ask or answer, must fail.
-        fake = fake_agent(self.tmp, "claude", self.CLAUDE)
+        fake = claude_fake(self.tmp, self.CLAUDE)
         _, first = self.run_in("first", "claude", fake, "Add a line.")
         (first / "answer.md").write_text("I added the line 'more'.\n", encoding="utf-8")
         os.environ["LOSE_SESSION"] = "1"
@@ -264,7 +297,7 @@ class ResumeTest(unittest.TestCase):
                  {"ask": "Second ask.", "answer": "y" * 9000, "provider": "devin"},
                  {"ask": "Third ask.", "answer": "Last answer from Devin.", "provider": "devin"}]
         (devin / "thread.json").write_text(json.dumps(turns))
-        fake = fake_agent(self.tmp, "claude", self.CLAUDE)
+        fake = claude_fake(self.tmp, self.CLAUDE)
         code, then = self.run_in("then", "claude", fake, "First ask: build the parser.\n\nFollow-up: Second ask."
                                  "\n\nFollow-up: Third ask.\n\nFollow-up: Now in Claude.", "--prior", str(devin))
         self.assertEqual(code, 0)
@@ -298,6 +331,129 @@ class ResumeTest(unittest.TestCase):
         self.assertEqual(json.loads((self.tmp / "session.json").read_text())["id"], "s1")
 
 
+@unittest.skipIf(os.name == "nt", "POSIX only: the fake agent is a #! script")
+class LiveTest(unittest.TestCase):
+    # After T3 Code: while an agent works, the owner can still talk to it. A steer joins the running turn (Claude's
+    # priority "now"), a queued message waits for the turn to end and starts the next one in the same session, and
+    # Stop interrupts the turn without killing the session. The app writes them to inbox.jsonl in the job's folder;
+    # the agent says what became of each in inbox-state.json.
+    LIVE = textwrap.dedent("""\
+        import json, os, sys
+        from pathlib import Path
+        log, busy_flag = Path(os.environ["LIVE_LOG"]), Path(os.environ["LIVE_LOG"] + ".busy")
+        def emit(event):
+            print(json.dumps(event), flush=True)
+        def said(message):
+            c = message["message"]["content"]
+            return c if isinstance(c, str) else "".join(b.get("text", "") for b in c if b.get("type") == "text")
+        emit({"type": "system", "subtype": "init", "session_id": "live-1"})
+        busy = None
+        for line in sys.stdin:
+            m = json.loads(line)
+            with log.open("a") as f:
+                f.write(json.dumps(m) + "\\n")
+            if m.get("type") == "control_request":
+                emit({"type": "control_response", "response": {"subtype": "success", "request_id": m["request_id"]}})
+                if m["request"]["subtype"] == "interrupt" and busy:
+                    busy = None
+                    busy_flag.unlink(missing_ok=True)
+                    emit({"type": "result", "subtype": "error_during_execution", "is_error": True, "result": ""})
+                continue
+            text = said(m)
+            if busy is None and text.startswith("slow:"):
+                busy = text
+                emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "working on it"}]}})
+                busy_flag.write_text("1")
+            elif busy is None:
+                emit({"type": "assistant", "message": {"content": [{"type": "text", "text": "heard " + text}]}})
+                emit({"type": "result", "subtype": "success", "is_error": False, "result": "heard " + text})
+            elif m.get("priority") == "now":  # a steer lands in the running turn
+                emit({"type": "result", "subtype": "success", "is_error": False, "result": busy + " then " + text})
+                busy = None
+                busy_flag.unlink(missing_ok=True)
+            else:  # the harness must hold a queued message until the turn ends
+                emit({"type": "result", "subtype": "error", "is_error": True, "result": "queued mid-turn: " + text})
+                busy = None
+        """)
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.repo = self.tmp / "repo"
+        self.repo.mkdir()
+        git(self.repo, "init", "--quiet")
+        (self.repo / "a.txt").write_text("one\n", encoding="utf-8")
+        git(self.repo, "add", "a.txt")
+        git(self.repo, "commit", "--quiet", "-m", "start")
+        self.out = self.tmp / "out"
+        self.out.mkdir()
+        self.log = self.tmp / "sent.jsonl"
+        os.environ["LIVE_LOG"] = str(self.log)
+        self.addCleanup(os.environ.pop, "LIVE_LOG", None)
+        self.fake = fake_agent(self.tmp, "claude", self.LIVE)
+
+    def run_live(self, brief, *messages):
+        """Run the agent; once the fake is mid-turn, the app writes `messages` to the job's inbox, one per 0.3 s."""
+        import threading
+        import time
+
+        def owner():
+            for _ in range(200):
+                if Path(str(self.log) + ".busy").exists():
+                    break
+                time.sleep(.05)
+            for n, (mode, text) in enumerate(messages, 1):
+                with (self.out / "inbox.jsonl").open("a", encoding="utf-8") as f:
+                    f.write(json.dumps({"id": f"m{n}", "mode": mode, "text": text}) + "\n")
+                time.sleep(.3)
+        typist = threading.Thread(target=owner, daemon=True)
+        typist.start()
+        cwd = Path.cwd()
+        try:
+            os.chdir(self.out)
+            with contextlib.redirect_stdout(io.StringIO()):
+                code = agent.main(["agent.py", "claude", str(self.fake), str(self.repo), brief])
+        finally:
+            os.chdir(cwd)
+        typist.join(timeout=5)
+        sent = [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
+        state = json.loads((self.out / "inbox-state.json").read_text(encoding="utf-8")) if messages else {}
+        return code, (self.out / "answer.md").read_text(encoding="utf-8").strip(), sent, state
+
+    def test_a_steer_joins_the_running_turn(self):
+        # A steer held until the turn ends, sent without priority "now", or a job that ends before it lands, fails.
+        code, answer, sent, state = self.run_live("slow: build it", ("steer", "use tabs"))
+        self.assertEqual(code, 0)
+        self.assertEqual(answer, "slow: build it then use tabs")
+        self.assertEqual([m.get("priority") for m in sent if m.get("type") == "user"], [None, "now"])
+        self.assertEqual(state["m1"], "steered")
+
+    def test_a_queued_message_waits_for_the_turn_and_starts_the_next_in_the_same_session(self):
+        # A queued message sent mid-turn, or dropped when the turn ends, or run as a new process, fails.
+        code, answer, sent, state = self.run_live("slow: build it", ("queue", "and the docs"), ("steer", "go"))
+        self.assertEqual(code, 0)
+        self.assertEqual(answer, "heard and the docs")  # the job's answer is its last turn's
+        users = [(m.get("priority"), self.said(m)) for m in sent if m.get("type") == "user"]
+        self.assertEqual(users, [(None, "slow: build it"), ("now", "go"), (None, "and the docs")])
+        self.assertEqual(state, {"m1": "sent", "m2": "steered"})
+        thread = json.loads((self.out / "thread.json").read_text(encoding="utf-8"))
+        self.assertEqual([(t["ask"], t.get("mode")) for t in thread],
+                         [("slow: build it", None), ("go", "steer"), ("and the docs", "queue")])
+        self.assertEqual(thread[-1]["answer"], "heard and the docs")
+
+    def test_stop_interrupts_the_turn_and_the_session_ends_cleanly(self):
+        # Stop that kills the process (no interrupt request), or leaves the job hanging, fails.
+        code, _, sent, state = self.run_live("slow: build it", ("stop", ""))
+        self.assertIn({"subtype": "interrupt"}, [m.get("request") for m in sent if m.get("type") == "control_request"])
+        self.assertEqual(state["m1"], "stopped")
+        self.assertIn(code, (0, agent.NO_RESULT))
+
+    @staticmethod
+    def said(m):
+        c = m["message"]["content"]
+        return c if isinstance(c, str) else "".join(b.get("text", "") for b in c if b.get("type") == "text")
+
+
 class NoResultTest(unittest.TestCase):
     """A run that ends cleanly having said nothing and changed nothing produced nothing: it must end as no_result,
     not done. Ten SWE-2 Max runs at once ended 3 of 7 this way (the turn stopped after a read), and each was done."""
@@ -312,7 +468,7 @@ class NoResultTest(unittest.TestCase):
         (repo / "a.txt").write_text("one\n", encoding="utf-8")
         git(repo, "add", "a.txt")
         git(repo, "commit", "--quiet", "-m", "start")
-        fake = fake_agent(tmp, "claude", script)
+        fake = claude_fake(tmp, script)
         cwd = Path.cwd()
         try:
             os.chdir(out)
@@ -358,7 +514,7 @@ class RoleAndPlanTest(unittest.TestCase):
         git(repo, "commit", "--quiet", "-m", "start")
         plan = tmp / "plan.md"
         plan.write_text("Split it in two; check the parser first.\n", encoding="utf-8")
-        fake = fake_agent(tmp, "claude", "import sys\nprint(sys.argv[sys.argv.index('-p') + 1])\n")
+        fake = claude_fake(tmp, "import sys\nprint(sys.argv[sys.argv.index('-p') + 1])\n")
         cwd = Path.cwd()
         try:
             os.chdir(out)
@@ -399,7 +555,7 @@ class SwarmJudgeTest(unittest.TestCase):
                 (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
                                                    f"@@ {where} @@\n one\n+{word}\n", encoding="utf-8")
             # A stand-in claude: lists what it was shown, then applies the second run's patch.
-            fake = fake_agent(tmp, "claude", "import sys, pathlib, subprocess\nprint(sys.argv[2])\n"
+            fake = claude_fake(tmp, "import sys, pathlib, subprocess\nprint(sys.argv[2])\n"
                               "for p in sorted(pathlib.Path('.swarm').rglob('*')): print('SEEN', p.as_posix())\n"
                               "subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n")
             cwd = Path.cwd()
@@ -448,7 +604,7 @@ class SwarmCheckTest(unittest.TestCase):
                                                    f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
             (runs[2] / "answer.md").write_text("I changed nothing.\n", encoding="utf-8")  # no patch: not checked
             check = f"{sys.executable} -c \"import sys; sys.exit('bad' in open('a.txt').read())\""
-            fake = fake_agent(tmp, "claude", "import sys, pathlib\nprint(sys.argv[2])\n"
+            fake = claude_fake(tmp, "import sys, pathlib\nprint(sys.argv[2])\n"
                               "for p in sorted(pathlib.Path('.swarm').rglob('check.txt')): print('CHECK', p.parent.name, p.read_text().splitlines()[0])\n")
             cwd = Path.cwd()
             try:

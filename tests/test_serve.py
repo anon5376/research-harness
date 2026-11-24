@@ -754,6 +754,43 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             self.assertIsNone(led.job("use-a-banned-model"))
 
+    def test_the_owner_can_steer_queue_or_stop_a_running_claude_job(self):
+        # After T3 Code: a running agent takes messages. A message to a job that is not running, not an agent on
+        # this Mac, or whose agent cannot take one yet, accepted anyway (it would vanish), or a steer or queue with no
+        # words, must fail; so must one that is not written to the job's inbox with its mode and an id to follow.
+        def agent_job(jid, provider):
+            command = [sys.executable, str(Path(dashboard.__file__).with_name("agent.py")), provider,
+                       f"/usr/local/bin/{provider}", str(self.repo), "Build it.", "--model", "m"]
+            with self.ledger() as led:
+                led.add_job({"id": jid, "kind": "local-shell", "write_root": f"runs/{jid}/", "write_paths": [],
+                             "brief": "Build it.", "needs": [], "command": command}, pinned_sha=self.sha)
+                led.set_state(jid, "ready")
+                led.set_state(jid, "launching", route="local-shell")
+                led.set_state(jid, "running")
+            (self.home / "runs" / jid).mkdir(parents=True, exist_ok=True)
+        agent_job("live", "claude")
+        agent_job("codex-live", "codex")
+        self.job("ready")  # web-job: a cloud job, not running
+        sent = []
+        for mode, text in (("steer", "use tabs"), ("queue", "and the docs"), ("stop", "")):
+            code, _, body = self.request("/job/message", {"job": "live", "mode": mode, "text": text})
+            self.assertEqual(code, 200, body)
+            sent.append(json.loads(body)["id"])
+        lines = [json.loads(line) for line in (self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()]
+        self.assertEqual([(m["id"], m["mode"], m["text"]) for m in lines],
+                         list(zip(sent, ("steer", "queue", "stop"), ("use tabs", "and the docs", ""))))
+        self.assertEqual(len(set(sent)), 3)
+        for fields, want in (({"job": "live", "mode": "steer", "text": "  "}, 400),
+                             ({"job": "live", "mode": "shout", "text": "hi"}, 400),
+                             ({"job": "web-job", "mode": "queue", "text": "hi"}, 409),
+                             ({"job": "codex-live", "mode": "steer", "text": "hi"}, 409),
+                             ({"job": "nope", "mode": "queue", "text": "hi"}, 404)):
+            with self.subTest(**fields):
+                self.assertEqual(self.request("/job/message", fields)[0], want)
+        self.assertEqual(len((self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()), 3)
+        self.assertEqual(self.request("/job/message", {"job": "live", "mode": "queue", "text": "x"}, token=False)[0],
+                         403)
+
     def test_a_local_agent_works_in_the_folder_the_composer_picked(self):
         # The owner: "where is working folder selection?" A This Mac job (or swarm) that still works in the configured
         # repository, a folder that is not a git working tree let through, a cloud job sent to a folder the cloud

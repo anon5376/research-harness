@@ -166,19 +166,182 @@ def _keep_session(answer, provider, session, work):
         json.dumps({"provider": provider, "id": session, "cwd": str(work)}) + "\n", encoding="utf-8")
 
 
-def _claude(binary, work, prompt, extra, answer, resume=None):
-    """Run one prompt through `claude -p`: a new conversation under an id this harness picks (as T3 Code
-    pre-allocates one), or with `resume` that stored conversation, given only this turn's words. A conversation
-    Claude cannot find returns LOST."""
+class _Inbox:
+    """What the owner sends a running job: the app appends {id, mode, text} lines to inbox.jsonl in the job's
+    folder (mode steer, queue or stop, as T3 Code's message dispatch), and this says what became of each in
+    inbox-state.json beside it (queued, steered, sent, stopped, dropped), which the job's page reads."""
+
+    def __init__(self, folder):
+        self.path, self.state_path = folder / "inbox.jsonl", folder / "inbox-state.json"
+        self.read, self.state, self.lock = 0, {}, threading.Lock()
+
+    def new(self):
+        with self.lock:
+            try:
+                with self.path.open("rb") as f:
+                    f.seek(self.read)
+                    data = f.read()
+            except OSError:
+                return []
+            whole = data[:data.rfind(b"\n") + 1]  # a line still being written waits for its newline
+            self.read += len(whole)
+        out = []
+        for line in whole.decode("utf-8", "replace").splitlines():
+            try:
+                m = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(m, dict) and m.get("mode") in ("steer", "queue", "stop") and m.get("id"):
+                out.append({"id": str(m["id"]), "mode": m["mode"], "text": str(m.get("text") or "")})
+        return out
+
+    def mark(self, mid, what):
+        with self.lock:
+            self.state[mid] = what
+            tmp = self.state_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(self.state) + "\n", encoding="utf-8")
+            tmp.replace(self.state_path)
+
+
+def _claude(binary, work, prompt, extra, answer, resume=None, thread=None):
+    """Talk to Claude as T3 Code's Agent SDK does: `claude -p` reading and writing stream-json, one process for the
+    whole job, under an id this harness picks (or with `resume`, that stored conversation, given only this turn's
+    words). While a turn runs, the owner's messages arrive through the job's inbox: a steer joins the turn as a
+    priority "now" message, a queued one waits for the turn to end and starts the next, and Stop interrupts the
+    turn. Each turn's answer goes into `thread` ([{ask, answer, mode}], the first entry this run's ask); the last
+    one is the job's answer. A conversation Claude cannot find returns LOST."""
+    import queue
     session = resume or str(uuid.uuid4())
-    argv = [binary, "-p", prompt, *(["--resume", resume] if resume else ["--session-id", session]), *extra,
-            "--permission-mode", "acceptEdits", "--output-format", "text"]
-    with answer.open("w", encoding="utf-8") as said:
-        code = subprocess.run(argv, cwd=work, stdin=subprocess.DEVNULL, stdout=said).returncode
-    if resume and code:
-        print(f"claude: could not resume session {resume} (exit {code})", flush=True)
+    argv = [binary, "-p", "--input-format", "stream-json", "--output-format", "stream-json", "--verbose",
+            *(["--resume", resume] if resume else ["--session-id", session]), *extra,
+            "--permission-mode", "acceptEdits"]
+    proc = subprocess.Popen(argv, cwd=work, text=True, encoding="utf-8", errors="replace", bufsize=1,
+                            stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    events, done = queue.Queue(), threading.Event()
+    inbox = _Inbox(answer.parent)
+    thread = thread if thread is not None else [{"ask": prompt, "answer": ""}]
+
+    def read():
+        for line in proc.stdout:
+            events.put(("out", line))
+        events.put(("end", None))
+
+    def poll():  # the owner's messages, as they arrive
+        while not done.wait(.2):
+            for m in inbox.new():
+                events.put(("msg", m))
+    threading.Thread(target=read, daemon=True).start()
+    threading.Thread(target=poll, daemon=True).start()
+
+    def send(obj):
+        try:
+            proc.stdin.write(json.dumps(obj) + "\n")
+            proc.stdin.flush()
+            return True
+        except (BrokenPipeError, OSError, ValueError):
+            return False
+
+    def user(text, priority=None):
+        return send({"type": "user", "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+                     "parent_tool_use_id": None, **({"priority": priority} if priority else {})})
+
+    busy, at, pending, said, raw, started, stopped, code, last = True, 0, [], [], [], False, False, 0, ""
+
+    def start(m):  # the next turn, in the same session
+        nonlocal busy, at
+        thread.append({"ask": m["text"], "answer": "", "mode": "queue"})
+        at = len(thread) - 1
+        busy = user(m["text"])
+        inbox.mark(m["id"], "sent" if busy else "dropped")
+        print(f"\n→ next: {m['text'][:80]}", flush=True)
+
+    def take(m):
+        nonlocal stopped
+        if m["mode"] == "stop":
+            if busy:
+                stopped = True
+                send({"type": "control_request", "request_id": uuid.uuid4().hex,
+                      "request": {"subtype": "interrupt"}})
+                for held in pending:  # Stop ends the run: what was waiting goes with it
+                    inbox.mark(held["id"], "dropped")
+                pending.clear()
+                print("\n→ stopped by you", flush=True)
+            inbox.mark(m["id"], "stopped")
+        elif m["mode"] == "steer" and busy and not stopped and user(m["text"], "now"):
+            thread.append({"ask": m["text"], "answer": "", "mode": "steer"})
+            inbox.mark(m["id"], "steered")
+            print(f"\n→ steered: {m['text'][:80]}", flush=True)
+        elif busy and not stopped:
+            pending.append(m)
+            inbox.mark(m["id"], "queued")
+        elif not stopped:
+            start(m)
+        else:
+            inbox.mark(m["id"], "dropped")
+
+    if not user(prompt):
+        busy = False
+    while True:
+        kind, item = events.get()
+        if kind == "end":
+            break
+        if kind == "msg":
+            take(item)
+            continue
+        try:
+            ev = json.loads(item)
+        except ValueError:
+            raw.append(item)
+            print(item, end="", flush=True)
+            continue
+        if not isinstance(ev, dict):
+            continue
+        kind = ev.get("type")
+        if kind == "system" and ev.get("subtype") == "init":
+            started = True
+            session = str(ev.get("session_id") or session)
+            _keep_session(answer, "claude", session, work)
+        elif kind == "assistant":
+            for block in (ev.get("message") or {}).get("content") or []:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "text":
+                    said.append(block.get("text", ""))
+                    print(block.get("text", ""), end="", flush=True)
+                elif block.get("type") == "tool_use":
+                    said.clear()  # the answer is what it says after its last tool call
+                    print(f"\n→ {block.get('name') or 'tool'}", flush=True)
+        elif kind == "control_request":  # a question this harness does not answer yet: refuse, never hang
+            send({"type": "control_response", "response": {"subtype": "error", "request_id": ev.get("request_id"),
+                                                           "error": "not supported by research-harness"}})
+        elif kind == "result":
+            text = ev.get("result") if isinstance(ev.get("result"), str) and ev["result"].strip() else "".join(said)
+            last = thread[at]["answer"] = text.strip()
+            code = 1 if ev.get("is_error") and not stopped else 0
+            busy = False
+            said.clear()
+            for m in inbox.new():  # what arrived as the turn ended still counts
+                take(m)
+            if pending and not stopped:
+                start(pending.pop(0))
+            if not busy:
+                try:
+                    proc.stdin.close()  # nothing more to say: the CLI ends the session
+                except OSError:
+                    pass
+    done.set()
+    rc = proc.wait()
+    for m in inbox.new():  # too late for this run: its page offers a follow-up instead
+        inbox.mark(m["id"], "dropped")
+    if resume and rc and not started:
+        print(f"claude: could not resume session {resume} (exit {rc})", flush=True)
         return LOST
-    _keep_session(answer, "claude", session, work)
+    if not started:
+        code = rc or code
+        last = "".join(raw).strip()
+    elif rc and not code and not last:
+        code = rc
+    answer.write_text(last + "\n" if last else "", encoding="utf-8")
     return code
 
 
@@ -332,13 +495,13 @@ def _resumable(prior, provider):
     return session, place
 
 
-def _run(provider, binary, work, prompt, extra, answer, resume):
+def _run(provider, binary, work, prompt, extra, answer, resume, thread=None):
     if provider == "codex":
         return subprocess.run([binary, "exec", "--sandbox", "workspace-write", "--cd", str(work),
                                "--output-last-message", str(answer), *extra, prompt]).returncode
     if provider == "devin":
         return _devin(binary, work, prompt, extra, answer, resume)
-    return _claude(binary, work, prompt, extra, answer, resume)
+    return _claude(binary, work, prompt, extra, answer, resume, thread)
 
 
 def _with_plan(brief, plan):
@@ -403,11 +566,13 @@ def main(argv):
                               encoding="utf-8", check=True).stdout.strip()
         (out / "base").write_text(base + "\n", encoding="utf-8")  # the commit the changes apply to
         answer = out / "answer.md"
-        code = _run(provider, binary, work, prompt, extra, answer, resume and resume["id"])
+        mine = [{"ask": ask, "answer": ""}]  # this run's turns: its ask, then what the owner sends while it runs
+        code = _run(provider, binary, work, prompt, extra, answer, resume and resume["id"], mine)
         if code == LOST:  # the stored conversation is gone (expired, another machine): hand the thread off
             prompt = _handoff(turns, _with_plan(ask, plan) if plan is not None else ask, note)
             print("handed off to a new session instead", flush=True)
-            code = _run(provider, binary, work, prompt, extra, answer, None)
+            mine = [{"ask": ask, "answer": ""}]
+            code = _run(provider, binary, work, prompt, extra, answer, None, mine)
         if answer.exists():  # the copy is deleted below, so its paths in the answer become repo-relative
             text = answer.read_text(encoding="utf-8", errors="replace")
             answer.write_text(text.replace(str(work.resolve()) + "/", "").replace(str(work) + "/", ""),
@@ -445,9 +610,11 @@ def main(argv):
             (out / "swarm-result.json").write_text(json.dumps(result) + "\n", encoding="utf-8")
         print(f"changes.patch: {len(diff.splitlines())} lines" if diff else "no files changed")
         said = answer.read_text(encoding="utf-8", errors="replace").strip() if answer.exists() else ""
+        if len(mine) == 1:  # one turn (Codex and Devin speak once): its answer is the job's
+            mine[0]["answer"] = said
+        who = {"provider": provider, **({"model": model} if model else {})}
         (out / "thread.json").write_text(json.dumps(  # the asks and answers so far, for a later hand-off
-            turns + [{"ask": ask, "answer": said, "provider": provider, **({"model": model} if model else {})}],
-            indent=1) + "\n", encoding="utf-8")
+            turns + [{**t, **who} for t in mine], indent=1) + "\n", encoding="utf-8")
         if code == 0 and not diff and said in ("", SILENT):
             print("no result: the agent ended with no answer and no changes", flush=True)
             code = NO_RESULT

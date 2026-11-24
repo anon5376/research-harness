@@ -47,7 +47,7 @@ _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure 
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
           "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance", "/settings/swarm",
-          "/settings/swarm-presets", "/settings/swarm-active")
+          "/settings/swarm-presets", "/settings/swarm-active", "/job/message")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -202,6 +202,46 @@ def _repository_input(raw, repo):
     if not (root / path).resolve().is_relative_to(root):
         raise ValueError("an input must stay inside the repository")
     return {"path": path.as_posix()}
+
+
+LIVE_AGENTS = ("claude",)  # agents whose runner reads the job's inbox while a turn runs (rh/agent.py)
+_MESSAGE_MAX = 100_000
+
+
+def _message(cfg, fields):
+    """Send a running agent a message, as T3 Code's composer does while a turn runs: steer (joins the turn), queue
+    (starts the next turn when this one ends) or stop (interrupts the turn). It is appended to inbox.jsonl in the
+    job's folder, which the agent reads; returns (status, body), the body {"id"} to follow it by."""
+    jid, mode = _value(fields, "job").strip(), _value(fields, "mode").strip()
+    text = _value(fields, "text").replace("\r\n", "\n")
+    if mode not in ("steer", "queue", "stop"):
+        return 400, "the mode is steer, queue or stop"
+    if mode != "stop" and not text.strip():
+        return 400, "there is nothing to send"
+    if len(text) > _MESSAGE_MAX:
+        return 400, f"a message is at most {_MESSAGE_MAX:,} characters"
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        job = led.job(jid)
+    finally:
+        led.close()
+    if job is None:
+        return 404, f"no job {jid}"
+    spec = job.get("spec") if isinstance(job.get("spec"), dict) else {}
+    agent = dashboard.agent_of(spec.get("command"))
+    if job.get("state") != "running" or not agent:
+        return 409, "only an agent running on this Mac takes a message; reply when it ends"
+    if agent[0] not in LIVE_AGENTS:
+        return 409, f"{agent[0].capitalize()} cannot take a message mid-run yet; reply when it ends"
+    home = Path(cfg["home"]).resolve()
+    folder = (home / str(spec.get("write_root") or "")).resolve()
+    if not folder.is_relative_to(home) or folder == home:
+        return 409, "this job has no folder of its own to send to"
+    folder.mkdir(parents=True, exist_ok=True)
+    mid = secrets.token_hex(6)
+    with _CLI_LOCK, (folder / "inbox.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"id": mid, "mode": mode, "text": text, "at": round(time.time(), 3)}) + "\n")
+    return 200, json.dumps({"id": mid})
 
 
 def _auto_id(cfg, fields):
@@ -1304,6 +1344,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             path = urllib.parse.urlsplit(self.path).path
             if path not in _POSTS or (path == "/checks" and not loop):
                 self.reply(404)
+                return
+            if path == "/job/message":  # a running agent's steer, queued message or Stop, sent from its page
+                code, body = _message(cfg, fields)
+                self.reply(code, body, content_type="application/json" if code == 200 else "text/plain; charset=utf-8")
                 return
             if path == "/appearance":
                 chosen = {}

@@ -886,6 +886,10 @@ class ListsTest(unittest.TestCase):
         self.assertIn("padding: 0", rule(".settings .swarm-opts > .swarm-judge"))
         self.assertIn("border-top: 0", rule(".settings .swarm-opts > .swarm-judge + .swarm-judge"))
         self.assertIn("padding-left: 0", rule(".settings .swarm-opts + .set-hint"))
+        # r24 F7: each box sat ~440px right of its name across a 28px row with nothing joining them; a square box sits
+        # beside its label, as macOS lists put it: box, glyph, name, 8px apart, on the sheet's text edge
+        self.assertIn("order: -1", rule(".settings .swarm-m > .swarm-x"))
+        self.assertIn("gap: 8px", rule(".settings .swarm-m"))
         legend = rule(".settings fieldset:has(.tint-choices) > legend")
         for spec in ("float: left", "line-height: 24px"):
             self.assertIn(spec, legend)

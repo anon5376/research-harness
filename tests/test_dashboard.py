@@ -2422,6 +2422,29 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_repeat_run_says_which_run_it_is_beside_its_time(self):
+        # r33 F4: runs of one chain share the brief's name (r32 F5), so two runs showed as two identical rows and
+        # the user could not tell which they were opening. A repeat run says 'run 2' before its time, in the sidebar
+        # and in the palette; a first run says nothing; an unrelated job with the same brief still shows its id.
+        view = live_view()
+        view["meta"] = {**view.get("meta", {}),
+                        "live-job": {"kind": "local-shell", "brief": "Count the words."},
+                        "web-job": {"kind": "local-shell", "brief": "Count the words.\n\nFollow-up: skip drafts",
+                                    "prior": "live-job"}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        time_of = lambda jid: re.search(rf'<li class="row" data-key="job:{jid}".*?<span class="time mono num">(.*?)</span></a>',  # noqa: E731
+                                        page, re.S).group(1)
+        self.assertIn('<span class="rn">run 2</span>', time_of("web-job"))
+        self.assertNotIn("run", text(time_of("live-job")))
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        row = re.search(r'<a class="p-row[^"]*" role="option" data-id="web-job".*?</a>', pal, re.S).group(0)
+        self.assertIn('<span class="rn">run 2</span>', row)
+        first = re.search(r'<a class="p-row[^"]*" role="option" data-id="live-job".*?</a>', pal, re.S).group(0)
+        self.assertNotIn('class="rn"', first)
+        self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "b"}, "b": {}}), 3)
+        self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "x"}}), 2)  # a gone prior ends the walk
+        self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "a"}}), 2)  # a loop ends it too
+
     def test_a_follow_up_is_named_by_its_brief_not_its_id_before_any_answer(self):
         # r32 F5: a failed job and its follow-up share one brief, so each was marked a duplicate and named by its raw
         # id ('count-words', 'count-words-r2') in the sidebar, the palette and its page's head, while every other row

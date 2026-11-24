@@ -814,6 +814,23 @@ def _chain(meta, jid, all_meta):
     return root, said
 
 
+def _run_no(meta, all_meta):
+    """Which run of its chain a job is: 1 for a first run, one more for each prior the meta still lists."""
+    n, seen = 1, set()
+    while isinstance(meta, dict):
+        prior = str(meta.get("prior") or "")
+        if not prior or prior in seen or not isinstance(all_meta.get(prior), dict):
+            break
+        seen.add(prior)
+        n, meta = n + 1, all_meta[prior]
+    return n
+
+
+def _run_tag(n):
+    """A repeat run's mark before its time (r33 F4): runs of one chain share a name, so 'run 2' tells them apart."""
+    return f'<span class="rn">run {n}</span>' if n > 1 else ""
+
+
 def _size(n):
     if not _number(n):
         return ""
@@ -1011,6 +1028,7 @@ class _Job:
         self.first = min(times, default=float("inf"))
         self.title = _title(self.meta, self.id)
         self.root, self.said = _chain(self.meta, self.id, ctx["meta"])
+        self.run_no = _run_no(self.meta, ctx["meta"])
         # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
         # A follow-up wears the first said of its chain, so its own answer's first line never renames the thread.
         self.label = (self.said if self.state == "done" else "") or self.title
@@ -1130,7 +1148,7 @@ class _Job:
         cells = (f'{_ring("env" if self.native else self.state, hue, self.kind, self.past)}'
                  f'<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
-                 f'<span class="time mono num">{when}</span>')
+                 f'<span class="time mono num">{_run_tag(self.run_no)}{when}</span>')
         link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav{tip}>{cells}</a>' if ctx["live"]
                 else f'<div class="item"{tip}>{cells}</div>')
         do = f'<span class="do">{act}</span>' if act else ""
@@ -3343,8 +3361,9 @@ def _palette(jobs, ctx, keys):
                     + '</span>'
                     # the time the sidebar shows, in a cell of its own on the title line at every width, so every
                     # row's time shares one edge and runs of one brief tell apart at a glance
-                    + (f'<span class="p-when mono num">{_hm(j.since()) if day else _clock(j.since(), ctx["now"])}'
-                       '</span>' if j.since() else "")
+                    + (f'<span class="p-when mono num">{_run_tag(j.run_no)}'
+                       f'{(_hm(j.since()) if day else _clock(j.since(), ctx["now"])) if j.since() else ""}'
+                       '</span>' if j.since() or j.run_no > 1 else "")
                     + f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:

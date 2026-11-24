@@ -2442,6 +2442,18 @@ class DashboardTest(unittest.TestCase):
         for label in ('aria-label="Edit queued message"', 'title="Send as a steer instead"',
                       'aria-label="Remove queued message" title="Remove from queue"'):
             self.assertEqual(up.count(label), 2, label)
+        # r31 F4: the queued words are the content, the actions occasional. The text itself edits (a button), the
+        # actions are icons that show on hover or focus where there is a pointer, and a phone keeps only Remove
+        # (its Steer shows on the row being edited)
+        self.assertEqual(len(re.findall(r'<button type="button" class="un-t" data-q-edit[^>]*>', up)), 2)
+        self.assertNotIn("<span>Steer</span>", up)
+        self.assertEqual(up.count('aria-label="Steer" title="Send as a steer instead"'), 2)
+        hover = dashboard.STYLE.split("@media (hover: hover) and (min-width: 601px) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".un-acts { opacity: 0;", hover)
+        self.assertIn(".un-row:is(:hover, :focus-within, .editing) .un-acts { opacity: 1; }", hover)
+        phone = dashboard.STYLE.split("/* phone queue rows */", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".un-row:not(.editing) .un-b:not([data-q=\"remove\"]) { display: none; }", phone)
+        self.assertIn(".un-row [data-q-edit].un-b { display: none; }", phone)
         # more than three wait: the first three show, then 'n more' (r31 F8: it showed two, and said the count twice)
         view["open"]["inbox"] += [{"id": ids[5], "mode": "queue", "text": "and more", "state": "queued"},
                                   {"id": "9" * 12, "mode": "queue", "text": "and more", "state": "queued"}]

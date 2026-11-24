@@ -1751,12 +1751,13 @@ def _up_next(talk):
     for i, m in enumerate(queued, 1):
         more = " un-more" if n > 3 and i > 3 else ""
         rows.append(f'<li class="un-row{more}" data-id="{_text(m["id"])}" aria-label="Queued message {i} of {n}, not sent">'
-                    f'<span class="un-i">{i}</span><span class="un-t">{_text(str(m.get("text") or ""))}</span>'
+                    f'<span class="un-i">{i}</span><button type="button" class="un-t" data-q-edit title="Edit in the composer">'
+                    f'{_text(str(m.get("text") or ""))}</button>'
                     '<span class="un-editing" hidden>Editing in the composer</span><span class="un-acts">'
                     f'<button type="button" class="ghost un-b" data-q-edit aria-label="Edit queued message" '
                     f'title="Edit in the composer">{_ic("pencil", True)}</button>'
-                    f'<button type="button" class="ghost un-b un-steer" data-q="promote" '
-                    f'title="Send as a steer instead">{_ic("up", True)}<span>Steer</span></button>'
+                    f'<button type="button" class="ghost un-b un-steer" data-q="promote" aria-label="Steer" '
+                    f'title="Send as a steer instead">{_ic("up", True)}</button>'
                     f'<button type="button" class="ghost un-b" data-q="remove" aria-label="Remove queued message" '
                     f'title="Remove from queue">{_ic("x", True)}</button></span></li>')
     every = (f'<button type="button" class="ghost un-all" data-q-all aria-expanded="false" '

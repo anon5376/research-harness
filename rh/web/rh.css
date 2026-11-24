@@ -2890,7 +2890,10 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
   color: var(--muted); }
 .un-row:is(:hover, :focus-within) { background: var(--raised); }
 .un-i { flex: none; width: 16px; color: var(--faint); text-align: center; font-variant-numeric: tabular-nums; }
-.un-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the words are the row's edit button: a tap or click puts them in the composer */
+.un-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0; border: 0;
+  background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.un-t:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; border-radius: 4px; }
 .un-row.editing .un-t, .un-row.leaving { opacity: .5; }
 .un-row.leaving { pointer-events: none; }
 .un-editing { flex: none; color: var(--faint); font-size: 12px; }
@@ -2908,6 +2911,14 @@ dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .um-note { margin: 4px 0 0; color: var(--faint); font-size: 12px; text-align: right; }
 .talk-stop { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: 12px; }
 .talk-stop .ic { color: var(--faint); }
+/* where there is a pointer the row's actions wait for it (r31 F4): the queued words are the content */
+@media (hover: hover) and (min-width: 601px) {
+  .un-acts { opacity: 0; transition: opacity 120ms cubic-bezier(.16, 1, .3, 1); }
+  .un-row:is(:hover, :focus-within, .editing) .un-acts { opacity: 1; }
+}
 @media (max-width: 600px) {
-  .un-editing, .un-steer span { display: none; }
+  /* phone queue rows */
+  .un-editing { display: none; }
+  .un-row:not(.editing) .un-b:not([data-q="remove"]) { display: none; }
+  .un-row [data-q-edit].un-b { display: none; }
 }

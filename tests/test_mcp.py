@@ -93,10 +93,10 @@ class McpTest(unittest.TestCase):
         led.close()
         self.cfg = cfg
 
-    def raw(self, data: bytes):
+    def raw(self, data: bytes, **env):
         """Bytes in on stdin, the replies out in order."""
         out = subprocess.run([sys.executable, "-I", str(ROOT / "bin/rh"), "mcp"], input=data,
-                             env={**os.environ, "RH_HOME": str(self.home)}, capture_output=True, timeout=30)
+                             env={**os.environ, "RH_HOME": str(self.home), **env}, capture_output=True, timeout=30)
         self.assertEqual(out.returncode, 0, out.stderr)
         return [json.loads(line) for line in out.stdout.decode("utf-8").splitlines() if line.strip()]
 
@@ -158,11 +158,11 @@ class McpTest(unittest.TestCase):
         self.assertIn("pro-review", text)
         self.assertIn("Review the ledger's recovery path.", text)
         self.assertNotIn("a-shell-job", text)
+        self.assertNotIn("pro-draft", text)
         error, text = self.call("get_job", job_id="pro-review")
         self.assertFalse(error)
         self.assertIn(BRIEF, text)
         self.assertIn("gpt-6.1-sol-pro", text)
-        self.assertNotIn("pro-draft", text)
         for other in ("a-shell-job", "no-such-job", "pro-draft"):  # only a job waiting for an answer can be read
             error, text = self.call("get_job", job_id=other)
             self.assertTrue(error, other)
@@ -187,6 +187,18 @@ class McpTest(unittest.TestCase):
         self.assertEqual(self.call("read_file", path="notes.md"), (False, "é ünïcode stays\n"))
         self.assertNotIn("staged.py", self.call("list_files")[1])
         self.assertTrue(self.call("read_file", path="staged.py")[0])
+
+    def test_an_inherited_git_setting_cannot_point_it_at_another_repository(self):
+        other = self.home / "other"
+        other.mkdir()
+        git(other, "init", "-q")
+        (other / "elsewhere.txt").write_text("SECRET elsewhere\n", encoding="utf-8")
+        git(other, "add", "-A")
+        git(other, "commit", "-q", "-m", "other")
+        listed = self.raw(json.dumps({"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                                      "params": {"name": "list_files", "arguments": {}}}).encode() + b"\n",
+                          GIT_DIR=str(other / ".git"), GIT_WORK_TREE=str(other))
+        self.assertEqual(listed[0]["result"]["content"][0]["text"].split(), ["notes.md", "rh/ledger.py"])
 
     @unittest.skipIf(os.name == "nt", "a committed symlink needs core.symlinks")
     def test_a_committed_symlink_is_not_followed(self):
@@ -260,6 +272,8 @@ class McpTest(unittest.TestCase):
         ping = b'{"jsonrpc": "2.0", "id": 7, "method": "ping"}\n'
         reply = self.raw(b"not json\n" + ping)
         self.assertEqual(reply[0]["error"]["code"], -32700)
+        self.assertIn("id", reply[0])
+        self.assertIsNone(reply[0]["id"])
         self.assertEqual(reply[1], {"jsonrpc": "2.0", "id": 7, "result": {}})
         # a reply must arrive as written, so bytes that are not UTF-8 are refused, not patched over
         submit = {"jsonrpc": "2.0", "id": 8, "method": "tools/call",
@@ -297,15 +311,17 @@ class TunnelTest(unittest.TestCase):
         inherited = {"OPENAI_API_KEY": "sk-billable", "CONTROL_PLANE_API_KEY": "x",
                      "CONTROL_PLANE_URL_PATH": "/elsewhere", "MCP_SERVER_URL": "http://elsewhere",
                      "LOG_HTTP_RAW_UNSAFE": "true", "HARPOON_TARGETS": "x", "TUNNEL_CLIENT_HTTP_PROXY": "x",
-                     "ALLOW_REMOTE_UI": "true", "CLOUDFLARED_TUNNEL_TOKEN": "x", "PATH": "/usr/bin", "LOGNAME": "me"}
+                     "ALLOW_REMOTE_UI": "true", "CLOUDFLARED_TUNNEL_TOKEN": "x",
+                     "TUNNEL_INTEGRATION_TUNNEL_SERVICE_SOCKET_PATH": "/tmp/elsewhere.sock",
+                     "TUNNEL_CLIENT_CONFIG": "/tmp/other.yaml", "PATH": "/usr/bin", "LOGNAME": "me"}
         argv, env = mcp.tunnel_command(self.cfg(), inherited)
         self.assertEqual(argv[:2], [str(self.bin), "run"])
         flags = flags_of(argv[2:])
         self.assertEqual(flags["--control-plane.base-url"], "https://api.openai.com")
         self.assertEqual(flags["--control-plane.tunnel-id"], self.TID)
         self.assertEqual(flags["--control-plane.api-key"], f"file:{self.key}")
-        command = flags["--mcp.command"].removeprefix("command=")
-        self.assertEqual(tunnel_argv(command), [sys.executable, "-I", str(ROOT / "bin" / "rh"), "mcp"])
+        # the plain form: tunnel-client takes a value that starts with no 'command=' or 'url=' as the command itself
+        self.assertEqual(tunnel_argv(flags["--mcp.command"]), [sys.executable, "-I", str(ROOT / "bin" / "rh"), "mcp"])
         self.assertEqual(flags["--health.listen-addr"], "127.0.0.1:0")
         self.assertEqual(flags["--log.file"], str(self.home / "tunnel.log"))
         self.assertEqual(flags["--log.http-raw-unsafe"], "false")
@@ -316,19 +332,23 @@ class TunnelTest(unittest.TestCase):
 
     def test_a_path_with_spaces_or_quotes_reaches_tunnel_client_intact(self):
         from rh import mcp
-        odd = self.home / "it's a \"dir\", with \\ and $HOME"
+        odd = self.home / "it's a \"dir\", with \\ and $HOME,channel=x"
         with patch.object(mcp, "ROOT", odd), patch.object(mcp.sys, "executable", str(odd / "py thon")):
             argv, _ = mcp.tunnel_command(self.cfg(), {})
-        command = flags_of(argv[2:])["--mcp.command"].removeprefix("command=")
+        command = flags_of(argv[2:])["--mcp.command"]
         self.assertEqual(tunnel_argv(command), [str(odd / "py thon"), "-I", str(odd / "bin" / "rh"), "mcp"])
-        with patch.object(mcp, "ROOT", Path("/x,channel=y")), self.assertRaisesRegex(ValueError, "cannot take"):
+        with patch.object(mcp.sys, "executable", "URL=x"), self.assertRaisesRegex(ValueError, "cannot take"):
             mcp.tunnel_command(self.cfg(), {})
 
     def test_each_missing_owner_step_is_named(self):
         from rh import mcp
         with self.assertRaisesRegex(ValueError, "rh config set mcp.tunnel_id"):
             mcp.tunnel_command(self.cfg(tunnel_id=""), {})
-        for bad in ("tunnel_short", self.TID + "/x", self.TID + "\n", "tunnel_" + "A" * 32, "x" + self.TID):
+        for good in (self.TID, "tunnel_ab12_" + "z9" * 16):
+            self.assertEqual(flags_of(mcp.tunnel_command(self.cfg(tunnel_id=good), {})[0][2:])
+                             ["--control-plane.tunnel-id"], good)
+        for bad in ("tunnel_short", self.TID + "/x", self.TID + "\n", "tunnel_" + "A" * 32, "x" + self.TID,
+                    self.TID + "0", self.TID[:-1], "tunnel_abc_" + "0" * 32, "tunnel_abcde_" + "0" * 32):
             with self.assertRaisesRegex(ValueError, "rh config set mcp.tunnel_id"):
                 mcp.tunnel_command(self.cfg(tunnel_id=bad), {})
         with self.assertRaisesRegex(ValueError, "tunnel-client"):

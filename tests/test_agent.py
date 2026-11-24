@@ -255,7 +255,10 @@ class SwarmResultCheckTest(unittest.TestCase):
     """The judge may combine runs, so the work it keeps is checked too: a swarm whose result was never checked,
     or one that checks a run kept whole a second time, must fail."""
 
-    def judge(self, script, check=True):
+    def judge(self, script, check=True, moved=False):
+        """Two runs at the same commit: w1 adds 'bad' (its check fails), w2 adds 'two' (passes). With moved, the
+        repository gains a commit after the runs that only the check reads, so a verdict from the runs' commit no
+        longer holds for the judge's."""
         tmp = Path(tempfile.mkdtemp())
         self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(tmp)]))
         repo, out = tmp / "repo", tmp / "out"
@@ -267,14 +270,21 @@ class SwarmResultCheckTest(unittest.TestCase):
         git(repo, "add", "a.txt")
         git(repo, "commit", "--quiet", "-m", "start")
         base = git(repo, "rev-parse", "HEAD").strip()
-        for run, word in zip(runs, ("bad", "two")):
+        for run, word in zip(runs, ("bad", "two")):  # each patch made as a run makes it, by git
             (run / "base").write_text(base + "\n", encoding="utf-8")
             (run / "answer.md").write_text(f"Added {word}.\n", encoding="utf-8")
-            (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
-                                               f"@@ -1 +1,2 @@\n one\n+{word}\n", encoding="utf-8")
+            (repo / "a.txt").write_text(f"one\n{word}\n", encoding="utf-8")
+            git(repo, "add", "a.txt")
+            (run / "changes.patch").write_bytes(subprocess.run(["git", "-C", str(repo), "diff", "--cached", "--binary"],
+                                                               capture_output=True, check=True).stdout)
+            git(repo, "reset", "--quiet", "--hard")
+        if moved:
+            (repo / "b.txt").write_text("bad\n", encoding="utf-8")
+            git(repo, "add", "b.txt")
+            git(repo, "commit", "--quiet", "-m", "moved on")
         log = tmp / "checks.log"
         command = (f"{sys.executable} -c \"import sys, pathlib; open('{log}', 'a').write('x'); "
-                   "sys.exit('bad' in open('a.txt').read())\"")
+                   "sys.exit(any('bad' in f.read_text() for f in map(pathlib.Path, ('a.txt', 'b.txt')) if f.exists()))\"")
         fake = tmp / "claude"
         fake.write_text(f"#!{sys.executable}\nimport pathlib, subprocess\n{script}\nprint('Done.')\n",
                         encoding="utf-8")
@@ -291,10 +301,35 @@ class SwarmResultCheckTest(unittest.TestCase):
         return json.loads((out / "swarm-result.json").read_text(encoding="utf-8")), checks
 
     def test_a_combined_result_is_checked_and_its_failure_recorded(self):
-        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w1/changes.patch'], check=True)\n"
-                                    "p = pathlib.Path('a.txt'); p.write_text(p.read_text() + 'three\\n')")
+        # the judge starts from w2, which passed, and adds a line of its own that fails: only checking the judge's
+        # own tree can say so
+        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)\n"
+                                    "p = pathlib.Path('a.txt'); p.write_text(p.read_text() + 'bad\\n')")
         self.assertEqual(result, {"kept": "combined", "check": "failed: exit 1"})
         self.assertEqual(checks, 3)  # each run, then the judge's own result
+
+    def test_a_run_kept_whole_on_a_newer_commit_is_checked_again(self):
+        result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)",
+                                    moved=True)
+        self.assertEqual(result, {"kept": "fix.w2", "check": "failed: exit 1"})
+        self.assertEqual(checks, 3)
+
+    def test_a_run_whose_commit_is_missing_fails_its_check(self):
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", str(tmp)]))
+        repo, run, scratch = tmp / "repo", tmp / "fix.w1", tmp / "scratch"
+        for d in (repo, run, scratch):
+            d.mkdir()
+        git(repo, "init", "--quiet")
+        (repo / "a.txt").write_text("one\n", encoding="utf-8")
+        git(repo, "add", "a.txt")
+        git(repo, "commit", "--quiet", "-m", "start")
+        (run / "base").write_text("0" * 40 + "\n", encoding="utf-8")
+        (run / "changes.patch").write_text("diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n"
+                                           "@@ -1 +1,2 @@\n one\n+two\n", encoding="utf-8")
+        verdict, _ = agent._check(repo, run, f"{sys.executable} -c pass", scratch)
+        self.assertTrue(verdict.startswith("failed: "), verdict)
+        self.assertIn("commit", verdict)
 
     def test_a_run_kept_whole_reuses_its_verdict(self):
         result, checks = self.judge("subprocess.run(['git', 'apply', '.swarm/fix.w2/changes.patch'], check=True)")

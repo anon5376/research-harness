@@ -158,12 +158,19 @@ class Server:
             return f"Job {job_id}, waiting for an answer, model {spec['model']['requested']}.{files}\n\nBrief:\n{brief}"
         return self._with_ledger(run)
 
+    def _git(self, *args):
+        """git in repo.path and nowhere else: inherited GIT_DIR, GIT_WORK_TREE and the like are dropped, and
+        replacement refs are off, so HEAD's objects are the ones served."""
+        env = {k: v for k, v in os.environ.items() if not k.upper().startswith("GIT_")}
+        env["GIT_NO_REPLACE_OBJECTS"] = "1"
+        return subprocess.run(["git", "-C", str(self.repo), *args], capture_output=True, timeout=30, check=True,
+                              env=env).stdout
+
     def _tree(self):
         """Regular files committed at HEAD under repo.path: {path: (blob id, size)}. Symlinks and submodules are
         left out, and so is a name that is not UTF-8 or holds a newline, so every listed path reads back as itself."""
         try:
-            out = subprocess.run(["git", "-C", str(self.repo), "ls-tree", "-r", "-z", "-l", "HEAD"],
-                                 capture_output=True, timeout=30, check=True).stdout
+            out = self._git("ls-tree", "-r", "-z", "-l", "HEAD")
         except (OSError, subprocess.SubprocessError) as e:
             raise ToolError(f"cannot list the repository's files at HEAD: {e}") from None
         tree = {}
@@ -195,8 +202,7 @@ class Server:
         if size > MAX_BLOB:
             raise ToolError(f"{path} is {size:,} bytes, over the {MAX_BLOB:,}-byte limit")
         try:
-            text = subprocess.run(["git", "-C", str(self.repo), "cat-file", "blob", blob], capture_output=True,
-                                  timeout=30, check=True).stdout.decode("utf-8")
+            text = self._git("cat-file", "blob", blob).decode("utf-8")
         except UnicodeDecodeError:
             raise ToolError(f"{path} is not UTF-8 text") from None
         except (OSError, subprocess.SubprocessError) as e:
@@ -306,10 +312,11 @@ def run(cfg, stdin=None, stdout=None):
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TUNNEL_ID = re.compile(r"tunnel_[a-z0-9]{16,64}")
+TUNNEL_ID = re.compile(r"tunnel_(?:[a-z0-9]{4}_)?[a-z0-9]{32}")  # tunnel-client v0.0.21 docs/configuration.md
 # Settings tunnel-client reads from its environment. Only what this harness passes on the command line may apply, so
 # an inherited key cannot be used, an inherited endpoint cannot receive the key, and raw HTTP logging stays off.
-_TUNNEL_ENV = ("OPENAI_API_KEY", "CONTROL_PLANE_", "MCP_", "HARPOON_", "LOG_", "TUNNEL_CLIENT_", "TRACING_",
+_TUNNEL_ENV = ("OPENAI_API_KEY", "CONTROL_PLANE_", "MCP_", "HARPOON_", "LOG_", "TUNNEL_CLIENT_", "TUNNEL_INTEGRATION_",
+               "TRACING_",
                "HEALTH_", "ADMIN_UI_", "CLOUDFLARED_", "ALLOW_REMOTE_UI", "OPEN_WEB_UI", "PID_FILE",
                "FORWARD_REQUEST_ID", "CA_BUNDLE", "PROXY_CHECK_INTERVAL")
 
@@ -341,16 +348,18 @@ def tunnel_command(cfg, environ):
         raise ValueError(f"tunnel-client not found ({named}): install it from github.com/openai/tunnel-client "
                          "releases, or rh config set mcp.tunnel_client /path/to/tunnel-client")
     # tunnel-client splits the command like a POSIX shell (quotes, backslash escapes), so shell quoting carries any
-    # path through; only the segment markers it looks for in the raw text cannot be quoted away.
+    # path through. It is given in the plain form, which binds the default channel and has no ',channel=' segments
+    # to misread; only a value starting like a qualified entry would be taken for one.
     command = " ".join(shlex.quote(a) for a in (sys.executable, "-I", str(ROOT / "bin" / "rh"), "mcp"))
-    if re.search(r",(channel|url|unix-socket|http-proxy|client-cert|client-key)=", command):
-        raise ValueError(f"tunnel-client cannot take a command containing {command!r}")
+    if command.lower().startswith(("url=", "command=", "channel=", "unix-socket=", "http-proxy=", "client-cert=",
+                                   "client-key=")):
+        raise ValueError(f"tunnel-client cannot take a command starting {command.split('=')[0]}=")
     home = Path(cfg["home"])
     argv = [binary, "run",
             "--control-plane.base-url", "https://api.openai.com",
             "--control-plane.tunnel-id", tid,
             "--control-plane.api-key", f"file:{key}",
-            "--mcp.command", f"command={command}",
+            "--mcp.command", command,
             "--health.listen-addr", "127.0.0.1:0",
             "--log.file", str(home / "tunnel.log"),
             "--log.http-raw-unsafe=false",

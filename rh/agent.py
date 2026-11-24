@@ -156,8 +156,11 @@ def _check(repo, run, check, scratch):
     copy = scratch / f"check-{run.name}"
     subprocess.run(["git", "clone", "--quiet", "--shared", repo, str(copy)], check=True)
     if (run / "base").is_file():
-        subprocess.run(["git", "-C", str(copy), "checkout", "--quiet", "--detach",
-                        (run / "base").read_text(encoding="utf-8").strip()], check=False)
+        commit = (run / "base").read_text(encoding="utf-8").strip()
+        moved = subprocess.run(["git", "-C", str(copy), "checkout", "--quiet", "--detach", commit],
+                               capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if moved.returncode:  # checked anywhere else, a pass would be for a tree the run never made
+            return f"failed: its commit {commit[:12]} is not in the repository", moved.stderr[-2000:]
     applied = subprocess.run(["git", "-C", str(copy), "apply", "--whitespace=nowarn", str(patch)],
                              capture_output=True, text=True, encoding="utf-8", errors="replace")
     if applied.returncode:
@@ -266,8 +269,15 @@ def main(argv):
                     earlier = json.loads((out / "swarm-checks.json").read_text(encoding="utf-8"))
                 except (OSError, ValueError):
                     earlier = {}
-                verdict = earlier.get(kept) if isinstance(earlier, dict) else None
-                if not verdict:  # a run kept whole keeps the verdict it already has; anything else is checked now
+                def same_tree(run):  # a verdict holds only for the exact tree it was given: same commit, same patch
+                    try:
+                        return ((run / "base").read_text(encoding="utf-8").strip() == base
+                                and (run / "changes.patch").read_bytes() == diff)
+                    except OSError:
+                        return False
+                whole = next((run for run in runs if run.name == kept), None)
+                verdict = earlier.get(kept) if isinstance(earlier, dict) and whole and same_tree(whole) else None
+                if not verdict:  # anything else, a combined tree or one on a newer commit, is checked now
                     verdict, _ = _check(repo, out, check, scratch)
                 result["check"] = verdict
                 print(f"check result: {verdict}", flush=True)

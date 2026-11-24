@@ -43,10 +43,10 @@ Business, Enterprise and Edu it works, and ChatGPT asks before running it.
    ```
 3. **Create a Restricted API key** at [Platform → API keys](https://platform.openai.com/settings/organization/api-keys)
    with only **Tunnels: Read** and **Tunnels: Use**. A key limited to that can't run models, so it can't spend.
-   Copy it, then save it alone in a file only you can read (the `umask` makes the file private before the key is
-   written):
+   Copy it, then save it alone in a file only you can read. The `umask` makes a new file private before the key is
+   written, and the `mv` replaces any older key file rather than writing into it with its old permissions:
    ```bash
-   H="${RH_HOME:-$HOME/.research-harness}"; (umask 077 && mkdir -p "$H/secrets" && pbpaste > "$H/secrets/openai-tunnel.key")
+   H="${RH_HOME:-$HOME/.research-harness}"; (umask 077 && mkdir -p "$H/secrets" && pbpaste > "$H/secrets/.key.new" && mv -f "$H/secrets/.key.new" "$H/secrets/openai-tunnel.key")
    ```
 4. **Start the tunnel** and leave it running:
    ```bash

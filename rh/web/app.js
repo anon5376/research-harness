@@ -704,7 +704,10 @@ function apply(doc, nav) {
       const log = $('.log', old), freshLog = $('.log', el);
       if (log && freshLog) {
         const pinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+        const quiet = $('.log-quiet', freshLog);  // a stalled log's "no output since" row rides inside its pre
+        if (quiet) quiet.remove();
         log.textContent = freshLog.textContent;
+        if (quiet) log.append(quiet);
         if (pinned) log.scrollTop = log.scrollHeight;
       }
       else $('.worked-content', old).replaceWith($('.worked-content', el));

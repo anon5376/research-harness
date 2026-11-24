@@ -1858,6 +1858,11 @@ body:has(.side .count[data-need]) .app .sidebar-toggle::before { content: ""; po
 .worked-content:has(> pre.log[data-follow]) { margin-top: 0; border: 0; border-radius: 0; background: none; }
 .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 310px)); max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
 @media (max-width: 600px) { .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 300px)); max-height: max(240px, calc(100dvh - 300px)); } }
+/* A stalled job's card says its output stopped, under the last line: a hairline 8px up, then when, in the log's
+   own face a step smaller and greyer than its lines. */
+.worked .log-quiet { display: block; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--rule);
+  font-size: 12px; color: var(--faint); }
+.worked .log-quiet .when { font-family: inherit; font-size: inherit; }
 /* Settings opens with focus on itself, so its close button wears no ring until the keyboard reaches it. */
 .settings :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }
 .settings header .icon-btn { width: 32px; height: 32px; font-size: 20px; line-height: 1; color: var(--muted); }

@@ -1536,19 +1536,20 @@ class ListsTest(unittest.TestCase):
 
     def test_a_job_past_its_limit_says_when_it_last_wrote_output(self):
         # Past its limit, the question is whether it still works or hangs (chat-on-steroids' "why is it stuck"):
-        # the line says when its output last changed, right after the limit, and keeps ticking on the live page.
+        # while the output is fresh the line says when it last changed, right after the limit, and keeps ticking
+        # on the live page. Once it has been quiet a while the log card says it instead, under the last line.
         view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
         view["open"]["job"]["spec"]["timeout_min"] = 120
         view["open"]["job"]["started"] = NOW - 3 * 3600
         view["open"]["log"] = "still indexing"
-        view["open"]["log_at"] = NOW - 720
+        view["open"]["log_at"] = NOW - 120
         status = lambda page: re.search(r'<span class="job-result-status sl">(.*?)</span></span>(?:</p>|<progress)',  # noqa: E731
                                         page, re.S).group(1)
         parts = status(dashboard.render(view, NOW, token=TOKEN)).split("<wbr>")
         self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
-                         ["Past its 2 h limit", "·last output 12 min ago"])
+                         ["Past its 2 h limit", "·last output 2 min ago"])
         self.assertIn('data-pre="last output "', parts[1])
-        self.assertIn(f'data-t="{NOW - 720}"', parts[1])
+        self.assertIn(f'data-t="{NOW - 120}"', parts[1])
         # a running job within its limit is not asked that: its line stays as it was
         view["open"]["job"]["state"] = "running"
         self.assertNotIn("last output", dashboard.render(view, NOW, token=TOKEN))
@@ -1572,6 +1573,53 @@ class ListsTest(unittest.TestCase):
         self.assertIn(" quiet", ring(dashboard.render(view, NOW, token=TOKEN)))
         view["open"]["log_at"] = NOW - 299
         self.assertNotIn(" quiet", ring(dashboard.render(view, NOW, token=TOKEN)))
+
+    def test_a_stalled_jobs_quiet_log_says_its_output_stopped(self):
+        # critic r26: one line of log in a page-tall frame read as broken. Once output has been quiet over 5 min,
+        # the card says so under its last line ('no output since HH:MM · 3 h', ticking on the same j:quiet key the
+        # status line used), and the status line names the limit without repeating the quiet time.
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["job"]["started"] = NOW - 4 * 3600
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 3 * 3600
+        page = dashboard.render(view, NOW, token=TOKEN)
+        row = re.search(r'<span class="log-quiet">(.*?)</span></pre>', page, re.S)
+        self.assertIsNotNone(row)
+        self.assertEqual(re.sub(r"</?span[^>]*>", "", row.group(1)),
+                         f"no output since {dashboard._clock(NOW - 3 * 3600, NOW)}·3 h")
+        self.assertIn('data-tk="j:quiet"', row.group(1))
+        self.assertIn('data-short="1"', row.group(1))
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span></span>', page, re.S).group(1)
+        self.assertIn("Past its 2 h limit", status)
+        self.assertNotIn("last output", status)
+
+    def test_a_stalled_job_whose_output_is_fresh_adds_no_quiet_row(self):
+        # Quiet five minutes or less is not a stop: the card adds nothing, and the status line still carries
+        # 'last output', ticking.
+        self.assertIn(".log-quiet", dashboard.STYLE)
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 120
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertNotIn('class="log-quiet"', page)
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span></span>', page, re.S).group(1)
+        self.assertIn("last output 2 min ago", status)
+
+    def test_a_running_jobs_log_adds_no_quiet_row(self):
+        # The stopped row belongs to a job past its limit: a running job's card and status line carry neither it
+        # nor 'last output', however long its output has been quiet, and live updates know the row as .log-quiet.
+        self.assertIn(".log-quiet", dashboard.STYLE)
+        self.assertIn("log-quiet", dashboard.SCRIPT)
+        view = opened(live_view(), "live-job", kind="local-shell", state="running")
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 3 * 3600
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertNotIn('class="log-quiet"', page)
+        self.assertNotIn("no output since", page)
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span></span>', page, re.S).group(1)
+        self.assertNotIn("last output", status)
 
     def test_the_place_beside_a_hidden_title_hides_with_it(self):
         # critic r25 F2: the header title fades while the brief bubble shows the same words, and its '· This Mac'
@@ -2547,6 +2595,9 @@ class DashboardTest(unittest.TestCase):
         view["open"]["answer"] = "Fixed it."  # a markdown answer, so .assistant-message.md renders
         view["open"]["files"] = [{"path": "changes.patch", "size": 90}]  # and a patch preview, so .peek.diff does
         view["open"]["peek"] = {"path": "changes.patch", "text": "+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n", "more": False}
+        # and stalled quiet past its limit, so the card's 'no output since' row (.log-quiet) renders
+        view["open"]["job"]["state"] = "stalled"
+        view["open"]["log_at"] = NOW - 400
         # and a swarm's judge page, so its run rows (.sw-run, .sw-a) render
         swarm = live_view()
         swarm["not_started"] = [{"id": "fix.best", "state": "waiting", "paused": False, "detail": "", "external_id": None}]

@@ -2457,13 +2457,17 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
     status_line = [_text("Done" if state == "done" else word)]
     late = state == "stalled"
+    # quiet for over 5 min past the limit: the log card says output stopped, so the status line does not repeat it
+    quiet_log = (late and _number(opened.get("log_at")) and now - opened["log_at"] > 300
+                 and isinstance(opened.get("log"), str) and bool(opened["log"].strip()))
     if late:  # past its limit, said once, with the limit (the line under it is left out)
         limit = spec.get("timeout_min")
         status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word)]
         if _number(opened.get("log_at")):  # whether it still works or hangs: when its output last changed
-            status_line.append(_when(opened["log_at"], now, "j:quiet", pre="last output "))
             if now - opened["log_at"] > 300:  # quiet for over 5 min: the ring dims, so the page reads stopped
                 result[0] = result[0].replace('class="st ', 'class="st quiet ', 1)
+            if not quiet_log:
+                status_line.append(_when(opened["log_at"], now, "j:quiet", pre="last output "))
     elif swarming:
         pass  # how many runs have finished is said once, by the Swarm card's head beside its bar
     elif check_rows and not all(value is True for value in check_values) or len(check_values) < len(check_rows):
@@ -2651,8 +2655,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         # folded, a glyph where a file row's icon sits starts 'Output' on the file name's edge
         work_summary = (f'<summary class="worked-summary">{_ic("term", True)}'
                         f'<span class="worked-output">{output_status}</span>{tag}{count}</summary>')
-        output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
-                       '<p class="soft">The worker has not produced output yet.</p>')
+        # past its limit and quiet a while, the card says its output stopped, a hairline under its last line
+        quiet_row = (f'<span class="log-quiet">no output since {_text(_clock(opened["log_at"], now))}'
+                     f'{_SEP_HTML}{_when(opened["log_at"], now, "j:quiet", short=True)}</span>'
+                     if quiet_log else "")
+        output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}{quiet_row}</pre>'
+                       if log else '<p class="soft">The worker has not produced output yet.</p>')
         worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'
         work.append(_region("j-output", worked_body, "details", "worked",
                             ' aria-label="Worked and output"' + ("" if finished else " open")))

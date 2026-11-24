@@ -943,11 +943,11 @@ class ServeTest(unittest.TestCase):
         log = self.home / "jobs" / "stuck-two" / "out.log"
         log.parent.mkdir(parents=True, exist_ok=True)
         log.write_text("indexing\n", encoding="utf-8")
-        then = time.time() - 600
+        then = time.time() - 120  # still fresh: past 5 min quiet the log card says it once instead
         os.utime(log, (then, then))
         code, _, page = self.request("/job/stuck-two")
         self.assertEqual(code, 200)
-        self.assertRegex(page, r'data-t="%d(\.\d+)?" data-tk="[^"]*" data-pre="last output ">last output 10 min ago'
+        self.assertRegex(page, r'data-t="%d(\.\d+)?" data-tk="[^"]*" data-pre="last output ">last output 2 min ago'
                          % int(then))
 
     def test_cancel_only_stops_a_job_that_has_not_started_or_has_stalled(self):

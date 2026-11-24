@@ -57,7 +57,7 @@ def collect_cloud(job, cloud, repo, home, gate_runner=None):
             f"custody: {'outside the write root: %s' % late if late else ''}"
             f"{'; ' if late and links else ''}{'symlink or submodule: %s' % links if links else ''}"), **base)
     rp = wt / protocol.result_path(jid)
-    raw = rp.read_text(encoding="utf-8") if rp.is_file() else None
+    raw = rp.read_bytes() if rp.is_file() else None
     try:
         res = protocol.parse_result(raw, jid, sha)
     except protocol.ResultError as e:
@@ -92,9 +92,15 @@ def saved_patch(home, job_id):
     return Path(home) / "diffs" / f"{job_id}.patch"
 
 
+NO_RESULT = 66  # rh/agent.py exits with this when an agent ended cleanly with no answer and no changes
+
+
 def collect_local(job, exit_code, cwd, log_tail=(), gate_runner=None):
     spec = job["spec"]
     checks = [{"cmd": " ".join(spec["command"]), "exit": exit_code, "where": "local"}]
+    if exit_code == NO_RESULT and any(Path(str(a)).name == "agent.py" for a in spec["command"]):  # an agent's run only
+        return "no_result", receipt(job, "local-shell", checks, detail="the agent ended with no answer and no changes",
+                                    log_tail=list(log_tail))
     if exit_code != 0:
         return "capacity" if exit_code == 75 else "failed", receipt(
             job, "local-shell", checks, detail=_cut(f"command exited {exit_code}"), log_tail=list(log_tail))

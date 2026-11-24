@@ -17,11 +17,13 @@ from html import escape
 from pathlib import Path
 from urllib.parse import quote
 
+from rh import hierarchy
+
 # The look and the client ship beside this module; rh serve sends the fonts from rh/web/fonts (see FONTS).
 _WEB = Path(__file__).with_name("web")
 STYLE = (_WEB / "rh.css").read_text(encoding="utf-8")
 # bg.js draws the halftone field; it rides in front of app.js so /app.js stays the one script.
-SCRIPT = (_WEB / "bg.js").read_text(encoding="utf-8") + "\n" + (_WEB / "app.js").read_text(encoding="utf-8")
+SCRIPT = "\n".join((_WEB / name).read_text(encoding="utf-8") for name in ("bg.js", "app.js", "team.js", "live.js"))
 # A live page compares this with each page it fetches and reloads when they differ, so a restarted server never
 # pours new markup into a page still wearing the old stylesheet and script.
 BUILD = format(zlib.crc32((STYLE + SCRIPT).encode("utf-8")), "08x")
@@ -140,6 +142,9 @@ _ICONS = {
     "question": ('<path d="M20 12a8 8 0 0 1-11.6 7.1L4 20l.9-4.4A8 8 0 1 1 20 12z"/>'
                  '<path d="M9.8 9.6a2.3 2.3 0 0 1 4.4.8c0 1.5-2.2 2-2.2 2"/><path d="M12 15.5h.01"/>'),
     "check": '<path d="M20 6 9 17l-5-5"/>',
+    # a queued message's Edit and Remove (the running job's composer otherwise uses the app's own stop, up and clock)
+    "pencil": '<path d="M17 3a2.85 2.85 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5z"/><path d="m15 5 4 4"/>',
+    "x": '<path d="M18 6 6 18M6 6l12 12"/>',
     "patch": '<path d="M12 4v11M7 10.5l5 5 5-5"/><path d="M4.5 19.5h15"/>',
     "file": '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
     "stop": '<circle cx="12" cy="12" r="9"/><path d="M8.6 15.4 15.4 8.6"/>',
@@ -232,6 +237,21 @@ def _ln(line):
     return f'<span class="ln{tone}">{_text(line)}</span>'
 
 
+_BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")  # Markdown bold: no space just inside the markers
+
+
+def _tail_lines(tail):
+    """A kept tail as the lines the Inbox's stop card shows: blank lines at its ends dropped, so its first line
+    sits where the same card on a job's page puts it, and each line's paired ** markers off, so an agent's
+    markdown reads as words; a ** with no partner, or spaced as an operator (a ** b ** c), stays: logs hold code."""
+    lines = str(tail or "").splitlines()
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return [_BOLD.sub(r"\1", line) for line in lines]
+
+
 _HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@ ?(.*)$")
 
 
@@ -297,7 +317,8 @@ def _diff_head(text, whole=True):
     if not whole:
         return f'<span class="mono">{_text(files[0][0] + (" and more" if len(files) > 1 else ""))}</span>'
     name = files[0][0] if len(files) == 1 else f"{len(files)} files"
-    return f'<span class="mono">{_text(name)}</span>' + _counts(sum(f[1] for f in files), sum(f[2] for f in files))
+    kind = " files" if len(files) > 1 else ""  # marks a count: a phone sheds a lone path but keeps 'N files'
+    return f'<span class="mono{kind}">{_text(name)}</span>' + _counts(sum(f[1] for f in files), sum(f[2] for f in files))
 
 
 def _counts(added, removed):
@@ -381,6 +402,11 @@ def _clock(timestamp, now):
     if (t.tm_year, t.tm_yday) == (n.tm_year, n.tm_yday):
         return f"{t.tm_hour:02d}:{t.tm_min:02d}"
     return f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
+
+
+def _hm(timestamp):
+    t = time.localtime(timestamp)
+    return f"{t.tm_hour:02d}:{t.tm_min:02d}"
 
 
 def _date(now):
@@ -696,20 +722,39 @@ _SELF_REMARK = re.compile(r"(I|We)\s+(chose|kept|picked|took|went with|combined)
                           r"|(Everything|All( (checks|tests))?) (verifies|verified|checks out|pass|passes|passed)\b")
 
 
+# An agent's preamble about how it read the code, or a bare acknowledgement, before it says what it found or did.
+# "Read X as bytes so …" is a change and still names the run; only a Read line that reports reading ("fully", "plus") is
+# preamble.
+_PREAMBLE = re.compile(r"(?:I(?:['’]ve| have)?\s+(?:read|reviewed|looked|went|traced|checked|inspected)\b"
+                       r"|Read\b.*\b(?:fully|in full|plus)\b"
+                       r"|(?:Fair enough|Sure|Got it|Understood|Alright|Right)(?:[.,!:;]|\s+[—–-]))", re.I)
+_FINDING = ("bug", "issue", "problem", "finding", "cause", "root cause")  # a heading label for what a run found
+_PATH_LEAD = re.compile(r"[\w.-]*/[\w./-]+|[\w-]+\.(?:py|js|ts|css|html|md|toml|json|sh|txt|ya?ml)\b")
+_CODE = re.compile(r"[\w.\[\]]+\s*=[^=]|\w+\(")  # an assignment or a call: a line of code, not words
 _NO_FINAL = "Devin ended its turn without a final message"  # rh/agent.py writes it, in italics, as the answer
 
 
 def answer_head(text):
     """An agent's answer as a list label: its first line without Markdown marks, up to a dash or colon that starts an
     aside ("Fixed X — untested: …" names the run as "Fixed X"), at most 100 characters; "" when it has no words."""
-    line = ""
+    line, fenced = "", False
     for raw in str(text or "").splitlines():
+        if raw.strip().startswith("```"):  # code never names a run, nor does anything inside a fence
+            fenced = not fenced
+            continue
+        if fenced:
+            continue
+        heading = re.fullmatch(r"\*\*.+\*\*", raw.strip()) is not None
         # boilerplate never names a run: a status word alone ("Done."), a leading one ("Done. Rounded the ETA"), or a
         # lead-in that ends in a colon ("Summary of the diff:") gives way to the next line
         x = re.sub(r"^#+\s*|^[-*]\s+", "", raw.strip()).replace("**", "").replace("`", "").replace("__", "")
         x = re.sub(r"^([_*])(?=\S)(.*\S)\1$", r"\2", x)  # a line in _italics_ or *italics* names a run without its marks
         if x.startswith(_NO_FINAL):  # the harness's notice that the agent said nothing is no answer to name it by
             return ""
+        if _PREAMBLE.match(x):
+            continue
+        if heading and x.endswith(":") and re.search(r"\s[—–]\s|:\s", x):  # "**Bug — x.py:59, in f:**" is a heading
+            x = x[:-1].rstrip()
         bare = _STATUS_LEAD.sub("", x).strip()
         if bare != x:  # what a status word leaves starts as a sentence: no stray mark, a capital
             bare = bare.lstrip("—–-:·•, ")
@@ -719,10 +764,26 @@ def answer_head(text):
             line = x
             break
     head, *rest = re.split(r"\s+[—–]\s+|:\s", line, maxsplit=1)
-    if rest and not re.search(r"\s", head.strip()):  # "rh/dashboard.py — X did Y": a lone label; the words name it
-        head = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)[0]
+    # "rh/dashboard.py — X did Y": a lone label; the words name it. "Bug: x.py:82 — the \\b in X": two labels in a row
+    if rest and head.strip().lower() in _FINDING and _PATH_LEAD.match(rest[0].strip()):
+        # "Bug: x.py:82 — what" names the run "Bug in x.py: what", so no name starts with a path (critic r26 F1)
+        where, *what = re.split(r"\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)
+        where = re.sub(r",\s+in\s+", " in ", _LINE_NO.sub(r"\1", where).strip())
+        head = f"{head.strip().capitalize()} in {where}"
+        said = re.split(r"(?<=[.!?])\s", what[0].strip(), maxsplit=1)[0] if what else ""
+        if said and not _CODE.match(said):  # a line of code after the path is no name
+            head += ": " + said
+        rest = []
+    # A line of code after the label ("rh/oslock.py:20 — fd = os.open(…)") is no name: the label stays.
+    while rest and not re.search(r"\s", head.strip()):
+        nxt, *after = re.split(r"(?<=[.!?])\s|\s+[—–]\s+|:\s", rest[0].strip(), maxsplit=1)
+        if _CODE.match(nxt.strip()):
+            break
+        head, rest = nxt, after
     # a label gets cut by the list's ellipsis, which would leave a false ':1…' of a line number: the number goes whole
     line = _LINE_NO.sub(r"\1", head).strip().rstrip(".")
+    if re.match(r"[a-z]+(?:\s|$)", line):  # a plain lowercase word starts a sentence; a code name keeps its case
+        line = line[0].upper() + line[1:]
     if len(line) > 100:
         line = line[:98].rsplit(" ", 1)[0].rstrip(",;:.") + "…"
     return line
@@ -751,6 +812,26 @@ def _chain(meta, jid, all_meta):
         seen.add(prior)
         root, meta = prior, all_meta[prior]
     return root, said
+
+
+def _run_no(meta, all_meta):
+    """Which run of its chain a job is: 1 for a first run, one more for each prior the meta still lists."""
+    n, seen = 1, set()
+    while isinstance(meta, dict):
+        prior = str(meta.get("prior") or "")
+        if not prior or prior in seen or not isinstance(all_meta.get(prior), dict):
+            break
+        seen.add(prior)
+        n, meta = n + 1, all_meta[prior]
+    return n
+
+
+def _run_tag(n, time=""):
+    """A job's time cell: the time alone, or for a repeat run 'run 2' before it (r33 F4: runs of one chain share a
+    name, so the number tells them apart), with a dot between when a time follows (r36 F1)."""
+    if n <= 1:
+        return time
+    return f'<span class="rn">run {n}{_SEP if time else ""}</span>{time}'
 
 
 def _size(n):
@@ -950,6 +1031,7 @@ class _Job:
         self.first = min(times, default=float("inf"))
         self.title = _title(self.meta, self.id)
         self.root, self.said = _chain(self.meta, self.id, ctx["meta"])
+        self.run_no = _run_no(self.meta, ctx["meta"])
         # The lists name a done job by what its agent said it did: one brief run many times reads as many runs.
         # A follow-up wears the first said of its chain, so its own answer's first line never renames the thread.
         self.label = (self.said if self.state == "done" else "") or self.title
@@ -1050,20 +1132,28 @@ class _Job:
             return _text(self.label)
         return f'<span class="nm" title="{_text(self.label)}">{_text(self.id)}</span>'
 
-    def item(self, runs=1):
+    def item(self, runs=1, earlier=False):
         """The list entry: the title over the line that says why, a link to the job's page across the whole row,
         and the one control it offers. In Needs you the ring is amber, or red for a failure; a failure repeated by
-        `runs` runs of its brief is one row, for its newest run, and one already run again draws quieter."""
+        `runs` runs of its brief is one row, for its newest run, and one already run again draws quieter. In
+        Earlier the day's heading says the date, so the time cell keeps the clock time, as every ended row does
+        (r35 F6), and the row's title keeps the full date and time."""
         ctx = self.ctx
         since = self.since()
         hue = ("red" if self.state in _FAILED else "amber") if self.group == "needs" else None
         act = self.act()
+        when = _clock(since, ctx["now"]) if since is not None else ""
+        tip = ""
+        if earlier and since is not None:
+            t = time.localtime(since)
+            tip = f' title="{_text(when)}{_SEP}{t.tm_hour:02d}:{t.tm_min:02d}"'
+            when = _hm(since)
         cells = (f'{_ring("env" if self.native else self.state, hue, self.kind, self.past)}'
                  f'<span class="name">{self.name_html()}</span>'
                  f'<span class="sub">{self.headline_html(runs)}</span>{_where(self.kind)}'
-                 f'<span class="time mono num">{_clock(since, ctx["now"]) if since is not None else ""}</span>')
-        link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav>{cells}</a>' if ctx["live"]
-                else f'<div class="item">{cells}</div>')
+                 f'<span class="time mono num">{_run_tag(self.run_no, when)}</span>')
+        link = (f'<a class="item" href="{_url(ctx, "/job/" + self.id)}" data-nav{tip}>{cells}</a>' if ctx["live"]
+                else f'<div class="item"{tip}>{cells}</div>')
         do = f'<span class="do">{act}</span>' if act else ""
         return _row(f"job:{self.id}", link + do, attrs=f' data-where="{_text(self.place)}" data-tone="{self.tone}"')
 
@@ -1154,7 +1244,7 @@ def _launch_card(ctx, jid, opened, lead, foot=""):
     # it, and otherwise shows Show all.
     copy = (f'<div class="clip" data-clip><textarea class="prompt mono" id="{_text(pid)}" rows="4" readonly>'
             f'{_text(prompt)}</textarea></div><div class="clip-acts">{_copy(pid, "Copy prompt")}'
-            '<button type="button" class="btn small quiet" data-more hidden>Show all</button></div>'
+            '<button type="button" class="btn small quiet" data-more aria-expanded="false" hidden>Show all</button></div>'
             if isinstance(prompt, str) and prompt.strip() else
             f'<p class="detail">The prompt could not be read here; <code>rh cloud prompt {_text(jid)}</code> prints it.'
             '</p>')
@@ -1507,11 +1597,37 @@ def _item_row(ctx, item):
     return _row(f"need:{item['id']}", link + act, attrs=' data-where="" data-tone="warn"')
 
 
+def _earlier_rows(jobs, ctx):
+    """The Earlier group's rows in their listed order: one quiet heading before the first row of each calendar
+    day — its date, as `_clock` writes a day — while every row's time cell
+    stays empty and its title keeps the full date and time. A row with no time takes no heading."""
+    out, day = [], None
+    for job in jobs:
+        since = job.since()
+        if since is not None:
+            key, label = _day_of(since, ctx["now"])
+            if key != day:
+                day = key
+                out.append(_row(f"day:{key}", f"<span>{label}</span>", cls="day", attrs=' role="presentation"'))
+        out.append(job.item(earlier=True))
+    return out
+
+
+def _day_of(timestamp, now):
+    """The calendar day a time falls on, as a key and as Earlier heads it: the date, '24 Nov', in the words the
+    rows' stamps use; 'Ended today' stays the one relative label (r34 F10: 'Yesterday' beside '24 Nov' stamps read
+    as two different days)."""
+    t = time.localtime(timestamp)
+    return f"{t.tm_year}-{t.tm_mon}-{t.tm_mday}", f"{t.tm_mday} {_MONTHS[t.tm_mon - 1]}"
+
+
 def _job_list(jobs, stop_rows, ctx):
     """Today's jobs, grouped by what you do next: Needs you, Live, Up next, Ended today, Earlier."""
     groups = {"needs": [], "live": [], "next": [], "ended": [], "earlier": []}
     for job in jobs:
-        if job.group != "needs":
+        if job.group == "earlier":
+            groups["earlier"].append(job)
+        elif job.group != "needs":
             groups[job.group].append(job.item())
     for entry in ctx["needs"]:
         groups["needs"].append(entry["job"].item(len(entry["runs"])) if entry["job"] else stop_rows[entry["key"]] if entry["stop"]
@@ -1519,7 +1635,8 @@ def _job_list(jobs, stop_rows, ctx):
     out = []
     for key, heading in (("needs", "Needs you"), ("live", "Live"), ("next", "Up next"), ("ended", "Ended today"),
                          ("earlier", "Earlier")):
-        items = groups[key]  # a group shows all its rows, so its head counts nothing; the Inbox badge is the one count
+        # a group shows all its rows, so its head counts nothing; the Inbox badge is the one count
+        items = _earlier_rows(groups[key], ctx) if key == "earlier" else groups[key]
         out.append(_section(f"g-{key}", heading, _rows(items), "", "group", hidden=not items, h="h3"))
     none = not jobs and not stop_rows
     empty = (f'<p class="empty no-jobs" data-region="no-jobs" data-sig="{_sig(none)}"{"" if none else " hidden"}>'
@@ -1656,6 +1773,78 @@ def _devin_tags(key):
     return ' data-group="SWE-2 · Free" data-group-tip="SWE-2 models use no quota"'
 
 
+_STEER_TIPS = {"steer": "Steered the active turn",
+               "queue": "Originally queued, then promoted to steer the active turn"}
+
+
+def _talk_said(talk):
+    """What the owner said to a running agent, as their messages in the chat (T3 Code's timeline): a steer that
+    landed has a 'Steered' caption under it, set like a timestamp; a queued message that started its turn reads
+    plainly; one the run ended before says so. What still waits is Up next, not here; a removed one is gone."""
+    out = []
+    for m in talk:
+        state = m.get("state")
+        if state == "removed" or (m.get("mode") == "queue" and state in ("waiting", "queued")):
+            continue
+        if m.get("mode") == "stop":  # not a message: a line where it was asked, as T3 Code's lifecycle rows
+            word = "Interrupt requested" if state == "waiting" else "You stopped the run"
+            out.append(f'<p class="talk-stop">{_ic("stop", True)}{word}</p>')
+            continue
+        said = f'<span class="um-t">{_text(_reflow(str(m.get("text") or "")))}</span>'
+        if state == "steered":
+            tip = _STEER_TIPS.get(m.get("mode"), _STEER_TIPS["steer"])
+            out.append(f'<div class="talk-steered"><div class="user-message">{said}</div>'
+                       f'<p class="um-cap" title="{tip}">{_ic("up", True)}Steered</p></div>')
+        elif state == "dropped":
+            out.append(f'<div class="talk-dropped"><div class="user-message">{said}</div>'
+                       '<p class="um-note">Not sent: the run ended first</p></div>')
+        else:  # sent (it started the next turn), or a steer the agent has not read yet
+            out.append(f'<div class="user-message{" sending" if state == "waiting" else ""}">{said}</div>')
+    return "".join(out)
+
+
+def _up_next(talk):
+    """T3 Code's queued rows: what waits for the turn to end, numbered, each with Edit, Steer and Remove; past three,
+    the first three and 'n more'. Empty, the region stays (hidden), so the page's regions do not change
+    when one is queued and the composer keeps its draft."""
+    queued = [m for m in talk if m.get("mode") == "queue" and m.get("state") in ("waiting", "queued")]
+    n, rows = len(queued), []
+    for i, m in enumerate(queued, 1):
+        more = " un-more" if n > 3 and i > 3 else ""
+        rows.append(f'<li class="un-row{more}" data-id="{_text(m["id"])}" aria-label="Queued message {i} of {n}, not sent">'
+                    f'<span class="un-i">{i}</span><button type="button" class="un-t" data-q-edit title="Edit in the composer">'
+                    f'{_text(str(m.get("text") or ""))}</button>'
+                    '<span class="un-editing" hidden>Editing in the composer</span><span class="un-acts">'
+                    f'<button type="button" class="ghost un-b" data-q-edit aria-label="Edit queued message" '
+                    f'title="Edit in the composer">{_ic("pencil", True)}</button>'
+                    f'<button type="button" class="ghost un-b un-steer" data-q="promote" aria-label="Steer" '
+                    f'title="Send as a steer instead">{_ic("up", True)}</button>'
+                    f'<button type="button" class="ghost un-b" data-q="remove" aria-label="Remove queued message" '
+                    f'title="Remove from queue">{_ic("x", True)}</button></span></li>')
+    every = (f'<button type="button" class="ghost un-all" data-q-all aria-expanded="false" '
+             f'data-more="{n - 3} more">{n - 3} more</button>') if n > 3 else ""
+    body = (f'<p class="un-head"><span>Up next</span><span class="un-n"> · {n}</span></p>'
+            f'<ol class="un-list">{"".join(rows)}</ol>{every}') if n else ""
+    return _region("j-up-next", body, "section", "up-next", ' aria-label="Up next"' + ("" if n else " hidden"))
+
+
+def _talk_form(ctx, jid, who="the agent"):
+    """The running job's composer, after T3 Code's: Enter steers (joins the turn), Ctrl/⌘ with it queues (the next
+    turn), and empty its button is Stop. The script posts it to /job/message; an edit of a queued row sends update."""
+    # the app's own glyphs (owner: not T3's square and arrows): its stop ring, the send arrow every composer has, a clock
+    icons = "".join(_ic(name).replace('class="ic"', f'class="ic t-{state}"')
+                    for name, state in (("stop", "stop"), ("up", "steer"), ("clock", "queue"), ("check", "update")))
+    return (f'<form class="compose composer talk" method="post" action="/job/message" data-message data-state="stop">'
+            f'{_hidden(ctx, [("job", jid), ("mode", "steer"), ("target", "")])}'
+            f'<label class="sr" for="talk-{_text(jid)}">Message the agent</label>'
+            f'<textarea class="c-text" id="talk-{_text(jid)}" name="text" rows="1" placeholder="Steer {_text(who)}…"></textarea>'
+            '<div class="c-row"><div class="compose-tools">'
+            '<button type="button" class="ghost talk-cancel" data-q-cancel hidden '
+            'aria-label="Cancel editing queued message">Cancel</button>'
+            '<button class="btn primary send talk-send" aria-label="Stop generation" title="Interrupt" '
+            f'data-tip="Click to steer, Ctrl/⌘-click to queue">{icons}</button></div></div></form>')
+
+
 def _model_picker(policy, kind, draft, only=False):
     """The model and effort pickers for a route: every route's, with all but `kind` hidden (the New job composer), or
     only `kind`'s (`only`, the reply box under a job)."""
@@ -1729,12 +1918,18 @@ def _model_picker(policy, kind, draft, only=False):
     return worker_picker
 
 
+def _gpt_name(m):
+    """A GPT model the table does not know yet, in the table's words: gpt-6.2-astra is GPT-6.2 Astra."""
+    found = re.fullmatch(r"gpt-(\d+(?:\.\d+)?)-([a-z]+(?:-[a-z]+)*)", m)
+    return f"GPT-{found.group(1)} {found.group(2).replace('-', ' ').title()}" if found else m
+
+
 def _names(models):
     """Model names in words: "SWE-2 Max", "SWE-2 Max and SWE-2 Flash", "A, B and C"."""
     # a Fusion model is named by its pair, as the picker names it: which lead and which sidekick run
     names = [" + ".join(_MODEL_NAMES.get(part.removeprefix("claude-"), part)
                         for part in m.removeprefix("fusion-").split("-sidekick-")) if m.startswith("fusion-")
-             else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, m)) for m in models]
+             else _MODEL_NAMES.get(m.removeprefix("claude-"), _MODEL_NAMES.get(m, _gpt_name(m))) for m in models]
     return " and ".join(names) if len(names) < 3 else ", ".join(names[:-1]) + " and " + names[-1]
 
 
@@ -1762,10 +1957,11 @@ def _swarm_rows(swarm, form=""):
     for m in choices:
         groups.setdefault("claude" if m.startswith("claude-") else "devin", []).append(m)
     def row(prov, m):
-        return (f'<label class="swarm-m">{_ic(prov, True)}<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span>'
-                +
-                f'<input type="checkbox" name="models" value="{_text(m)}"{" checked" if m in ticked else ""}{owner} '
-                f'data-name="{_text(_names([m]))}"><span class="swarm-x" aria-hidden="true"></span></label>')
+        # box, glyph, name in every list that draws these rows: Settings and the composer's popover alike (r27 F12)
+        return (f'<label class="swarm-m"><input type="checkbox" name="models" value="{_text(m)}"'
+                f'{" checked" if m in ticked else ""}{owner} data-name="{_text(_names([m]))}">'
+                f'<span class="swarm-x" aria-hidden="true"></span>{_ic(prov, True)}'
+                f'<span class="swarm-n">{_text(_names([m]).removeprefix("Claude "))}</span></label>')
     parts = []
     for prov, models in groups.items():
         if prov != "devin":
@@ -1789,6 +1985,7 @@ def _swarm_rows(swarm, form=""):
 
 
 _SWARM_PICK = "swarm-pick-f"
+_TEAM_PICK = "team-pick-f"
 
 
 def _swarm_note(ctx):
@@ -1802,15 +1999,35 @@ def _swarm_note(ctx):
     chip = (f'<span class="swarm-chip">{_ic("swarm", True)}Swarm'
             '<button type="button" class="swarm-off" data-swarm-off aria-label="Turn swarm off" title="Turn swarm off">'
             '×</button></span>')
-    ran, judged = _swarm_line([_names([m]) for m in models], _names([judge])).rsplit(" · ", 1)
-    says = f'{_text(ran)}{_SEP_HTML}{_text(judged)}'
+    ran = _swarm_line([_names([m]) for m in models])
+    judged = f"judge {_names([judge])}"
+    quick_says = f'{_text(ran)}{_SEP_HTML}{_text(judged)}'
+    team = _active_team(swarm)
+    says = (f'{_text(team["name"])}{_SEP_HTML}{_team_size(team)} agents' if team else quick_says)
     if ctx["live"] and swarm.get("choices"):
         boxes, judge_row = _swarm_rows(swarm, _SWARM_PICK)
+        teams = ""
+        if swarm.get("team_models"):  # the teams Settings keeps, picked here; Quick swarm is the ticks below
+            data = _team_presets(swarm)
+            # each radio carries its line as plain text, 'A · B'; team.js puts the dot back as the page draws it
+            rows = [("quick", "Quick swarm", ran, f"{ran} · {judged}")] + [
+                (p["id"], p["name"], _team_sub(p),
+                 f'{p["name"]} · {_team_size(p)} agents')
+                for p in data["presets"] if isinstance(p, dict) and p.get("id")]
+            teams = ('<div class="swarm-teams" role="radiogroup" aria-label="Team" data-team-pick>'
+                     + "".join(f'<label class="swarm-team"><input type="radio" name="active" value="{_text(pid)}" '
+                               f'form="{_TEAM_PICK}"{" checked" if pid == (team["id"] if team else "quick") else ""} '
+                               f'data-says="{_text(said)}"><span class="swarm-team-n">{_text(name)}</span>'
+                               f'<span class="swarm-team-d">{_text(sub)}</span></label>'
+                               for pid, name, sub, said in rows)
+                     + f'<button type="button" class="swarm-team-edit" data-team-open>{_ic("swarm", True)}'
+                     'Edit teams</button></div>')
         return (f'<div class="swarm-note" data-swarm-note hidden>{chip}<details class="swarm-pick">'
-                f'<summary aria-label="Swarm models" title="Swarm models"><span class="swarm-says" '
+                f'<summary aria-label="Swarm models" title="Swarm team and models"><span class="swarm-says" '
                 f'data-swarm-says="{_SWARM_PICK}">{says}</span>{_ic("chev", True)}</summary>'
-                f'<div class="swarm-pop"><div class="swarm-models">{boxes}</div>'
-                f'<div class="swarm-opts in-pop">{judge_row}</div></div></details></div>')
+                f'<div class="swarm-pop" data-team="{"quick" if not team else "preset"}">{teams}'
+                f'<div class="swarm-quick"><div class="swarm-models">{boxes}</div>'
+                f'<div class="swarm-opts in-pop">{judge_row}</div></div></div></details></div>')
     return f'<p class="swarm-note" data-swarm-note hidden>{chip}<span class="swarm-says">{says}</span></p>'
 
 
@@ -1821,7 +2038,9 @@ def _swarm_pick_form(ctx):
     if not (ctx["live"] and swarm.get("choices") and swarm.get("models")):
         return ""
     return (f'<form id="{_SWARM_PICK}" action="/settings/swarm" method="post" data-swarm-form hidden>'
-            f'{_hidden(ctx, [("check", swarm.get("check") or "")])}</form>')
+            f'{_hidden(ctx, [("check", swarm.get("check") or "")])}</form>'
+            + (f'<form id="{_TEAM_PICK}" action="/settings/swarm-active" method="post" data-team-pick-form hidden>'
+               f'{_hidden(ctx, [])}</form>' if swarm.get("team_models") else ""))
 
 
 def _composer(ctx, draft, ready, policy):
@@ -1891,12 +2110,47 @@ def _composer(ctx, draft, ready, policy):
     # the repository heads the page, so the line under it names only the branch
     where = "".join(f'<span class="where-chip" title="{title}">{_ic(icon, True)}<span class="wc-t">{_text(workspace[key])}</span></span>'
                     for key, icon, title in (("branch", "branch", "Branch"),) if workspace.get(key))
-    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx), options=fields, opened=opened,
+    # the folder the title's menu picked; empty works in the configured repository
+    folder = (f'<input type="hidden" name="folder" value="{value("folder")}">' if ctx.get("folders") is not None
+              else "")
+    form = _composer_form(ctx, "/job", "Start job", message, worker=worker_picker + _swarm_note(ctx) + folder,
+                          options=fields, opened=opened,
                           controls="".join(controls), where=f'<div class="where-bar">{runner}{where}</div>', files=True,
                           picked=draft.get("input_path", "") if isinstance(draft.get("input_path"), str) else "")
     body = f'<div class="body">{form}{_swarm_pick_form(ctx)}</div>'
     return (f'<div class="s-compose" data-region="compose" data-key="section:compose" '
             f'data-sig="{_sig("compose", body)}">{body}</div>')
+
+
+def _folder_title(ctx, current):
+    """The composer's title as the folder a This Mac job works in, with a menu of the folders jobs used, the
+    configured repository and Choose folder… (a native dialog in the app, a typed path in a browser). The server
+    takes only a git working tree; cloud jobs stay on the configured repository."""
+    name = Path(current).name if current else "Choose a folder"  # none configured: the menu is how to pick one
+    home = str(Path.home())
+
+    def where(path):  # the folder's parent, as ~/Projects: its own name is already the row's name
+        parent = str(Path(path).parent)
+        return "~" + parent[len(home):] if parent == home or parent.startswith(home + "/") else parent
+    rows = "".join(
+        f'<button type="button" class="fm-row" role="menuitemradio" aria-checked="{str(path == current).lower()}" '
+        f'data-folder="{_text(path)}" title="{_text(path)}">{_ic("folder", True)}'
+        f'<span class="fm-n">{_text(fname)}</span><span class="fm-p">{_text(where(path))}</span>'
+        + ('<span class="fm-def">Default</span>' if path == ctx["repo_path"] else "")
+        + f'{_ic("check", True)}</button>' for path, fname in ctx["folders"])
+    # the title and its menu share one box the title's size, so the menu opens off the title on any layout
+    return (f'<div class="folder-pick"><h1 class="compose-title" id="compose-title" tabindex="-1" '
+            f'data-repo="{_text(name)}"><button type="button" class="folder-btn" aria-haspopup="menu" aria-expanded="false" '
+            f'aria-controls="folder-menu" title="{_text(current)}" data-home="{_text(ctx["repo_path"])}">'
+            f'<span class="fb-glyph">{_ic("folder", True)}</span><span class="fb-name">{_text(name)}</span>'
+            f'{_ic("chev", True)}</button><span class="ct-research">What should we find out?</span></h1>'
+            f'<div class="folder-menu" id="folder-menu" role="menu" aria-label="Working folder" hidden>'
+            f'<p class="fm-head">Work in</p>{rows}<span class="fm-rule" role="separator"></span>'
+            f'<button type="button" class="fm-row fm-choose" role="menuitem" data-folder-choose>{_ic("plus", True)}'
+            '<span class="fm-n">Choose folder…</span></button>'
+            '<label class="fm-path" hidden><input type="text" class="mono" aria-label="Path to a git folder" '
+            'placeholder="~/Projects/app" autocomplete="off" spellcheck="false">'
+            '</label></div></div>')
 
 
 def _compose_strip(ctx, view, focus=False):
@@ -1906,8 +2160,16 @@ def _compose_strip(ctx, view, focus=False):
         form = form.replace('<textarea class="c-text" id="brief"', '<textarea class="c-text" id="brief" autofocus', 1)
     # A coding job works in this repository, so its name heads the page; with none known, the page asks.
     repo = str((ctx.get("workspace") or {}).get("repo") or "")
-    title = (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(repo)}">{_text(repo)}</h1>'
-             if repo else '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1>')
+    draft = view.get("compose") if isinstance(view.get("compose"), dict) else {}
+    picked = str(draft.get("folder") or "").strip()
+    if ctx.get("folders") is not None and ctx["live"]:
+        current = picked or (ctx["repo_path"] if repo else "")
+        title = _folder_title(ctx, current)
+        repo = Path(current).name if current else ""
+    else:
+        title = (f'<h1 class="compose-title" id="compose-title" tabindex="-1" data-repo="{_text(repo)}">{_text(repo)}'
+                 '</h1>' if repo else
+                 '<h1 class="compose-title" id="compose-title" tabindex="-1">What are we building?</h1>')
     # On its own page the composer names the keys it answers to; the shortcuts sheet lists them for a reader.
     hint = (f'<p class="compose-hint" aria-hidden="true"><kbd>/</kbd> commands{_SEP_HTML}'
             '<kbd>⌘K</kbd> jump to anything</p>' if focus else "")
@@ -2172,13 +2434,15 @@ def _stops(ctx, entry):
     return _region("j-stops", '<h2>Pauses and stops</h2>' + "".join(parts), "section")
 
 
-def _job_head(title, kind, tip=""):
+def _job_head(title, kind, tip="", sub="", folder=""):
     """A compact, persistent title, named as the sidebar names the job (its id when another listed job shares its
-    name, with the name on hover), and its worker crumb."""
+    name, with the name on hover), and its worker crumb; `sub` is a second quiet line under it, when one is due."""
     tip = f' title="{_text(tip)}"' if tip else ""
     body = ('<div class="jd-head-in">'
             f'<h1 tabindex="-1" data-clear{tip}>{_text(title)}</h1>'
-            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span></p></div>')
+            f'<p class="job-worker" data-clear>{_SEP_HTML}<span>{_text(_platform(kind))}</span>'
+            + (f'{_SEP_HTML}<span class="job-folder" title="{_text(folder)}">{_text(Path(folder).name)}</span>'
+               if folder else "") + f'</p>{sub}</div>')
     return _region("j-head", body, "section", "jd-head")
 
 
@@ -2227,25 +2491,23 @@ def _fail_banner(state, spec, bad):
     """What failed, as the job page and the Inbox both say it: the sentence, then the command with its exit code."""
     what = "The done-when check" if spec.get("accept") and bad[0] == str(spec["accept"]) else "The command"
     found = _found(bad[0], bad[1])
-    # an exit code says itself: "The command exited with code 1"
-    sentence = (f"{what} exited with code {bad[1]}" if what == "The command" and found == f"it exited with code {bad[1]}"
-                else f"{what} failed: {found}")
+    # an exit code says itself: "The command exited with code 1" — then the chip would only repeat it
+    coded = what == "The command" and found == f"it exited with code {bad[1]}"
+    sentence = f"{what} exited with code {bad[1]}" if coded else f"{what} failed: {found}"
+    chip = "" if coded else f'<span class="exit mono">exit {_text(bad[1])}</span>'
     return (f'<p class="fail-k">{_ring(state)}{_text(sentence)}</p>'
-            f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code><span class="exit mono">exit {_text(bad[1])}</span></p>')
+            f'<p class="fail-c"><code>{_text(short_cmd(spec, bad[0]))}</code>{chip}</p>')
 
 
-def _swarm_line(names, judge):
-    """The composer's swarm line: 'SWE-2 Max, Flash · judge: Max'. A family every model shares is named once; a list
-    that mixes families, or holds a Fusion pair, keeps whole names. Runs join with commas: '+' is Fusion's own.
-    app.js's swarmLine writes the same line as the ticks change."""
+def _swarm_line(names, judge=""):
+    """The composer's swarm line: 'SWE-2 Max, Flash · judge SWE-2 Max', or the models alone with no judge (the Quick
+    swarm's subtitle in the teams lists). A family every model shares is named once; a list that mixes families,
+    or holds a Fusion pair, keeps whole names. Runs join with commas: '+' is Fusion's own. The judge keeps its
+    whole name — a bare 'Max' reads as an effort. app.js's swarmLine writes the same line as the ticks change."""
     heads = {n.split(" ", 1)[0] for n in names}
     fam = next(iter(heads)) if len(heads) == 1 and all(" " in n and "+" not in n for n in names) else ""
-    models = ", ".join(names)
-    if fam:
-        models = fam + " " + ", ".join(n[len(fam) + 1:] for n in names)
-        if judge.startswith(fam + " ") and "+" not in judge:
-            judge = judge[len(fam) + 1:]
-    return f"{models} · judge: {judge}"
+    models = fam + " " + ", ".join(n[len(fam) + 1:] for n in names) if fam else ", ".join(names)
+    return f"{models} · judge {judge}" if judge else models
 
 
 def _swarm_again(ctx, runs):
@@ -2267,12 +2529,46 @@ def _swarm_again(ctx, runs):
             '<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button></form>')
 
 
-def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
+def _swarm_verdict(kept, rid, runs):
+    """One run's verdict under its judge's kept: "kept" for the run the judge kept whole, "lost" for one it passed
+    over for a sibling, "combined" when the judge merged the runs and "none" when it kept none of them; "" before
+    the judge has finished."""
+    if kept in (rid, rid.rsplit(".", 1)[-1]):
+        return "kept"
+    if kept == "combined":
+        return "combined"
+    if kept:
+        return "lost" if kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "none"
+    return ""
+
+
+def _swarm_run(ctx, jid):
+    """A swarm run's own line under its page's head: 'Run 1 of 2 in a swarm', the judge's verdict on it — 'Kept',
+    'Not kept' or 'Combined' once the judge has finished, 'Judge still working' before — and, on a live page, a
+    way back to the swarm. "" for a job that is no swarm's run."""
+    judge, runs = next(((j, rs) for j, rs in (ctx.get("swarms") or {}).items() if jid in rs), ("", []))
+    if not judge:
+        return ""
+    m = ctx["meta"].get(judge)
+    kept = str(m.get("kept") or "") if isinstance(m, dict) else ""
+    verdict = _swarm_verdict(kept, jid, runs)
+    word = {"kept": "Kept", "combined": "Combined"}.get(verdict)
+    if not word:
+        ended = ctx["states"].get(judge) in ("done", "cancelled", *_FAILED)
+        word = "Not kept" if verdict or ended else "Judge still working"
+    line = f"Run {runs.index(jid) + 1} of {len(runs)} in a swarm{_SEP_HTML}{word}"
+    if ctx["live"]:
+        line += f'{_SEP_HTML}<a href="{_url(ctx, "/job/" + judge)}" data-nav>Open swarm ›</a>'
+    return f'<p class="job-swarm" data-clear>{line}</p>'
+
+
+def _swarm_card(ctx, runs, checks=None, kept=None, stats=None, final=None):
     """A swarm's runs on its judge's page: each run's model, state, time, diff size, check verdict and first
-    answer line, linked to its page."""
+    answer line, linked to its page; a judge that combined them gets the kept work's check verdict in the head."""
     now, items = ctx["now"], []
     checks = checks if isinstance(checks, dict) else {}
     stats = stats if isinstance(stats, dict) else {}
+    final = final if isinstance(final, str) else ""
     for rid in runs:
         m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
         st = ctx["states"].get(rid) or "waiting"
@@ -2296,26 +2592,83 @@ def _swarm_card(ctx, runs, checks=None, kept=None, stats=None):
                  f'<span class="sw-s">{_SEP_HTML.join(x for x in (state, took) if x)}</span>'
                  + (f'<span class="sw-a">{_text(said)}</span>' if said else ""))
         short = rid.rsplit(".", 1)[-1]
-        won = kept in (rid, short)
-        cls = "sw-run kept" if won else "sw-run lost" if kept and kept in {*runs, *(r.rsplit(".", 1)[-1] for r in runs)} else "sw-run"
+        mark = _swarm_verdict(kept, rid, runs)
+        cls = f"sw-run {mark}" if mark in ("kept", "lost") else "sw-run"
         inner = f'<span class="sw-id mono">{_text(short)}</span>' + inner + (
-            '<span class="sw-k">Kept</span>' if won else "")
+            '<span class="sw-k">Kept</span>' if mark == "kept" else "")
         # a row opens its run, and says so as 'Show ›' does
         go = f'<span class="sw-go" aria-hidden="true">{_ic("chev", True)}</span>'
-        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav>{inner}{go}</a></li>' if ctx["live"]
-                     else f'<li><div class="{cls}">{inner}</div></li>')
+        live = " data-live" if st in _LIVE else ""  # a run at work wears a slow sheen (rh.css)
+        items.append(f'<li><a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav{live}>{inner}{go}</a></li>'
+                     if ctx["live"] else f'<li><div class="{cls}"{live}>{inner}</div></li>')
     n = len(runs)
     ended = sum((ctx["states"].get(r) or "waiting") not in (*_LIVE, *_PRE) for r in runs)
     again = ""
     if ended < n:  # while a run still works, the head says how far along the swarm is, and draws it
         side = (f'{ended} of {n} finished<span class="sw-bar" role="progressbar" aria-label="Runs finished" aria-valuemin="0" '
                 f'aria-valuemax="{n}" aria-valuenow="{ended}" style="--p:{ended / n:.0%}"></span>')
-    else:  # ended: the rows below show how many; the head says only that the judge combined them, when it did
+    else:  # ended: the rows below show how many; the head says the judge combined them, when it did, and the kept work's check
         side = "Combined" if kept == "combined" else ""
+        if kept == "combined" and final:  # the combined tree's check, as a row wears it
+            ok = final == "passed"
+            side += _SEP_HTML + (f'<span class="sw-c{"" if ok else " bad"}">'
+                                 f'{"Check passed" if ok else "Check failed"}</span>')
         again = _swarm_again(ctx, runs) if ctx["live"] else ""
     body = (f'<div class="head"><h2>{_ic("swarm", True)}Swarm</h2><span class="lines">{side}</span>{again}</div>'
             f'<ul class="sw-runs">{"".join(items)}</ul>')
     return _region("j-swarm", body, "section", "out s-j-swarm", ' aria-label="Swarm runs"')
+
+
+_TEAM_ROLE = {"best": "Lead", "plan": "Plan"}
+
+
+def _team_card(ctx, jid):
+    """A layered swarm's whole team on its lead's page, drawn as a tree: the lead, its plan and managers, and each
+    manager's agents, every one with its state and time. Wires join each agent to whoever judges it; team.js draws
+    them, flowing while that agent works, and lights the path of the work each judge kept up to the lead. A flat
+    swarm (every run under the lead works) has no tree: its runs card says it all."""
+    swarms, now = ctx.get("swarms") or {}, ctx["now"]
+    runs = swarms.get(jid) or []
+    if not any(swarms.get(r) for r in runs):
+        return ""
+    seen, tally = set(), {"n": 0, "live": 0}
+
+    def node(rid, up, kept_by_up, depth):
+        seen.add(rid)
+        m = ctx["meta"].get(rid) if isinstance(ctx["meta"].get(rid), dict) else {}
+        st = ctx["states"].get(rid) or "waiting"
+        tone = "live" if st in _LIVE else "fail" if st in _FAILED else "done" if st == "done" else "wait"
+        tally["n"] += 1
+        tally["live"] += tone == "live"
+        short = rid.rsplit(".", 1)[-1]
+        role = _TEAM_ROLE.get(short) or ("Manager" if re.fullmatch(r"m\d+", short) and swarms.get(rid) else "Agent")
+        start, end = m.get("started"), m.get("updated")
+        took = (_duration(now - start) if tone == "live" and _number(start) else
+                _duration(end - start) if tone in ("done", "fail") and _number(start) and _number(end) else "")
+        word = "" if tone == "done" else _STATES.get(st, (st,))[0]
+        model = _names([m["model"]]) if m.get("model") else short
+        kept = str(m.get("kept") or "")
+        cls = f"lt-n s-{tone}" + (" kept" if kept_by_up else "")
+        inner = (f'{_ring(st, "red" if st in _FAILED else None)}<span class="lt-r">{_text(role)}'
+                 f'<span class="mono"> {_text(short)}</span></span><span class="lt-m">{_text(model)}</span>'
+                 f'<span class="lt-t">{_SEP_HTML.join(_text(x) for x in (word, took) if x)}</span>')
+        attrs = f' data-lt="{_text(rid)}" data-up="{_text(up)}" data-tone="{tone}"'
+        head = (f'<a class="{cls}" href="{_url(ctx, "/job/" + rid)}" data-nav{attrs}>{inner}</a>' if ctx["live"]
+                else f'<div class="{cls}"{attrs}>{inner}</div>')
+        kids = [k for k in swarms.get(rid, []) if k not in seen] if depth < 5 else []
+        sub = "".join(node(k, rid, tone_kept(kept, k), depth + 1) for k in kids)
+        return f'<li>{head}{f"<ul>{sub}</ul>" if sub else ""}</li>'
+
+    def tone_kept(kept, kid):
+        short = kid.rsplit(".", 1)[-1]
+        return bool(kept) and (kept == short or kept == "combined" and ctx["states"].get(kid) == "done")
+
+    tree = node(jid, "", False, 0)
+    side = f'{tally["n"]} agents' + (_SEP_HTML + f'{tally["live"]} working' if tally["live"] else "")
+    body = (f'<div class="head"><h2>{_ic("swarm", True)}Team</h2><span class="lines">{side}</span></div>'
+            f'<div class="lt" data-lt-box><svg class="lt-wires" aria-hidden="true"></svg>'
+            f'<ul class="lt-tree">{tree}</ul></div>')
+    return _region("j-team", body, "section", "out s-j-team", ' aria-label="Swarm team"')
 
 
 def _job_pane(opened, jobs, ctx, feedback, view):
@@ -2353,7 +2706,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     if ctx["live"] and state in (*_PRE, "stalled") and not finished:  # the states rh job cancel accepts
         acts.append(_cancel(ctx, jid, stalled=state == "stalled"))
     named = entry.label if entry.label != entry.title else (_lead(spec)[0] or jid)  # as the sidebar names it
-    head = _job_head(jid, kind, entry.label) if entry.dup else _job_head(named, kind)
+    swarm = _swarm_run(ctx, jid)  # a swarm's own run says so on a quiet line under its head
+    command = spec.get("command")  # a This Mac agent in a folder other than the configured repository names it
+    folder = (str(command[4]) if agent_of(command) and ctx.get("repo_path")
+              and str(Path(str(command[4])).resolve()) != ctx["repo_path"] else "")
+    head = (_job_head(jid, kind, entry.label, swarm, folder) if entry.dup
+            else _job_head(named, kind, sub=swarm, folder=folder))
     work = []
     if feedback:
         work.append(feedback)
@@ -2404,6 +2762,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     elif spec.get("prior"):
         work.append(_region("j-brief", '<p class="run-note">Ran again with no changes</p>', "section", "s-j-brief",
                             ' aria-label="Follow-up"'))
+    talk = [m for m in opened.get("inbox") or [] if isinstance(m, dict) and m.get("id")]
+    talking = isinstance(opened.get("inbox"), list) and state == "running" and ctx["live"]
+    if talk or talking:  # what the owner said to it as it ran; the region stays put, so a draft survives a refresh
+        work.append(_region("j-said", _talk_said(talk), "section", "s-j-said", ' aria-label="Your messages"'))
     check_rows = _checks_of(opened, spec, finished or state not in _PRE)
     checks_at = None  # where the status line counts the checks, if it does
     check_values = [passed for passed, _, _ in check_rows if passed is not None]
@@ -2416,10 +2778,25 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         shown, word = "running", _STATES["running"][0]
     result = [f'{_ring("done" if state == "done" else shown, kind=kind)}']
     status_line = [_text("Done" if state == "done" else word)]
+    # a running agent's line names who the composer steers, as a finished turn's does (r31 F5): 'Claude · Opus 5.5'
+    steered = agent_of(spec.get("command")) if state in ("running", "stalled") else None
+    if steered and steered[0] in _AGENT_WHO:
+        who = _AGENT_WHO[steered[0]][0]
+        model = _MODEL_NAMES.get(steered[1], steered[1]) if steered[1] else ""
+        model = model[len(who) + 1:] if model.startswith(who + " ") else model
+        status_line[:0] = [_text(who)] + ([_text(model)] if model else [])
     late = state == "stalled"
+    # quiet for over 5 min past the limit: the log card says output stopped, so the status line does not repeat it
+    quiet_log = (late and _number(opened.get("log_at")) and now - opened["log_at"] > 300
+                 and isinstance(opened.get("log"), str) and bool(opened["log"].strip()))
     if late:  # past its limit, said once, with the limit (the line under it is left out)
         limit = spec.get("timeout_min")
         status_line = [_text(f"Past its {_minutes(limit)} limit" if _number(limit) and limit > 0 else word)]
+        if _number(opened.get("log_at")):  # whether it still works or hangs: when its output last changed
+            if now - opened["log_at"] > 300:  # quiet for over 5 min: the ring dims, so the page reads stopped
+                result[0] = result[0].replace('class="st ', 'class="st quiet ', 1)
+            if not quiet_log:
+                status_line.append(_when(opened["log_at"], now, "j:quiet", pre="last output "))
     elif swarming:
         pass  # how many runs have finished is said once, by the Swarm card's head beside its bar
     elif check_rows and not all(value is True for value in check_values) or len(check_values) < len(check_rows):
@@ -2464,10 +2841,14 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         result.append(f'<progress class="run-progress" max="{step[1]}" value="{step[0]}" '
                       f'aria-label="{step[0]} of {step[1]}"></progress>')
     status_at, status_html = len(work), "".join(result)
-    work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else "job-result"))
+    work.append(_region("job-result", status_html, "p", "job-result after-fail" if quiet else
+                        "job-result agent-run" if steered and steered[0] in _AGENT_WHO else "job-result"))
     if runs:
+        team = _team_card(ctx, jid)
+        if team:
+            work.append(team)
         work.append(_swarm_card(ctx, runs, opened.get("swarm_checks"), opened.get("swarm_kept"),
-                                opened.get("swarm_stats")))
+                                opened.get("swarm_stats"), final=opened.get("swarm_final")))
     # What it needs from you, each with the form that settles it.
     cards, lead = [], True
     chat_dock = ""
@@ -2570,9 +2951,10 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                 details = (f'<details class="file-preview"><summary>Show</summary><div class="peek-card">'
                            f'<pre class="peek{" diff" if diff_head else ""}" tabindex="0">'
                            f'{_peek_html(path, peek_text, whole=not preview.get("more"))}{more}</pre></div></details>')
+            # a diff's counts are the fact a patch row needs; the size stays only where it is the row's one fact
+            size = "" if summed else f'<span class="session-file-size">{_text(_size(file.get("size")))}</span>'
             file_rows.append(f'<li class="session-file"><span class="session-file-main">{_ic("file", True)}{link}'
-                             f'{summed}<span class="session-file-size">{_text(_size(file.get("size")))}</span>'
-                             f'{copy}</span>{details}</li>')
+                             f'{summed}{size}{copy}</span>{details}</li>')
         work.append(_region("session-files", '<ul class="session-files">' + "".join(file_rows) + '</ul>',
                             "section", "session-file-list", ' aria-label="Files produced"'))
     # A done job that gave no answer made its output: its last lines show open, as a failed one's do.
@@ -2587,27 +2969,49 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         # unknown length is no whole, so the card counts its own
         whole = total if total else None if opened.get("log_cut") else len(lines)
         n = whole if whole and whole > len(tail) else len(tail)
-        body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2><span class="lines mono">'
-                f'{n:,} {"line" if n == 1 else "lines"}</span></div>'
-                f'<pre class="log ended{" err" if failed else ""}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>')
+        # the count says what is hidden: a log longer than the tail shown, or a kept tail cut from one; over lines
+        # already in view it counts nothing and the head goes without it
+        count = (f'<span class="lines mono">{n:,} {"line" if n == 1 else "lines"}</span>'
+                 if opened.get("log_cut") or len(lines) > len(tail) else "")
+        err = " err" if failed else ""
+        # the rest of the log folds into the card's own foot, so one card names the output once (r27 F13): open, the
+        # whole replaces the last lines and the foot stays under it
+        rest = (f'<details class="out-more"><summary><span class="om-show">'
+                f'{f"Show last {len(lines):,} lines" if opened.get("log_cut") else "Show all"}</span>'
+                f'<span class="om-hide">Show less</span></summary><pre class="log ended{err}" tabindex="0">'
+                f'{"".join(_ln(l) for l in lines)}</pre></details>' if len(lines) > len(tail) else "")
+        body = (f'<div class="head"><h2>{_ic("term", True)}{name}</h2>{count}</div>'
+                f'<pre class="log ended{err}" tabindex="0">{"".join(_ln(l) for l in tail)}</pre>{rest}')
         work.append(_region(region, body, "section", "out", f' aria-label="{name}"'))
-    # output that fits whole in the card above has nothing more to unfold
-    if (not finished or log) and not (card and len(lines) <= _TAIL) and not (swarming and not log):
-        tag = f'<span class="livetag">{_dot("live", True)}live</span>' if state == "running" else ""
+    # a card holds its whole output in its own foot; a page without one folds the output here
+    if (not finished or log) and not card and not (swarming and not log):
+        # the status line says Running with its moving ring; the fold names only its output (r32 F8)
         last = "last " if opened.get("log_cut") else ""
-        # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing
+        # under a card that names the whole, the fold says only how much of it it holds: 'last 200', or nothing; a
+        # live log shows whole in the open fold, so its count stays only for a kept tail ('last N') or a log long
+        # enough to scroll (over 20 lines)
         line_count = ((f"last {len(lines):,} lines" if last else "") if card else
                       f'{len(lines)} of {total:,} lines' if total and finished else
-                      f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}')
+                      f'{last}{len(lines)} {"line" if len(lines) == 1 else "lines"}'
+                      if finished or last or len(lines) > 20 else "")
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
-        output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
+        output_status = (("All output" if card and not last else "Output") if log or not finished
+                         else "No output received yet")
         # the count sits right, as every log card's does
         count = f'<span class="lines mono">{_text(line_count)}</span>' if log and line_count else ""
         # folded, a glyph where a file row's icon sits starts 'Output' on the file name's edge
         work_summary = (f'<summary class="worked-summary">{_ic("term", True)}'
-                        f'<span class="worked-output">{output_status}</span>{tag}{count}</summary>')
-        output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}</pre>' if log else
+                        f'<span class="worked-output">{output_status}</span>{count}</summary>')
+        # past its limit and quiet a while, the card says its output stopped, a hairline under its last line
+        quiet_row = (f'<span class="log-quiet">no output since {_text(_clock(opened["log_at"], now))}'
+                     f'{_SEP_HTML}{_when(opened["log_at"], now, "j:quiet", short=True)}</span>'
+                     if quiet_log else "")
+        # a running job's output is one card from the start: empty, it holds one quiet line the first output replaces
+        # (r31 F6: two bare sentences over an empty band read as unfinished)
+        output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}{quiet_row}</pre>'
+                       if log else '<pre class="log" data-follow tabindex="0"><span class="log-wait">Waiting for first '
+                       'output</span></pre>' if not finished else
                        '<p class="soft">The worker has not produced output yet.</p>')
         worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'
         work.append(_region("j-output", worked_body, "details", "worked",
@@ -2628,7 +3032,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                                primary=lead and again and state != "done")
     else:
         reply = ""
-    if chat_dock:
+    if talking:
+        talker = agent_of(spec.get("command"))
+        dock_content = _talk_form(ctx, jid, talker[0].capitalize() if talker else "the agent")
+        dock_region = "j-message"
+        dock_label = "Message the agent"
+    elif chat_dock:
         dock_content = chat_dock
         dock_region = "j-chat-reply"
         dock_label = "Save reply"
@@ -2639,7 +3048,7 @@ def _job_pane(opened, jobs, ctx, feedback, view):
     scroll = f'<div class="jd-scroll"><div class="jd-body">{"".join(work)}</div></div>'
     dock = (_region(dock_region, dock_content, "section", "jd-compose session-dock", f' aria-label="{dock_label}"')
             if dock_content else "")
-    dock = f'<div class="jd-dock">{dock}</div>' if dock else ""
+    dock = f'<div class="jd-dock">{_up_next(talk) if talking else ""}{dock}</div>' if dock else ""
     lines, seen = [], None
     for ev in [e for e in opened.get("events", []) if isinstance(e, dict)][-60:]:
         made = _event(ev, now, kind)
@@ -2701,13 +3110,16 @@ def _ib_row(ctx, entry, picked, view=None):
     return _row(entry["key"], link, "ib-li", f' data-kind="{entry["tab"]}"')
 
 
-def _settled_row(ctx, item, picked):
+def _settled_row(ctx, item, picked, runs=1):
+    """One settled item, or the newest of `runs` asked and answered alike, which counts them (critic r25 F6)."""
     ask, _ = _ask_line(item)
     jid = item.get("job")
     note = str(item.get("resolution") or "").strip()
     note = note[:1].upper() + note[1:]  # a stored note may start lower case ("job cancelled"); the list reads in sentences
     # the outcome, then the run's id on its own line, as the rows that wait read
     sub = f'<span class="ib-why">{_text(note)}</span>' if note else ""
+    if runs > 1:
+        sub += (_SEP_HTML if sub else "") + f'<span class="ib-n">{runs} runs</span>'
     idline = f'<span class="ib-id mono">{_text(jid)}</span>' if jid else ""
     current = ' aria-current="true"' if picked else ""
     inner = (f'<span class="ib-ic">{_ic("check")}</span><span class="ib-t">{_text(ask)}</span>'
@@ -2731,12 +3143,10 @@ def _ib_job(ctx, entry, view):
     open_it = (f'<a class="btn{"" if again else " primary"}" href="{_url(ctx, "/job/" + job.id)}" data-nav>Open job</a>' if ctx["live"]
                else f'<p class="cli"><code>rh job show {_text(job.id)}</code></p>')
     bad = job.state in _FAILED
-    tail = str((view.get("tails") or {}).get(job.id) or "")
-    n = len(tail.splitlines())
-    stopped = (f'<section class="out"><div class="head"><h2>{_ic("term", True)}Where it stopped</h2>'
-               f'<span class="lines mono">{n} '
-               f'{"line" if n == 1 else "lines"}</span></div><pre class="log ended err" tabindex="0">'
-               f'{"".join(_ln(l) for l in tail.splitlines())}</pre></section>'
+    tail = _tail_lines((view.get("tails") or {}).get(job.id))
+    # the tail shows whole, so a count of it would count nothing hidden: the head is the name alone
+    stopped = (f'<section class="out"><div class="head"><h2>{_ic("term", True)}Where it stopped</h2></div>'
+               f'<pre class="log ended err" tabindex="0">{"".join(_ln(l) for l in tail)}</pre></section>'
                if tail else "")
     # a failed check reads as on the job's page: the sentence, the command and its exit code
     check = (view.get("fails") or {}).get(job.id)
@@ -2795,11 +3205,13 @@ def _ib_detail(ctx, entry, settled, view, missing, lead=None):
     ask, detail = _ask_line(item)
     who = [f'<span class="mono">{_text(jid) if jid else "harness"}</span>']
     if job:
-        who.append(f'{_SEP_HTML}<span>{_text(_platform(job.kind))}</span>')
+        who.append(f'<span>{_text(_platform(job.kind))}</span>')
     if _number(item.get("created")):
-        who.append(f'{_SEP_HTML}<span>asked at <span class="mono num">{_clock(item["created"], ctx["now"])}'
+        who.append(f'<span>asked at <span class="mono num">{_clock(item["created"], ctx["now"])}'
                    f'</span>' + (f', waiting {_when(item["created"], ctx["now"], "q:age", short=True)}' if entry else "")
                    + '</span>')
+    # each part keeps the dot that leads it, so a wrapped line can hide its leading dot (see .sl in rh.css)
+    who = [f'<span class="nowrap">{_SEP_HTML if i else ""}{part}</span>' for i, part in enumerate(who)]
     about = ""
     if job:
         link = (f'<a href="{_url(ctx, "/job/" + job.id)}" data-nav>{_text(job.title)}</a>' if ctx["live"]
@@ -2812,7 +3224,7 @@ def _ib_detail(ctx, entry, settled, view, missing, lead=None):
              _tank([], "q-water", {"octopus": {"tone": tone, "at": [0.92, 0.5]}}))
     back = (f'<a class="ib-back" href="{_url(ctx, "/inbox")}" data-nav>Inbox</a>' if ctx["live"] else "")
     head = (f'{back}<div class="q-head">{water}<div class="q-head-in">'
-            f'<p class="q-who" data-clear>{"".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
+            f'<p class="q-who sl" data-clear>{"<wbr>".join(who)}</p><h2 class="q-title" id="q-h" data-clear>{_text(ask)}</h2>'
             f'{about}</div></div>')
     parts = [f'<div class="q-msg">{_text(detail)}</div>'] if detail else []
     if entry is None:
@@ -2876,7 +3288,12 @@ def _inbox_pane(view, ctx, feedback):
     lead = (next((e for e in waiting if e["job"] and not e["item"]), None)
             if entry is None and settled_item is None and missing is None else None)
     rows = [_ib_row(ctx, e, (entry or lead) is not None and e["key"] == (entry or lead)["key"], view) for e in waiting]
-    done = [_settled_row(ctx, i, settled_item is not None and i["id"] == settled_item["id"]) for i in settled]
+    # settled items with the same question and outcome (a swarm's runs held alike) are one row for the newest
+    alike = {}
+    for i in settled:  # newest first, so each group's first item is its row
+        alike.setdefault((_ask_line(i)[0], str(i.get("resolution") or "").strip().lower()), []).append(i)
+    done = [_settled_row(ctx, group[0], settled_item is not None and any(i["id"] == settled_item["id"] for i in group),
+                         len(group)) for group in alike.values()]
     counts = {}
     for e in waiting:
         counts[e["tab"]] = counts.get(e["tab"], 0) + 1
@@ -2893,9 +3310,12 @@ def _inbox_pane(view, ctx, feedback):
     top = _top('<h1 tabindex="-1">Inbox</h1>'
                     f'<span class="top-meta mono"><span data-need="{len(waiting)}">{_need_word(len(waiting))}</span>'
                     '</span>')  # one count, the sidebar badge's: the Settled today section says the rest
+    # a phone's list ends on a long blank that reads as still loading, so with nothing settled below it the
+    # list says it is done (the stylesheet draws the line on the phone only)
+    end = '<p class="ib-end">Nothing else needs you</p>' if rows and not done else ""
     # alone, the group's name repeats the top bar's count: it stays for a screen reader only
     lists = (_section("ib-wait", "Needs you" if done else '<span class="vh">Needs you</span>',
-                      _rows(rows) if rows else '<p class="empty">Nothing needs you.</p>',
+                      (_rows(rows) if rows else '<p class="empty">Nothing needs you.</p>') + end,
                       # the top bar carries the one count of what waits and what was settled; the lists repeat none
                       tabbar)
              + _section("ib-settled", "Settled today", _rows(done), "", hidden=not done))
@@ -2919,23 +3339,38 @@ def _palette(jobs, ctx, keys):
     order = {"needs": 0, "live": 1, "next": 2, "ended": 3, "earlier": 4, "folded": 5}
     names = {"needs": "Needs you", "live": "Live", "next": "Up next", "ended": "Ended today", "earlier": "Earlier",
              "folded": "Earlier runs of what needs you"}
+    # a finished group whose rows all share one state word says it by its heading and rings, not on every row (r26 F3)
+    words = {}
+    for j in jobs:
+        words.setdefault(group(j), set()).add(j.word)
+    quiet = {g for g, w in words.items() if g in ("ended", "earlier") and len(w) == 1}
     rows, at = [], None
     for j in sorted(jobs, key=lambda j: order[group(j)]):
-        if group(j) != at:
-            at = group(j)
-            rows.append(f'<p class="p-sec">{names[at]}</p>')
-        rows.append(f'<a class="p-row" role="option" data-id="{_text(j.id)}" href="{_url(ctx, "/job/" + j.id)}" data-nav>'
-                    f'<span class="p-ic">{_ring(j.state, kind=j.kind, past=j.past)}</span>'
+        # Earlier is headed by day, as the sidebar heads it (r33 F5); a row with no time keeps the group's name
+        day = _day_of(j.since(), ctx["now"]) if group(j) == "earlier" and j.since() else None
+        key = (f"day:{day[0]}" if day else at if group(j) == "earlier" and str(at).startswith("day:")
+               else group(j))
+        if key != at:
+            at = key
+            rows.append(f'<p class="p-sec">{day[1] if day else names[group(j)]}</p>')
+        hue = ("red" if j.state in _FAILED else "amber") if group(j) == "needs" else None
+        same = group(j) in quiet
+        one = " one" if same and not j.dup else ""  # name and time only: one line on a phone too
+        rows.append(f'<a class="p-row{one}" role="option" data-id="{_text(j.id)}" href="{_url(ctx, "/job/" + j.id)}" '
+                    f'data-nav><span class="p-ic">{_ring(j.state, hue, j.kind, j.past)}</span>'
                     # as the sidebar names it: when names clash the id leads and the shared name moves to the grey
                     # line, which leads with the state so states form one column
                     + f'<span class="p-t">{_text(j.id if j.dup else j.label)}</span>'
-                    f'<span class="p-s"><span class="p-w">{_text(j.word)}</span>'
-                    # the time the sidebar shows, so runs of one brief tell apart at a glance
-                    + (f'<span class="p-when mono num">{_clock(j.since(), ctx["now"])}</span>' if j.since() else "")
+                    + '<span class="p-s">' + ("" if same else f'<span class="p-w">{_text(j.word)}</span>')
                     # no id or slug here (typing one still finds the row, by its data-id); only a clash names both
                     + (f'<span class="p-b">{_text(j.label)}</span>' if j.dup else "")
                     + '</span>'
-                    f'<span class="p-a">{_where(j.kind)}</span></a>')
+                    # the time the sidebar shows, in a cell of its own on the title line at every width, so every
+                    # row's time shares one edge and runs of one brief tell apart at a glance
+                    + (f'<span class="p-when mono num">'
+                       f'{_run_tag(j.run_no, (_hm(j.since()) if day else _clock(j.since(), ctx["now"])) if j.since() else "")}'
+                       '</span>' if j.since() or j.run_no > 1 else "")
+                    + f'<span class="p-a">{_where(j.kind)}</span></a>')
     pages = [("today", "Today", "the jobs and who is working", "/"), ("inbox", "Inbox", "what waits on you", "/inbox")]
     if ctx["can_add"]:
         pages.append(("new", "New job", "describe it, pick where it runs", "/new"))
@@ -3003,16 +3438,94 @@ def _swarm_settings(ctx):
     if not any(isinstance(m, str) for m in swarm.get("choices") or []):
         return ""
     boxes, judge_row = _swarm_rows(swarm)
+    team = _active_team(swarm)
+    row = ('<div class="team-row"><span class="team-now"><span class="soft">Team</span>'
+           f'<b data-team-name>{_text(team["name"]) if team else "Quick swarm"}</b></span>'
+           f'<button type="button" class="btn quiet small" data-team-open>{_ic("swarm", True)}Edit teams</button></div>'
+           if swarm.get("team_models") else "")
     return ('<form action="/settings/swarm" method="post" data-swarm-form>'
-            f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>'
-            '<p class="set-hint">Start a brief with <code>/swarm</code> to run it on each model ticked here at once. '
-            f'The judge then keeps the best work.</p><div class="swarm-models">{boxes}</div>'
+            f'{_hidden(ctx, [])}<fieldset><legend>Swarm</legend>{row}'
+            '<p class="set-hint">Start a brief with <code>/swarm</code> to run the team named here. Quick swarm runs '
+            f'it on each model ticked below at once, and the judge keeps the best work.</p>'
+            f'<div class="swarm-models">{boxes}</div>'
             f'<div class="swarm-opts">{judge_row}'
             '<label class="swarm-judge"><span>Check each run</span><input type="text" name="check" class="mono" '
             f'autocomplete="off" spellcheck="false" maxlength="300" placeholder="pytest -q" '
             f'value="{_text(swarm.get("check") or "")}"></label></div>'
             '<p class="set-hint">The harness runs it on each run\'s changes in a clean copy before the judge reads '
             'them. Leave empty to judge without it.</p></fieldset></form>')
+
+
+def _team_presets(swarm):
+    """The stored presets ({active, presets}) the page was given, or none."""
+    data = swarm.get("presets")
+    return data if isinstance(data, dict) and isinstance(data.get("presets"), list) else {"active": "quick", "presets": []}
+
+
+def _active_team(swarm):
+    """The active swarm preset, or None for the quick swarm (the ticks)."""
+    data = _team_presets(swarm)
+    return next((p for p in data["presets"] if isinstance(p, dict) and p.get("id") == data.get("active")), None)
+
+
+def _team_sub(preset):
+    """A team's subtitle, as team.js's sub() writes it: its lead's model, then its layers or 'side by side'."""
+    def depth(node):
+        kids = node.get("children") if isinstance(node, dict) and isinstance(node.get("children"), list) else []
+        return 1 + max((depth(k) for k in kids if isinstance(k, dict)), default=0)
+    tree = preset.get("tree") if isinstance(preset.get("tree"), dict) else {}
+    lead = _names([tree["model"]]) if isinstance(tree.get("model"), str) and tree["model"] else "No lead"
+    return f'{lead} · {f"{depth(tree)} layers" if preset.get("shape") == "vertical" else "side by side"}'
+
+
+def _team_size(preset):
+    """How many agents a preset has, as its editor draws them: every copy of every node. The lead's plan is the lead's
+    own first pass, so it is not counted again."""
+    def count(node):
+        kids = node.get("children") if isinstance(node, dict) and isinstance(node.get("children"), list) else []
+        return sum(max(1, int(k.get("count") or 1)) * count(k) for k in kids if isinstance(k, dict)) + 1
+    tree = preset.get("tree") if isinstance(preset.get("tree"), dict) else {}
+    return count(tree)
+
+
+def _team_dialog(ctx):
+    """Swarm teams: the presets, each a lead over managers over workers, edited by dragging (rh/web/team.js draws the
+    tree from the JSON here). The form only carries the token; the script sends the whole set as its data field."""
+    swarm = ctx.get("swarm") or {}
+    if not (ctx["live"] and swarm.get("team_models")):
+        return ""
+    models = []
+    for item in swarm.get("team_models") or []:
+        if isinstance(item, (list, tuple)) and len(item) == 2:
+            models.append({"id": item[0], "name": _names([item[0]]), "prov": item[1], "plan": item[1] == "codex"})
+    data = _team_presets(swarm)
+    seen = {m["id"] for m in models}
+    names = {}
+    for preset in data["presets"]:  # models a preset names that the policy does not list yet
+        for role in preset.get("roles") or []:
+            for m in role.get("models") or []:
+                if m not in seen:
+                    names[m] = _names([m])
+        stack = [preset.get("tree") or {}]
+        while stack:
+            node = stack.pop()
+            if isinstance(node, dict):
+                if node.get("model") and node["model"] not in seen:
+                    names[node["model"]] = _names([node["model"]])
+                stack += node.get("children") or []
+    quick = {"models": [m for m in swarm.get("models") or [] if isinstance(m, str)], "judge": swarm.get("judge") or ""}
+    blob = json.dumps({"presets": data, "models": models, "names": names, "quick": quick, "template": hierarchy._roles(),
+                       "quickNames": {"models": [_names([m]) for m in quick["models"]], "judge": _names([quick["judge"]])
+                                      if quick["judge"] else ""},
+                       "icons": {p: _ic(p, True) for p in ("claude", "devin", "openai")}})
+    return ('<dialog class="team" id="team" aria-labelledby="team-title"><header><h2 id="team-title" tabindex="-1">'
+            'Swarm teams</h2><span class="team-saved" data-team-saved role="status" aria-live="polite"></span>'
+            '<form method="dialog"><button class="icon-btn" aria-label="Close swarm teams">×</button></form></header>'
+            f'<form class="team-form" action="/settings/swarm-presets" method="post" data-team-form>{_hidden(ctx, [])}'
+            '</form><form action="/settings/swarm-active" method="post" data-team-active>'
+            f'{_hidden(ctx, [])}</form><div class="team-body" data-team-body>'
+            '<p class="soft">Turn on scripts to edit swarm teams.</p></div>'
+            f'<div id="team-data" data-json="{_text(blob)}" hidden></div></dialog>')
 
 
 def _settings(ctx, preset, tint="cobalt"):
@@ -3029,7 +3542,7 @@ def _settings(ctx, preset, tint="cobalt"):
             f'{_hidden(ctx, [])}<fieldset><legend>Background</legend><div class="background-choices">{choices}</div>'
             f'</fieldset><fieldset><legend>Colour</legend><div class="tint-choices">{tints}</div></fieldset></form>'
             f'{_swarm_settings(ctx)}<footer><button type="button" data-keys class="btn quiet small" hidden>'
-            'Keyboard shortcuts <kbd>?</kbd></button></footer></div></dialog>')
+            'Keyboard shortcuts <kbd>?</kbd></button></footer></div></dialog>' + _team_dialog(ctx))
 
 
 def render(view: dict, now: float, token: str | None = None, result=None) -> str:
@@ -3105,6 +3618,10 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
     back = f"/job/{named}" if named else "/new" if compose else None
     ctx = {"token": token, "live": live, "now": now, "scopes": scopes, "asks": asks, "can_add": can_add,
            "workspace": view.get("workspace") or {},
+           # the composer's folder menu, when the server offers one (it may list none yet)
+           "folders": None if view.get("folders") is None else
+           [tuple(f) for f in view["folders"] if isinstance(f, (list, tuple)) and len(f) == 2],
+           "repo_path": str(view.get("repo_path") or ""),
            "states": states, "swarms": swarms,
            "swarm": view.get("swarm") if isinstance(view.get("swarm"), dict) else {},
            "back": back, "meta": meta, "ready": ready, "setup": setup, "native": native, "midnight": _midnight(now),
@@ -3114,9 +3631,10 @@ def render(view: dict, now: float, token: str | None = None, result=None) -> str
                       and not str(s["scope"]).startswith("job:")]}
     jobs = [_Job(row, where, ctx) for row, where in rows]
     names = {}
-    for j in jobs:  # runs that share a name in the lists are told apart by their ids; the runs of one chain share
-        # its first said as one name, so chain-mates never mark each other
-        names.setdefault(j.label, set()).add(j.root if j.label == j.said else j.id)
+    for j in jobs:  # runs that share a name in the lists are told apart by their ids; the runs of one chain are one
+        # thread, answered or not, so chain-mates never mark each other (r32 F5: a failed job and its follow-up
+        # were both named by raw ids)
+        names.setdefault(j.label, set()).add(j.root)
     for j in jobs:
         j.dup = len(names[j.label]) > 1
     ctx["jobs"] = jobs

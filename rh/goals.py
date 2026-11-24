@@ -95,8 +95,11 @@ def expand(goal: dict) -> list[dict]:
 
 
 def rollup(goal_id: str, jobs: list[dict]) -> dict:
-    """Summarize only rows whose stored contract belongs to this goal."""
-    states = {job["id"]: job["state"] for job in jobs if job["spec"].get("goal") == goal_id}
+    """Summarize only rows whose stored contract belongs to this goal; a re-run row replaces the run it
+    names as prior, so only the latest revision of each job counts."""
+    rows = [job for job in jobs if job["spec"].get("goal") == goal_id]
+    superseded = {job["spec"].get("prior") for job in rows}
+    states = {job["id"]: job["state"] for job in rows if job["id"] not in superseded}
     return {"goal": goal_id, "jobs": states,
             "done": bool(states) and all(state == "done" for state in states.values()),
             "ended_badly": [job_id for job_id, state in states.items() if state in TERMINAL and state != "done"]}

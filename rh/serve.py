@@ -23,7 +23,7 @@ import tomllib
 import urllib.parse
 import webbrowser
 
-from rh import chat, cli, config, contract, dashboard, gitx, goals, lease, oslock, seats
+from rh import chat, cli, config, contract, dashboard, gitx, goals, hierarchy, lease, oslock, seats
 from rh.ledger import TERMINAL, Ledger
 from rh.supervisor import AlreadyRunning, single_instance
 
@@ -46,7 +46,8 @@ _ART = {f"/{name}": dashboard._WEB / name for name in dashboard.BACKGROUNDS}
 _HOST_TTL = 2.0  # seconds a reading of this machine's load and memory pressure is reused across page loads
 _SETTLED = 86400  # how far back the Inbox looks for settled items
 _POSTS = ("/inbox/resolve", "/stop", "/resume", "/attach", "/harvest", "/land", "/tick", "/job", "/job/cancel",
-          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance", "/settings/swarm")
+          "/checks", "/again", "/setup", "/handoff", "/reply", "/appearance", "/settings/swarm",
+          "/settings/swarm-presets", "/settings/swarm-active", "/job/message")
 # The app's check pace: every _FAST seconds for _BURST seconds after something changes; every _BUSY seconds while a
 # job is about to start or a job on this machine runs, or every _SHARED when a cloud job is also live, because each
 # pass asks Codex about it; otherwise at the supervisor's own interval. While rh supervise holds the lock, the app
@@ -155,7 +156,7 @@ def _upload(cfg, job, suffix, text):
 def _draft(fields):
     """The New job form as typed, kept so a refused job can be corrected rather than retyped."""
     draft = {name: _value(fields, name) for name in ("id", "kind", "brief", "command", "accept", "timeout_min",
-                                                    "model", "effort", "input_path", "answer")}
+                                                    "model", "effort", "input_path", "answer", "folder")}
     draft["needs"] = fields.get("needs", [])
     return draft
 
@@ -203,6 +204,93 @@ def _repository_input(raw, repo):
     return {"path": path.as_posix()}
 
 
+LIVE_AGENTS = ("claude",)  # agents whose runner reads the job's inbox while a turn runs (rh/agent.py)
+_MESSAGE_MAX = 100_000
+
+
+def _message(cfg, fields):
+    """Send a running agent a message, as T3 Code's composer does while a turn runs: steer (joins the turn), queue
+    (starts the next turn when this one ends) or stop (interrupts the turn). It is appended to inbox.jsonl in the
+    job's folder, which the agent reads; returns (status, body), the body {"id"} to follow it by."""
+    jid, mode, target = _value(fields, "job").strip(), _value(fields, "mode").strip(), _value(fields, "target").strip()
+    text = _value(fields, "text").replace("\r\n", "\n")
+    if mode not in ("steer", "queue", "stop", "promote", "remove", "update"):
+        return 400, "the mode is steer, queue, stop, promote, remove or update"
+    if mode in ("promote", "remove", "update") and not re.fullmatch(r"[0-9a-f]{12}", target):
+        return 400, "a queued message's action names that message"
+    if mode in ("steer", "queue", "update") and not text.strip():
+        return 400, "there is nothing to send"
+    if len(text) > _MESSAGE_MAX:
+        return 400, f"a message is at most {_MESSAGE_MAX:,} characters"
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        job = led.job(jid)
+    finally:
+        led.close()
+    if job is None:
+        return 404, f"no job {jid}"
+    spec = job.get("spec") if isinstance(job.get("spec"), dict) else {}
+    agent = dashboard.agent_of(spec.get("command"))
+    if job.get("state") != "running" or not agent:
+        return 409, "only an agent running on this Mac takes a message; reply when it ends"
+    if agent[0] not in LIVE_AGENTS:
+        return 409, f"{agent[0].capitalize()} cannot take a message mid-run yet; reply when it ends"
+    folder = _job_folder(cfg, spec)
+    if folder is None:
+        return 409, "this job has no folder of its own to send to"
+    folder.mkdir(parents=True, exist_ok=True)
+    mid = secrets.token_hex(6)
+    with _CLI_LOCK, (folder / "inbox.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps({"id": mid, "mode": mode, "text": text, **({"target": target} if target else {}),
+                            "at": round(time.time(), 3)}) + "\n")
+    return 200, json.dumps({"id": mid})
+
+
+def _job_folder(cfg, spec):
+    """The folder a job's agent works in (its write root under the home), or None when it has none of its own."""
+    home = Path(cfg["home"]).resolve()
+    folder = (home / str(spec.get("write_root") or "")).resolve()
+    return folder if folder.is_relative_to(home) and folder != home else None
+
+
+def _inbox(folder):
+    """What the owner sent a job's agent and what became of each, oldest first, for its page: [{id, mode, text,
+    state}], mode steer, queue or stop, state as the agent marked it (steered, queued, sent, stopped, removed, dropped) or waiting
+    until it reads it. A row's edit or removal shows at once while its message still waits, and once the agent says
+    it applied; one it dropped (the message had gone) changes nothing."""
+    try:
+        lines = (folder / "inbox.jsonl").read_text(encoding="utf-8", errors="replace").splitlines()[-500:]
+    except OSError:
+        return []
+    try:
+        marks = json.loads((folder / "inbox-state.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        marks = {}
+    marks = marks if isinstance(marks, dict) else {}
+    out, by = [], {}
+    for line in lines:
+        try:
+            m = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(m, dict) or not m.get("id"):
+            continue
+        mid, mode, text = str(m["id"]), m.get("mode"), str(m.get("text") or "")
+        if mode in ("steer", "queue", "stop"):
+            by[mid] = {"id": mid, "mode": mode, "text": text, "state": str(marks.get(mid) or "waiting")}
+            out.append(by[mid])
+            continue
+        item = by.get(str(m.get("target") or ""))
+        mark = marks.get(mid)
+        if item is None or not (mark == "applied" or (mark is None and item["state"] in ("waiting", "queued"))):
+            continue
+        if mode == "update" and text.strip():
+            item["text"] = text
+        elif mode == "remove":
+            item["state"] = "removed"
+    return out
+
+
 def _auto_id(cfg, fields):
     """A job typed without a name gets one from its first words, made unique against the ledger."""
     if _value(fields, "id").strip():
@@ -221,9 +309,53 @@ def _auto_id(cfg, fields):
     fields["id"] = [name]
 
 
+def _folder(path):
+    """The git working tree a This Mac job works in, from the folder the composer picked: its root, resolved, so a
+    folder inside a repository works at that repository's root. Anything else is refused, said plainly."""
+    folder = Path(path).expanduser()
+    if not folder.is_absolute():
+        raise ValueError(f"the folder must be a full path, like ~/Projects/app, not {path}")
+    if not folder.is_dir():
+        raise ValueError(f"there is no folder {folder}")
+    top = gitx.git(folder, "rev-parse", "--show-toplevel", check=False)
+    if top.returncode:
+        raise ValueError(f"{folder} is not a git repository: an agent works on a copy of one, so pick a folder "
+                         "inside a git working tree")
+    return str(Path(top.stdout.strip()).resolve())
+
+
+def _folders(cfg, limit=6):
+    """The folders the composer offers, as [(path, name)]: those This Mac jobs worked in, newest first, then the
+    configured repository, each once, and only those still there."""
+    led = Ledger(Path(cfg["home"]) / "ledger.db")
+    try:
+        jobs = led.jobs()
+    finally:
+        led.close()
+    configured = str(Path(cfg["repo"]["path"]).resolve())
+    used = []
+    for job in reversed(jobs):
+        spec = job.get("spec") if isinstance(job.get("spec"), dict) else {}
+        if dashboard.agent_of(spec.get("command")):
+            path = str(spec["command"][4])
+            if path != configured and path not in used and Path(path).is_dir():
+                used.append(path)
+    top = gitx.git(configured, "rev-parse", "--show-toplevel", check=False) if Path(configured).is_dir() else None
+    root = top is not None and top.returncode == 0 and str(Path(top.stdout.strip()).resolve()) == configured
+    picks = used[:limit - 1] + ([configured] if root else [])  # a bundle's Resources folder is no workspace
+    return [(path, Path(path).name) for path in picks]
+
+
 def _job_file(draft, repo):
     """The TOML file `rh job add` reads for a New job form; the contract rejects what it would reject."""
     agent = draft["kind"] == "local-agent"  # Codex on this Mac: a local job whose command is rh/agent.py
+    if (draft.get("folder") or "").strip():  # the composer's folder menu: This Mac works there, the cloud cannot
+        picked = _folder(draft["folder"].strip())
+        if agent:
+            repo = picked
+        elif picked != str(Path(repo).resolve()):
+            raise ValueError(f"a {draft['kind']} job works on the configured repository; pick This Mac to work in "
+                             f"{Path(picked).name}")
     spec = {"id": draft["id"].strip(), "kind": "local-shell" if agent else draft["kind"],
             "brief": draft["brief"].replace("\r\n", "\n")}
     if item := _repository_input(draft["input_path"], repo):
@@ -276,37 +408,68 @@ def swarm_choices():
     return [m for table in ("devin-local", "claude-local") for m in policy.get(table, {}).get("models", [])]
 
 
+def team_models():
+    """Every model a swarm preset may name, as [(model, provider)], in the policy's order: Devin's free SWE-2 models,
+    Claude's, then Codex's, which spend the ChatGPT plan and say so in the editor."""
+    policy_path = config.REPO / "policy.toml"
+    policy = contract.load_policy(policy_path) if policy_path.is_file() else {}
+    return [(m, prov) for table, prov in (("devin-local", "devin"), ("claude-local", "claude"), ("codex-cloud", "codex"))
+            for m in policy.get(table, {}).get("models", [])]
+
+
+def _swarm_view(cfg):
+    """What the page needs to draw the swarm: the quick ticks, the presets and which is active, and the models."""
+    return {**cfg.get("swarm", {}), "choices": swarm_choices(), "presets": hierarchy.load(cfg["home"]),
+            "team_models": team_models()}
+
+
 def _swarm_file(cfg, draft):
     """A /swarm from the composer as a goal file, (judge id, TOML): one run of the brief on each model Settings
     names (w1, w2, ...), then a judge that waits until they have all ended and keeps the best work of those that
     finished, as its own answer and changes."""
     swarm = cfg.get("swarm", {})
-    models = [m for m in swarm.get("models", []) if m][:SWARM_MAX]
-    judge = swarm.get("judge") or (models[0] if models else "")
-    if not models:
-        raise ValueError("no swarm models are set: choose them in Settings")
-    allowed = swarm_choices()
-    if bad := [m for m in (*models, judge) if m not in allowed]:
-        raise ValueError(f"swarm model {bad[0]} is not a Claude or Devin model in the policy: allowed {allowed}")
+    presets = hierarchy.load(cfg["home"])
+    preset = hierarchy.find(presets, presets["active"])
+    if preset is None:  # the quick swarm: the models Settings ticks, Claude's and Devin's only
+        models = [m for m in swarm.get("models", []) if m][:SWARM_MAX]
+        judge = swarm.get("judge") or (models[0] if models else "")
+        if not models:
+            raise ValueError("no swarm models are set: choose them in Settings")
+        allowed = swarm_choices()
+        if bad := [m for m in (*models, judge) if m not in allowed]:
+            raise ValueError(f"swarm model {bad[0]} is not a Claude or Devin model in the policy: allowed {allowed}")
+        preset = hierarchy.quick(models, judge)
     gid, home = draft["id"].strip(), Path(cfg["home"])
+    planned = hierarchy.plan(preset)
+    lead_plans = any(p["plan"] for p in planned)
     jobs = []
-    for n, model in enumerate(models, 1):
-        _, text = _job_file({**draft, "id": f"w{n}", "kind": "local-agent", "model": model, "effort": ""},
-                            cfg["repo"]["path"])
-        jobs.append(tomllib.loads(text))
-    _, text = _job_file({**draft, "id": "best", "kind": "local-agent", "model": judge, "effort": ""},
-                        cfg["repo"]["path"])
-    best = tomllib.loads(text)
-    for job in jobs:
-        best["command"] += ["--swarm", str(home / "runs" / f"{gid}.{job['id']}")]
-    if swarm.get("check"):  # the harness checks each run's changes before the judge reads them
-        best["command"] += ["--check", str(swarm["check"])]
-    best["after"], best["after_any"] = [job["id"] for job in jobs], True
+    for p in planned:
+        brief = hierarchy.PLAN_ASK + "\n\n" + draft["brief"] if p["plan"] else draft["brief"]
+        try:
+            _, text = _job_file({**draft, "id": p["id"], "kind": "local-agent", "model": p["model"],
+                                 "effort": p["effort"], "brief": brief}, cfg["repo"]["path"])
+        except ValueError as e:
+            raise ValueError(f"swarm preset {preset['name']}: its {p['name'].lower()} ({p['id']}): {e}") from None
+        job = tomllib.loads(text)
+        if p["prompt"]:
+            job["command"] += ["--role", p["prompt"]]
+        if lead_plans and p["work"] and not p["plan"]:  # every agent that works reads its lead's plan first
+            job["command"] += ["--context", str(home / "runs" / f"{gid}.plan" / "answer.md")]
+            job["after"] = ["plan"]
+        if p["team"]:  # a judge: it compares its team's work, each checked first when Settings names a check
+            for t in p["team"]:
+                job["command"] += ["--swarm", str(home / "runs" / f"{gid}.{t}")]
+            if swarm.get("check"):
+                job["command"] += ["--check", str(swarm["check"])]
+            # the lead also lists the plan, so its page shows the whole team
+            job["after"] = (["plan"] if lead_plans and p["id"] == "best" else []) + list(p["team"])
+            job["after_any"] = True
+        jobs.append(job)
     said = draft["brief"].replace("\r\n", "\n").strip()
     card = {"said": said, "form": "the chosen run's answer and its changes",
             "done_when": "the judge has kept the best work of the runs that finished"}
     text = (_toml({"id": gid}) + "\n[card]\n" + _toml(card)
-            + "".join("\n[[jobs]]\n" + _toml(job) for job in (*jobs, best)))
+            + "".join("\n[[jobs]]\n" + _toml(job) for job in jobs))
     for raw in goals.expand(tomllib.loads(text)):
         contract.normalize(raw)
     return f"{gid}.best", text
@@ -649,9 +812,9 @@ _HEADS = {}  # answer.md path -> (mtime_ns, first line): the list asks for every
 
 
 def _kept(cfg, job):
-    """The run a finished swarm judge kept ("w1", "combined" or "none"), from its swarm-result.json; "" for any other
-    job or when the judge left none."""
-    if not job["spec"].get("after_any") or job.get("state") != "done":
+    """The run a done or failed swarm judge kept ("w1", "combined" or "none"), from its swarm-result.json; "" for
+    any other job or when the judge left none."""
+    if not job["spec"].get("after_any") or job.get("state") not in ("done", "failed"):
         return ""
     root = _outputs(cfg, {"job": job})
     found = root / "swarm-result.json" if root else None
@@ -1016,8 +1179,9 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             view.update({"can_add": True, "compose": draft or {}, "meta": meta, "settled": settled,
                          "background": cfg.get("appearance", {}).get("background"),
                          "tint": cfg.get("appearance", {}).get("tint"),
-                         "swarm": {**cfg.get("swarm", {}), "choices": swarm_choices()},
+                         "swarm": _swarm_view(cfg),
                          "cloud_ready": ready, "checks": loop.state() if loop else None, "seats": _seats(cfg),
+                         "folders": _folders(cfg), "repo_path": str(Path(cfg["repo"]["path"]).resolve()),
                          "host": machine(), "pacing": {k: cfg["cloud"].get(k) for k in ("min_gap_s", "max_per_hour")},
                          **(extra or {})})
             policy_path = config.REPO / "policy.toml"
@@ -1107,6 +1271,11 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                     self.page({"open": {"id": jid, "job": None}}, 404)
                     return
                 shown["log"], shown["log_cut"] = _log(cfg, jid)
+                if shown["job"]["state"] == "stalled":  # past its limit: is it still writing, or quiet?
+                    try:
+                        shown["log_at"] = (Path(cfg["home"]) / "jobs" / jid / "out.log").stat().st_mtime
+                    except OSError:
+                        pass
                 if shown["log_cut"] and shown["job"]["state"] not in (*dashboard._PRE, *dashboard._LIVE):
                     shown["log_total"] = _log_total(cfg, jid)  # a finished log no longer grows: name its length
                 if shown["job"]["kind"] == "gpt-chat":
@@ -1125,7 +1294,8 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                         shown["answer"] = said.read_text(encoding="utf-8", errors="replace")[:_ANSWER]
                     # an agent's base (the commit its changes apply to) is bookkeeping, not a result
                     skip = (("answer.md",) if chat_answer else ()) + (
-                        ("base",) if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
+                        ("base", "inbox.jsonl", "inbox-state.json", "thread.json")  # the chat shows these
+                        if dashboard.agent_of(shown["job"].get("spec", {}).get("command")) else ())
                     if shown["job"].get("spec", {}).get("after_any"):  # a swarm judge: its verdicts and the run kept
                         for name, key in (("swarm-checks.json", "swarm_checks"), ("swarm-result.json", "swarm_kept")):
                             found = root / name
@@ -1135,12 +1305,23 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                                 except (OSError, ValueError):
                                     continue
                                 shown[key] = value.get("kept") if key == "swarm_kept" and isinstance(value, dict) else value
+                                if key == "swarm_kept" and isinstance(value, dict):
+                                    check = value.get("check")
+                                    if isinstance(check, str) and check:
+                                        shown["swarm_final"] = check  # the kept tree's own check, when it ran
                             skip += (name,)
                     shown["files"], shown["peek"] = _files(root, skip=skip)
                 if shown["job"].get("spec", {}).get("after_any"):  # a swarm judge: each run's diff size
                     shown["swarm_stats"] = _swarm_stats(cfg, shown["job"])
                 if shown["job"].get("spec", {}).get("prior"):
                     shown["thread"] = _thread(cfg, shown["job"])  # the chat so far, while this run works too
+                spec = shown["job"].get("spec") or {}
+                agent = dashboard.agent_of(spec.get("command"))
+                folder = _job_folder(cfg, spec) if agent and agent[0] in LIVE_AGENTS else None
+                if folder is not None:  # what the owner said to it mid-run; while it runs, the page's composer
+                    talk = _inbox(folder)
+                    if talk or shown["job"]["state"] == "running":
+                        shown["inbox"] = talk
                 self.page({"open": shown})
             elif (len(parts) == 4 and parts[1] == "job" and parts[3] == "file"
                     and contract.JOB_ID_RE.fullmatch(parts[2])):
@@ -1219,6 +1400,10 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
             if path not in _POSTS or (path == "/checks" and not loop):
                 self.reply(404)
                 return
+            if path == "/job/message":  # a running agent's steer, queued message or Stop, sent from its page
+                code, body = _message(cfg, fields)
+                self.reply(code, body, content_type="application/json" if code == 200 else "text/plain; charset=utf-8")
+                return
             if path == "/appearance":
                 chosen = {}
                 for key, allowed in (("background", dashboard.PRESETS), ("tint", dashboard.TINTS)):
@@ -1238,6 +1423,25 @@ def make_server(cfg: dict, host: str = "127.0.0.1", port: int = 0, token: str | 
                         self.reply(500)
                         return
                     cfg.setdefault("appearance", {}).update(chosen)
+                self.reply(204)
+                return
+            if path in ("/settings/swarm-presets", "/settings/swarm-active"):
+                with _CLI_LOCK:
+                    try:
+                        if path == "/settings/swarm-presets":  # the editor sends the whole set as JSON
+                            data = json.loads(_value(fields, "data") or "{}")
+                        else:
+                            data = {**hierarchy.load(cfg["home"]), "active": _value(fields, "active")}
+                        stored = hierarchy.save(cfg["home"], data)
+                    except (ValueError, TypeError) as e:
+                        self.reply(400, str(e)[:300], content_type="text/plain; charset=utf-8")
+                        return
+                    except OSError:
+                        self.reply(500)
+                        return
+                if path == "/settings/swarm-active" and stored["active"] != (_value(fields, "active") or hierarchy.QUICK):
+                    self.reply(400, "no such preset", content_type="text/plain; charset=utf-8")
+                    return
                 self.reply(204)
                 return
             if path == "/settings/swarm":

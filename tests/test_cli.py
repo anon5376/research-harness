@@ -291,8 +291,17 @@ class CliTest(unittest.TestCase):
             self.assertIn("another supervisor", r.stderr)
             self.assertLess(time.time() - t0, 2.0)
         finally:
-            first.kill()
-            first.wait()
+            if os.name == "nt":
+                # A killed supervisor leaves ledger.db-shm locked on Windows; letting it run out its ticks
+                # closes the ledger cleanly, so kill it only if it overstays.
+                try:
+                    first.wait(timeout=60)
+                except subprocess.TimeoutExpired:
+                    first.kill()
+                    first.wait()
+            else:
+                first.kill()
+                first.wait()
 
     def test_service_plist_is_written_but_never_loaded(self):
         import plistlib
@@ -331,6 +340,33 @@ class RecentTest(unittest.TestCase):
         self.assertNotIn("stale", ids)
         self.assertNotIn("old-ok", ids)
         self.assertNotIn("live", ids)
+
+    def test_a_swarm_counts_once_toward_the_ten_recent_ends(self):
+        # Three swarms (nine jobs, three groups) newer than eight plain jobs: the ten slots hold all nine
+        # swarm rows and the seven newest plain jobs, and the oldest plain job is dropped. Counting each
+        # swarm job on its own would leave room for only one plain job.
+        from rh import cli
+        now = 1_000_000.0
+        jobs = []
+        n = 0
+        for goal in ("g1", "g2", "g3"):
+            for suffix in ("w1", "w2", "best"):
+                n += 1
+                jobs.append({"id": f"{goal}.{suffix}", "state": "done", "updated": now - n * 60,
+                             "spec": {"goal": goal}})
+        for n in range(1, 9):
+            jobs.append({"id": f"plain-{n}", "state": "done", "updated": now - (9 + n) * 60, "spec": {}})
+        ids = [j["id"] for j in cli._recent(jobs, now)]
+        self.assertEqual(len(ids), 16)
+        for goal in ("g1", "g2", "g3"):
+            for suffix in ("w1", "w2", "best"):
+                self.assertIn(f"{goal}.{suffix}", ids)
+        for n in range(1, 8):
+            self.assertIn(f"plain-{n}", ids)
+        self.assertNotIn("plain-8", ids)
+        # When the groups fit in the ten slots, every job is kept whole.
+        fewer = cli._recent(jobs[:12], now)
+        self.assertEqual(len(fewer), 12)
 
 
 if __name__ == "__main__":

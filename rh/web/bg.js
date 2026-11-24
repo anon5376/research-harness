@@ -146,7 +146,9 @@
       if (core + haze < 0.004) return 0;
       var brk = fbm(t * 2.4, n * 10, 7, 4);
       var corner = Math.exp(-(px * px + py * py) / 0.035) * 0.45;
-      return (core * 1.3 + haze) * (0.6 + 0.8 * brk) + corner;
+      // half as lit as it was drawn, and its brightest dots stop at 0.5 (cobalt's ~#5f78c4), so the page's
+      // heading and composer win the squint, not the streak (critic r34 F5, r35 F4); the shape is unchanged
+      return Math.min(0.5, ((core * 1.3 + haze) * (0.6 + 0.8 * brk) + corner) * 0.5);
     }
   };
 

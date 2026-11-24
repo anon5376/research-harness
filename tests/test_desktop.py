@@ -60,21 +60,30 @@ class DesktopTest(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("desktop_app", ROOT / "desktop/app.py")
         app = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(app)
-        addresses = []
+        addresses, apis, dialogs = [], [], []
+        # the composer's Choose folder… asks the window for macOS's own folder dialog, through the page's js_api
+        picks = iter([("/Volumes/work/project",), None])
+        window = types.SimpleNamespace(create_file_dialog=lambda kind, **_: dialogs.append(kind) or next(picks))
 
         def create_window(title, url, **options):
             self.assertEqual(title, "Research Harness")
+            apis.append(options.pop("js_api"))
             self.assertEqual(options, {"width": 1280, "height": 800, "min_size": (1024, 640)})
             with urlopen(url, timeout=5) as response:
                 self.assertEqual(response.status, 200)
             parsed = urlsplit(url)
             addresses.append((parsed.hostname, parsed.port))
+            return window
 
-        fake = types.SimpleNamespace(create_window=create_window, start=lambda: None)
+        fake = types.SimpleNamespace(create_window=create_window, start=lambda: None,
+                                     FileDialog=types.SimpleNamespace(FOLDER="folder"))
         with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, RH_HOME=home), \
                 patch.dict(sys.modules, webview=fake):
             self.assertEqual(app.main([]), 0)
         self.assertEqual(len(addresses), 1)
+        self.assertEqual(apis[0].choose_folder(), "/Volumes/work/project")
+        self.assertEqual(apis[0].choose_folder(), "")  # cancelled
+        self.assertEqual(dialogs, ["folder", "folder"])
         with socket.socket() as sock:
             self.assertNotEqual(sock.connect_ex(addresses[0]), 0)
 

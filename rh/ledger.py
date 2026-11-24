@@ -98,7 +98,9 @@ class Ledger:
         with self._tx():
             self._move(job_id, state, detail, fields)
 
-    def finish(self, job_id, state, receipt):
+    def finish(self, job_id, state, receipt, also=None):
+        """End a job with its receipt. also(), if given, runs last inside the same write transaction: the job ends
+        only if it returns, and it runs only if the job could end, so two callers racing never both run it."""
         if state not in TERMINAL:
             raise LedgerError(f"{state} is not a terminal state")
         missing = [k for k in RECEIPT_KEYS if k not in receipt]
@@ -108,6 +110,8 @@ class Ledger:
             self._move(job_id, state, receipt.get("detail", ""), {})
             self.db.execute("INSERT INTO receipts(job, state, data, ts) VALUES(?, ?, ?, ?)",
                             (job_id, state, json.dumps(receipt, sort_keys=True), self.clock()))
+            if also is not None:
+                also()
 
     def receipt(self, job_id):
         row = self.db.execute("SELECT data FROM receipts WHERE job=?", (job_id,)).fetchone()

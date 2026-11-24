@@ -44,10 +44,13 @@ class CollectTest(unittest.TestCase):
         for rel, text in files.items():
             p = self.repo / rel
             p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(text)
+            if isinstance(text, bytes):
+                p.write_bytes(text)
+            else:
+                p.write_text(text)
         git(self.repo, "add", "-A")
         git(self.repo, "commit", "-q", "-m", "task")
-        d = git(self.repo, "diff", self.sha, "HEAD")
+        d = git(self.repo, "diff", "--binary", self.sha, "HEAD")
         git(self.repo, "checkout", "-q", "main")
         git(self.repo, "branch", "-q", "-D", "scratch")
         return d
@@ -76,6 +79,27 @@ class CollectTest(unittest.TestCase):
         sha = collect.land({**self.job(), "state": "done"}, self.home)
         self.assertEqual(git(self.repo, "rev-parse", "cloud/j1").strip(), sha)
         self.assertEqual(gitx.head(self.repo), self.sha, "landing must not move main")
+
+    def test_landed_branch_can_be_checked_out_in_the_repo(self):
+        state, _ = self.collect({"runs/j1/RESULT.json": self.result(), "runs/j1/notes.md": "n\n"},
+                                'accept = "test -s runs/j1/notes.md"')
+        self.assertEqual(state, "done")
+        sha = collect.land({**self.job(), "state": "done"}, self.home)
+        self.assertEqual(git(self.repo, "rev-parse", "cloud/j1").strip(), sha)
+        self.assertEqual(gitx.head(self.repo), self.sha, "landing must not move main")
+        r = subprocess.run(["git", "-C", str(self.repo), "checkout", "cloud/j1"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(gitx.head(self.repo), sha)
+
+    def test_landing_never_moves_an_existing_branch(self):
+        state, _ = self.collect({"runs/j1/RESULT.json": self.result(), "runs/j1/notes.md": "n\n"},
+                                'accept = "test -s runs/j1/notes.md"')
+        self.assertEqual(state, "done")
+        git(self.repo, "branch", "cloud/j1", self.sha)
+        with self.assertRaises(gitx.GitError):
+            collect.land({**self.job(), "state": "done"}, self.home)
+        self.assertEqual(git(self.repo, "rev-parse", "cloud/j1").strip(), self.sha, "an existing branch must not move")
 
     def test_failing_local_gate_fails_a_done_result(self):
         state, rec = self.collect({"runs/j1/RESULT.json": self.result()}, 'accept = "test -f runs/j1/absent.md"')
@@ -115,6 +139,17 @@ class CollectTest(unittest.TestCase):
         state, rec = self.collect({"runs/j1/RESULT.json": self.result(head="d" * 40)})
         self.assertEqual(state, "failed")
         self.assertIn("stale input", rec["detail"])
+
+    def test_non_utf8_result_fails_instead_of_raising(self):
+        bad = b"\xff\xfe\x00" + self.result().encode()  # the NUL makes git carry it as a binary patch
+        state, rec = self.collect({"runs/j1/RESULT.json": bad})
+        self.assertEqual(state, "failed")
+        self.assertIn("not UTF-8", rec["detail"])
+
+    def test_utf8_result_still_ends_done_and_reads_model_served(self):
+        state, rec = self.collect({"runs/j1/RESULT.json": self.result(model="gpt-5-codex")})
+        self.assertEqual(state, "done", rec)
+        self.assertEqual(rec["model_served"], "gpt-5-codex")
 
     def test_refusal_blocks_with_its_text(self):
         state, rec = self.collect({"runs/j1/RESULT.json": self.result(refusals=["sandbox denied: network access"])})

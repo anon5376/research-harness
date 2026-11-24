@@ -95,6 +95,12 @@ class PreflightTest(unittest.TestCase):
         self.assertEqual(decide(s, View(states={"up": "failed"})).verdict, "hold")
         self.assertEqual(decide(s, View()).verdict, "hold")
 
+    def test_a_job_that_waits_on_itself_is_held_not_left_waiting(self):
+        s = spec('after = ["j1"]')
+        d = decide(s, View(states={"j1": "queued"}))
+        self.assertEqual(d.verdict, "hold")
+        self.assertTrue(any("itself" in r for r in d.reasons), d.reasons)
+
     def test_after_any_waits_for_every_upstream_to_end_and_needs_one_done(self):
         # A swarm's judge: it runs once each worker has ended, on whichever finished; none done is a hold.
         s = spec('after = ["w1", "w2"]\nafter_any = true')

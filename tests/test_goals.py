@@ -226,6 +226,20 @@ class GoalRollupTest(unittest.TestCase):
         self.assertFalse(result["done"])
         self.assertEqual(result["ended_badly"], ["review-01.synthesis"])
 
+    def test_only_the_latest_revision_counts(self):
+        rows = [{"id": "review-01.scan", "state": "failed", "spec": {"goal": "review-01"}},
+                {"id": "review-01.scan-r2", "state": "done",
+                 "spec": {"goal": "review-01", "revision": 2, "prior": "review-01.scan"}},
+                {"id": "review-01.synthesis", "state": "done", "spec": {"goal": "review-01"}}]
+        self.assertEqual(rollup("review-01", rows), {
+            "goal": "review-01",
+            "jobs": {"review-01.scan-r2": "done", "review-01.synthesis": "done"},
+            "done": True, "ended_badly": []})
+        rows[1]["state"] = "failed"
+        result = rollup("review-01", rows)
+        self.assertFalse(result["done"])
+        self.assertEqual(result["ended_badly"], ["review-01.scan-r2"])
+
     def test_all_unsuccessful_terminal_states(self):
         for state in ("failed", "blocked", "capacity", "truncated", "aborted", "no_result", "cancelled",
                       "draft", "ready", "waiting", "held", "launching", "handoff", "running", "stalled", "collecting"):

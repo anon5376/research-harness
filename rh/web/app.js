@@ -657,6 +657,7 @@ function more(b) {
   c.classList.toggle('open', open);
   box.style.height = open ? box.scrollHeight + 'px' : '';
   b.textContent = open ? 'Show less' : 'Show all';
+  b.setAttribute('aria-expanded', String(open));
 }
 
 function filter() {
@@ -704,7 +705,10 @@ function apply(doc, nav) {
       const log = $('.log', old), freshLog = $('.log', el);
       if (log && freshLog) {
         const pinned = log.scrollTop + log.clientHeight >= log.scrollHeight - 4;
+        const quiet = $('.log-quiet', freshLog);  // a stalled log's "no output since" row rides inside its pre
+        if (quiet) quiet.remove();
         log.textContent = freshLog.textContent;
+        if (quiet) log.append(quiet);
         if (pinned) log.scrollTop = log.scrollHeight;
       }
       else $('.worked-content', old).replaceWith($('.worked-content', el));
@@ -1138,7 +1142,8 @@ function applyMode() {
   document.documentElement.dataset.mode = mode;
   for (const t of $$('[role="tab"][data-mode]')) t.setAttribute('aria-selected', String(t.dataset.mode === mode));
   const title = $('#compose-title');
-  if (title) title.textContent = mode === 'research' ? 'What should we find out?' : (title.dataset.repo || 'What are we building?');
+  // a folder menu stays in the title; the stylesheet swaps it for the research question
+  if (title && !title.querySelector('.folder-btn')) title.textContent = mode === 'research' ? 'What should we find out?' : (title.dataset.repo || 'What are we building?');
   for (const kind of $$('form.compose select[name="kind"]')) {
     const research = kind.value === 'gpt-chat';
     if (research !== (mode === 'research')) {
@@ -1188,11 +1193,16 @@ function drawPreviews() {
   // twice the thumbnail each dot keeps about a pixel, so the scene's shape reads.
   const big = document.createElement('canvas');
   for (const c of $$('canvas.background-preview')) {
+    // Off's tile is the CSS diagonal alone; there is no scene to draw or brighten.
+    if (c.dataset.preview === 'off') continue;
     bg.render(big, {preset: c.dataset.preview, tint: document.body.dataset.tint, width: 528, height: 320, dpr: 1});
     c.width = 264; c.height = 160;
     const g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
+    // At thumbnail size the scene loses its light, so the previews are drawn brighter than the page.
+    g.filter = 'brightness(1.9) saturate(1.15)';
     g.drawImage(big, 0, 0, c.width, c.height);
+    g.filter = 'none';
   }
 }
 let fieldTimer = 0;
@@ -1261,7 +1271,8 @@ function move(step) {
 function placePop(at, room, w, h, gap) {
   const below = room.bottom - at.bottom - gap, above = at.top - room.top - gap;
   const up = h > below && above > below;
-  return { up, right: at.left + w > room.right && at.right - w >= room.left, max: Math.max(80, Math.floor(up ? above : below) - 8) };
+  // 24px clear of the room's edge on the side it opens toward: jammed against the window edge, a popover reads as unplaced.
+  return { up, right: at.left + w > room.right && at.right - w >= room.left, max: Math.max(80, Math.floor(up ? above : below) - 24) };
 }
 // A composer's popover floats 8px clear of the composer's edge, below it when it fits, else above its trigger.
 function dropTop(trigger, h) {
@@ -1269,12 +1280,15 @@ function dropTop(trigger, h) {
   return innerHeight - box.bottom - 16 >= h || r.top < h + 14 ? box.bottom + 8 : r.top - h - 8;
 }
 // </place>
-// Options opens inside what shows of the page: over its button when the composer sits low, as it does docked at the
-// foot of the sea, and scrolling within itself when even that side is short.
+// Options and the /swarm popover open inside what shows of the page: over the button when the composer sits low, as
+// it does docked at the foot of the sea, and scrolling within themselves when even that side is short. (A phone's
+// swarm popover is a sheet above the composer, set by rh.css, so it is left alone.)
 function place(d) {
-  const body = $('.opts-body', d), s = $('summary', d);
+  const body = $(':scope > .opts-body, :scope > .swarm-pop', d), s = $('summary', d);
   if (!body || !s) return;
-  body.classList.remove('up', 'right'); body.style.maxHeight = '';
+  body.classList.remove('up', 'right'); body.style.maxHeight = ''; body.style.top = ''; body.style.bottom = '';
+  if (body.matches('.swarm-pop')) fadeLong(body);  // a phone's sheet keeps its css cap, so it reads once, here
+  if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;
   let room = { top: 0, right: innerWidth, bottom: innerHeight, left: 0 };
   for (let el = d.parentElement; el && el !== document.body; el = el.parentElement) {
     if (getComputedStyle(el).overflow === 'visible') continue;
@@ -1282,11 +1296,19 @@ function place(d) {
     room = { top: Math.max(room.top, b.top), right: Math.min(room.right, b.right), bottom: Math.min(room.bottom, b.bottom),
       left: Math.max(room.left, b.left) };
   }
-  const p = placePop(s.getBoundingClientRect(), room, body.offsetWidth, body.scrollHeight, 6);
+  // by a composer it floats the same 8px clear of the glass as the model and effort popovers, above or below, so the
+  // room on each side is measured from the glass's edge, not the button's
+  const box = d.closest('.composer'), cb = body.offsetParent, at = s.getBoundingClientRect();
+  const glass = box && box.getBoundingClientRect();
+  const from = glass ? {top: Math.min(at.top, glass.top - 2), right: at.right, left: at.left,
+                        bottom: Math.max(at.bottom, glass.bottom + 2)} : at;
+  const p = placePop(from, room, body.offsetWidth, body.scrollHeight, 6);
   body.classList.toggle('up', p.up); body.classList.toggle('right', p.right); body.style.maxHeight = p.max + 'px';
-  // below a composer it floats the same 8px clear of the glass as the model and effort popovers
-  const box = d.closest('.composer'), cb = body.offsetParent;
-  body.style.top = !p.up && box && cb ? (box.getBoundingClientRect().bottom + 8 - cb.getBoundingClientRect().top) + 'px' : '';
+  if (body.matches('.swarm-pop')) fadeLong(body);  // and again against the cap just set
+  if (glass && cb) {  // top and bottom count from the positioned box's padding edge, inside its border
+    const c = cb.getBoundingClientRect(), inTop = c.top + cb.clientTop, inBottom = inTop + cb.clientHeight;
+    if (p.up) body.style.bottom = (inBottom - glass.top + 8) + 'px'; else body.style.top = (glass.bottom + 8 - inTop) + 'px';
+  }
 }
 function closeOthers(keep) { for (const d of $$('details.act[open]')) if (d !== keep) d.open = false; }
 const field = d => $('input:not([type="hidden"]):not([type="checkbox"]), textarea', d);
@@ -1297,7 +1319,7 @@ function activate(c) {
 }
 document.addEventListener('toggle', e => {
   const d = e.target;
-  if (d instanceof HTMLDetailsElement && d.open && d.matches('.opts')) place(d);
+  if (d instanceof HTMLDetailsElement && d.open && d.matches('.opts, .swarm-pick')) place(d);
   if (!(d instanceof HTMLDetailsElement) || !d.open || !d.matches('.act')) return;
   closeOthers(d);
   // Opened by mouse or key, the popover's first field takes focus so typing lands in it.
@@ -1984,6 +2006,7 @@ document.addEventListener('scroll', e => {
   else if (t.matches('pre.log[data-follow]')) fadeTop(t);
   else if (t.classList.contains('jd-scroll')) t.classList.toggle('scrolled', t.scrollTop > 2);
   else if (t.classList.contains('settings-body')) sheetEdges(t);
+  else if (t.classList.contains('swarm-pop')) fadeLong(t);
 }, true);
 // the settings sheet's body fades under its head once scrolled, and at its foot while more lies below
 function sheetEdges(t) {
@@ -2001,6 +2024,42 @@ document.addEventListener('click', e => {
 });
 document.addEventListener('rh:page', fadeAll);
 addEventListener('resize', fadeAll);
+
+// A sidebar name too long for its row ends on its last whole character: the browser's own ellipsis can land after a
+// space or a comma ('Improve research-harness, …'). The cut copy is what shows; the whole name stays for a screen
+// reader and as the row's tooltip.
+const CUT_END = /[\s,;:.·(–—-]+$/;
+function fitName(el) {
+  const full = el.dataset.full || el.textContent;
+  if (el.dataset.full) { el.textContent = full; delete el.dataset.full; el.removeAttribute('title'); }
+  if (!el.clientWidth || el.scrollWidth <= el.clientWidth) return;
+  const cut = n => full.slice(0, n).replace(CUT_END, '') + '…';
+  let lo = 1, hi = full.length - 1;
+  while (lo < hi) {  // the longest cut that fits
+    const mid = (lo + hi + 1) >> 1;
+    el.textContent = cut(mid);
+    if (el.scrollWidth <= el.clientWidth) lo = mid; else hi = mid - 1;
+  }
+  const shown = document.createElement('span'), whole = document.createElement('span');
+  shown.setAttribute('aria-hidden', 'true');
+  shown.textContent = cut(lo);
+  whole.className = 'vh';
+  whole.textContent = full;
+  el.replaceChildren(shown, whole);
+  el.dataset.full = full;
+  el.title = full;
+}
+const fitNames = () => { for (const el of $$('.lane .row .name')) fitName(el); };
+document.addEventListener('rh:page', fitNames);
+if (window.ResizeObserver) {
+  let lane = null;
+  const seen = new ResizeObserver(() => requestAnimationFrame(fitNames));
+  document.addEventListener('rh:page', () => {
+    const now = $('.lane');
+    if (now !== lane) { if (lane) seen.unobserve(lane); lane = now; if (lane) seen.observe(lane); }
+  });
+}
+if (document.fonts) document.fonts.ready.then(fitNames);
 // a preview folded away has no height to measure until it opens
 document.addEventListener('toggle', e => { if (e.target.matches && e.target.matches('.file-preview')) fadeAll(); }, true);
 fadeAll();
@@ -2030,6 +2089,7 @@ function echoTitle() {
     ? $$('.assistant-message > :first-child, .user-message', scroller).find(el => norm(el.textContent).startsWith(said))
     : null;
   head.classList.toggle('echo', !!twin);
+  requestAnimationFrame(() => head.classList.add('ready'));
   if (!twin) return;
   echoIo = new IntersectionObserver(es => head.classList.toggle('echo', es[es.length - 1].isIntersecting),
     { root: scroller });
@@ -2156,17 +2216,16 @@ document.addEventListener('change', e => {
   }).catch(() => toast('The swarm settings could not be saved.', false, ''));
 });
 // the composer's swarm line names what was just saved: the ticked models, then the judge
-// as the page writes it (dashboard._swarm_line): a family every model shares is named once
+// as the page writes it (dashboard._swarm_line): a family every model shares is named once, and the judge keeps
+// its whole name (a bare 'Max' reads as an effort); with no judge the line is the models alone, the Quick
+// swarm's subtitle, which team.js writes too
 function swarmLine(names, judge) {
   const heads = new Set(names.map(n => n.split(' ')[0]));
   const fam = heads.size === 1 && names.every(n => n.includes(' ') && !n.includes('+')) ? [...heads][0] : '';
-  let models = names.join(', ');
-  if (fam) {
-    models = fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(', ');
-    if (judge.startsWith(fam + ' ') && !judge.includes('+')) judge = judge.slice(fam.length + 1);
-  }
-  return `${models} · judge: ${judge}`;
+  const models = fam ? fam + ' ' + names.map(n => n.slice(fam.length + 1)).join(', ') : names.join(', ');
+  return judge ? `${models} · judge ${judge}` : models;
 }
+window.RHswarmLine = swarmLine;
 function swarmSays(form) {
   const says = form.id && document.querySelector(`[data-swarm-says="${form.id}"]`);
   const judge = form.elements.namedItem('judge');
@@ -2175,6 +2234,12 @@ function swarmSays(form) {
   const names = [...form.elements].filter(i => i.name === 'models' && i.checked).map(i => i.dataset.name);
   const line = swarmLine(names, judge.selectedOptions[0].text), cut = line.lastIndexOf(' · ');
   says.replaceChildren(line.slice(0, cut), sep, line.slice(cut + 3));
+  // the popover's Quick swarm row follows: its radio keeps the whole line, its subtitle the models
+  const radio = document.querySelector('[data-team-pick] input[value="quick"]');
+  if (!radio) return;
+  radio.dataset.says = line;
+  const sub = radio.closest('label') && radio.closest('label').querySelector('.swarm-team-d');
+  if (sub) sub.textContent = line.slice(0, cut);
 }
 // An identifier moves whole to the next line; only one wider than its column breaks, and then at its own seams
 // (after _ and .), never mid-word as "strin / g".
@@ -2190,4 +2255,199 @@ let seamTimer = 0;
 addEventListener('resize', () => { clearTimeout(seamTimer); seamTimer = setTimeout(seamTokens, 150); });
 document.addEventListener('rh:page', seamTokens);
 seamTokens();
+
+// The composer's title is the folder a This Mac job works in. Its menu lists the folders jobs used and the
+// configured repository; Choose folder… opens the app's native folder dialog, or in a browser takes a typed path.
+// The pick fills the form's folder field and is kept for the next visit; the server refuses a non-git folder.
+const FOLDER_KEY = 'rh-folder';
+function folderMenu() { return $('#folder-menu'); }
+function setFolder(path, keep = true) {
+  const btn = $('.folder-btn'), menu = folderMenu();
+  if (!btn || !menu || !path) return;
+  for (const f of $$('form.compose input[name="folder"]')) f.value = path;
+  const name = path.replace(/\/+$/, '').split('/').pop() || path;
+  $('.fb-name', btn).textContent = name;
+  btn.title = path;
+  btn.closest('h1').dataset.repo = name;
+  // the branch under the title is the configured repository's: another folder's is not known here
+  for (const chip of $$('.where-chip[title="Branch"]')) chip.hidden = path !== btn.dataset.home;
+  for (const row of $$('[data-folder]', menu)) row.setAttribute('aria-checked', String(row.dataset.folder === path));
+  if (keep) { try { localStorage.setItem(FOLDER_KEY, path); } catch { /* the pick lasts this page only */ } }
+}
+function openFolders(open) {
+  const btn = $('.folder-btn'), menu = folderMenu();
+  if (!btn || !menu) return;
+  menu.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+  if (!open) { $('.fm-path', menu).hidden = true; return; }
+  ($('[data-folder][aria-checked="true"]', menu) || $('[data-folder]', menu) || $('[data-folder-choose]', menu)).focus();
+}
+async function chooseFolder() {
+  const api = window.pywebview && window.pywebview.api;
+  if (api && api.choose_folder) {  // the desktop app: macOS's own folder dialog
+    openFolders(false);
+    const path = await api.choose_folder();
+    if (path) setFolder(path);
+    $('.folder-btn').focus();
+    return;
+  }
+  const field = $('.fm-path', folderMenu());  // a browser cannot read a picked folder's path: type it
+  field.hidden = false;
+  $('input', field).focus();
+}
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.folder-btn'), menu = folderMenu();
+  if (btn) { openFolders(menu.hidden); return; }
+  if (!menu || menu.hidden) return;
+  const row = e.target.closest('[data-folder]');
+  if (row) { setFolder(row.dataset.folder); openFolders(false); $('.folder-btn').focus(); return; }
+  if (e.target.closest('[data-folder-choose]')) { chooseFolder(); return; }
+  if (!e.target.closest('#folder-menu')) openFolders(false);
+});
+document.addEventListener('keydown', e => {
+  const menu = folderMenu();
+  if (!menu || menu.hidden || !menu.contains(document.activeElement) && e.key !== 'Escape') return;
+  if (e.key === 'Escape') { e.preventDefault(); openFolders(false); $('.folder-btn').focus(); return; }
+  if (e.key === 'Enter' && e.target.closest('.fm-path')) {
+    e.preventDefault();
+    const path = e.target.value.trim();
+    if (path) { setFolder(path); openFolders(false); $('.folder-btn').focus(); }
+    return;
+  }
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {  // the rows move as a menu's do
+    e.preventDefault();
+    const rows = $$('.fm-row', menu), at = rows.indexOf(document.activeElement);
+    rows[(at + (e.key === 'ArrowDown' ? 1 : -1) + rows.length) % rows.length].focus();
+  }
+});
+function restoreFolder() {  // a refused draft's folder wins; otherwise the last pick (the server checks it on send)
+  const field = $('form.compose input[name="folder"]');
+  if (!field || field.value) { if (field) setFolder(field.value, false); return; }
+  let kept = '';
+  try { kept = localStorage.getItem(FOLDER_KEY) || ''; } catch { return; }
+  if (kept) setFolder(kept, false);
+}
+document.addEventListener('rh:page', restoreFolder);
+restoreFolder();
+// <talk>
+// The running job's composer, after T3 Code's (composerDispatch, ComposerPrimaryActions, QueuedRunsControl; MIT,
+// T3 Tools Inc.): Enter steers the turn, Ctrl/⌘ with Enter or a click queues the next one, an empty composer's
+// button is Stop, and a queued row edits in the composer, is sent as a steer, or is removed.
+let talkEdit = null, talkDraft = '', talkAll = false, talkJob = null;
+const talkForm = () => $('form[data-message]');
+const TALK = { stop: 'Stop generation', steer: 'Steer message', queue: 'Queue message', update: 'Update queued message' };
+function talkSync(alt) {
+  const f = talkForm();
+  if (!f) { talkEdit = null; return; }
+  const job = f.elements.namedItem('job').value;
+  if (job !== talkJob) { talkJob = job; talkEdit = null; talkDraft = ''; talkAll = false; }
+  if (talkEdit && !$('.un-row[data-id="' + CSS.escape(talkEdit) + '"]')) {  // started or removed meanwhile
+    talkEdit = null;
+    f.elements.namedItem('text').value = talkDraft; talkDraft = '';
+    toast('Queued message is no longer queued', false, '');
+  }
+  const text = f.elements.namedItem('text').value.trim();
+  const state = talkEdit ? 'update' : !text ? 'stop' : alt ? 'queue' : 'steer';
+  f.dataset.state = state;
+  const b = $('.talk-send', f);
+  b.setAttribute('aria-label', TALK[state]);
+  b.title = state === 'stop' ? 'Interrupt' : state === 'update' ? TALK[state] : b.dataset.tip;
+  b.disabled = state === 'update' && !text;
+  $('[data-q-cancel]', f).hidden = !talkEdit;
+  for (const row of $$('.un-row')) {
+    const on = row.dataset.id === talkEdit;
+    row.classList.toggle('editing', on);
+    $('.un-editing', row).hidden = !on;
+  }
+  const up = $('.up-next'), every = $('[data-q-all]');
+  if (up) up.classList.toggle('all', talkAll);
+  if (every) { every.setAttribute('aria-expanded', talkAll); every.textContent = talkAll ? 'Show fewer' : every.dataset.more; }
+}
+async function talkPost(fields) {
+  const f = talkForm();
+  if (!f) return false;
+  const body = new URLSearchParams({ t: f.elements.namedItem('t').value, job: f.elements.namedItem('job').value, ...fields });
+  try {
+    const r = await fetch(f.action, { method: 'POST', body });
+    if (r.status === 403) { live('ended'); return false; }
+    if (!r.ok) { toast((await r.text()) || 'The message did not send.', false, ''); return false; }
+  } catch (err) { toast('The app did not answer. Is rh serve still running?', false, ''); return false; }
+  clearTimeout(timer); timer = setTimeout(poll, 400);  // the agent reads its inbox every 0.2 s
+  return true;
+}
+async function talkSend(alt) {
+  const f = talkForm();
+  if (!f) return;
+  const box = f.elements.namedItem('text'), btn = $('.talk-send', f), text = box.value, editing = talkEdit;
+  if (editing && !text.trim()) return;
+  const fields = editing ? { mode: 'update', target: editing, text }
+    : !text.trim() ? { mode: 'stop' } : { mode: alt ? 'queue' : 'steer', text };
+  // The box empties at once, as T3 Code's does: what is typed while this one is on its way is the next message.
+  box.value = editing ? talkDraft : '';
+  talkEdit = null; talkDraft = '';
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+  const ok = await talkPost(fields);
+  play(btn, ok ? 'ok' : 'no', ok ? 600 : 400);
+  if (!ok && fields.text && !box.value.trim()) {  // it did not go: the words come back, unless more were typed
+    box.value = fields.text;
+    box.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+}
+function talkEditRow(row) {
+  const f = talkForm();
+  if (!f || !row) return;
+  const box = f.elements.namedItem('text');
+  if (!talkEdit) talkDraft = box.value;
+  talkEdit = row.dataset.id;
+  box.value = $('.un-t', row).textContent;
+  box.focus();
+  box.setSelectionRange(box.value.length, box.value.length);
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+}
+function talkCancel() {
+  const f = talkForm();
+  if (!f || !talkEdit) return;
+  const box = f.elements.namedItem('text');
+  talkEdit = null; box.value = talkDraft; talkDraft = '';
+  box.dispatchEvent(new Event('input', { bubbles: true }));
+}
+document.addEventListener('submit', e => {
+  if (!(e.target instanceof HTMLFormElement) || !e.target.hasAttribute('data-message')) return;
+  e.preventDefault();
+  talkSend(false);
+});
+document.addEventListener('input', e => { if (e.target.closest && e.target.closest('form[data-message]')) talkSync(false); });
+document.addEventListener('click', e => {
+  const t = e.target.closest && e.target.closest('[data-q], [data-q-edit], [data-q-cancel], [data-q-all], .talk-send');
+  if (!t) return;
+  if (t.matches('.talk-send')) { e.preventDefault(); talkSend(e.metaKey || e.ctrlKey); return; }
+  if (t.hasAttribute('data-q-all')) { talkAll = !talkAll; talkSync(false); return; }
+  if (t.hasAttribute('data-q-cancel')) { talkCancel(); return; }
+  const row = t.closest('.un-row');
+  if (!row) return;
+  if (t.hasAttribute('data-q-edit')) { talkEditRow(row); return; }
+  talkPost({ mode: t.dataset.q, target: row.dataset.id }).then(ok => {
+    if (!ok) return;
+    row.classList.add('leaving');
+    if (talkEdit === row.dataset.id) talkCancel();
+  });
+});
+document.addEventListener('keydown', e => {
+  const box = e.target;
+  if (['Meta', 'Control'].includes(e.key)) { talkSync(true); return; }
+  if (!(box instanceof HTMLTextAreaElement) || !box.form || !box.form.hasAttribute('data-message')) return;
+  if (e.isComposing || e.keyCode === 229) return;
+  if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.repeat) {
+    e.preventDefault();
+    if (box.value.trim() || talkEdit) talkSend(e.metaKey || e.ctrlKey);  // Enter on an empty box never stops the run
+  } else if (e.key === 'ArrowUp' && e.altKey && box.selectionStart === 0 && box.selectionEnd === 0) {
+    const rows = $$('.un-row');
+    if (rows.length) { e.preventDefault(); talkEditRow(rows[rows.length - 1]); }
+  } else if (e.key === 'Escape' && talkEdit) { e.preventDefault(); talkCancel(); }
+}, true);
+document.addEventListener('keyup', e => { if (['Meta', 'Control'].includes(e.key)) talkSync(e.metaKey || e.ctrlKey); });
+window.addEventListener('blur', () => talkSync(false));
+document.addEventListener('rh:page', () => talkSync(false));
+talkSync(false);
+// </talk>
 })();

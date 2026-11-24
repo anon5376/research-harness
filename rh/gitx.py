@@ -56,6 +56,10 @@ def staged(worktree):
 
 
 def commit_branch(worktree, branch, message):
-    git(worktree, "checkout", "-b", branch)
+    """Commit on the worktree's detached HEAD and point a new branch at it, so the branch is never checked out
+    there and the repo itself can check it out. An existing branch is refused, never moved."""
+    if git(worktree, "rev-parse", "--verify", "--quiet", f"refs/heads/{branch}", check=False).returncode == 0:
+        raise GitError(f"branch {branch} already exists; delete it first to land again")
     git(worktree, "commit", "-m", message)
+    git(worktree, "branch", branch, "HEAD")
     return head(worktree)

@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from html.parser import HTMLParser
 from pathlib import Path
@@ -86,6 +87,27 @@ def live_view():
     view["recent"].append({"id": "broke-job", "state": "failed", "paused": False, "detail": "command exited 2",
                            "external_id": "4242"})
     return {**view, "can_add": True, "checks": {"mode": "on", "pid": None, "failed": None}}
+
+
+def layered_view(flat=False):
+    """A preset's team mid-run: the lead planned; manager m1's agents w1 (done) and w2 (running); manager m2 kept w3
+    over w4, which failed; the lead waits on the plan and both managers. `flat` drops the managers' teams."""
+    view = live_view()
+    states = {"t.plan": "done", "t.w1": "done", "t.w2": "running", "t.m1": "waiting", "t.w3": "done",
+              "t.w4": "failed", "t.m2": "done", "t.best": "waiting"}
+    view["live"] = [{"id": "t.w2", "state": "running", "paused": False, "detail": "", "external_id": None}]
+    view["not_started"] = [{"id": j, "state": "waiting", "paused": False, "detail": "", "external_id": None}
+                           for j in ("t.m1", "t.best")]
+    view["recent"] = [*view["recent"], *({"id": j, "state": st, "paused": False, "detail": "", "external_id": None}
+                                         for j, st in states.items() if st in ("done", "failed"))]
+    base = {"brief": "Fix the typo", "kind": "local-agent", "created": NOW - 900, "started": NOW - 600,
+            "updated": NOW - 120, "goal": "t", "model": "swe-2-max"}
+    meta = {j: {**base, "state": st} for j, st in states.items()}
+    meta["t.m1"].update(after=[] if flat else ["t.w1", "t.w2"], model="claude-opus-5-5")
+    meta["t.m2"].update(after=[] if flat else ["t.w3", "t.w4"], kept="w3", model="swe-2-high")
+    meta["t.best"]["after"] = ["t.plan", "t.m1", "t.m2"]
+    view["meta"] = {**view.get("meta", {}), **meta}
+    return view if flat else opened(view, "t.best", kind="local-agent", state="waiting")
 
 
 def opened(view, jid, **job):
@@ -202,6 +224,35 @@ def primaries(html):
 
 
 class ListsTest(unittest.TestCase):
+    def test_a_reading_preamble_or_code_never_names_a_run(self):
+        # load test: three runs were listed as "I've read rh/gitx.py, its callers…", "Read rh/privacy.py and tests/…
+        # fully, plus…" and "Fair enough"; each one's next line, a bold Bug heading, says what it found
+        self.assertEqual(dashboard.answer_head(
+            "I've read `rh/gitx.py`, its callers (`collect.py`, `cli.py`) and the tests. One line stands out.\n\n"
+            "**Bug — `rh/gitx.py:59`, in `commit_branch`:**\n```python\ngit(worktree, \"checkout\")\n```\n"
+            "**Triggering state:** land."), "Bug in rh/gitx.py in commit_branch")
+        self.assertEqual(dashboard.answer_head(
+            "Read `rh/privacy.py` and `tests/test_privacy.py` fully, plus the hook.\n"
+            "**Bug: `rh/privacy.py:82` — the leading `\\b` in `_ACCOUNT`.**\nInput: x"),
+            "Bug in rh/privacy.py: the leading \\b in _ACCOUNT")
+        self.assertEqual(dashboard.answer_head(
+            "Fair enough — the code path is clear from reading anyway.\n**Bug: `rh/collect.py:60`** — "
+            "`raw = rp.read_text()`"), "Bug in rh/collect.py")  # a line of code after the path is no name
+        self.assertEqual(dashboard.answer_head("```python\nx = 1\n```\nFixed the loop"), "Fixed the loop")
+        self.assertEqual(dashboard.answer_head("**Bug:** `rh/oslock.py:20` — `fd = os.open(path, 0)`"), "Bug in rh/oslock.py")
+        # critic r26 F1 (high): a name never starts with a path or a lowercase fragment
+        self.assertEqual(dashboard.answer_head("**Bug:** `rh/contract.py` lines 166–175 (the `after` loop in `preflight`)."),
+                         "Bug in rh/contract.py lines 166–175 (the after loop in preflight)")
+        self.assertEqual(dashboard.answer_head("the label is renamed"), "The label is renamed")
+        # a code name keeps its case: capitalising it would name something else
+        self.assertEqual(dashboard.answer_head("`_recent` counts each swarm once"), "_recent counts each swarm once")
+        self.assertEqual(dashboard.answer_head("`commit_branch` lands on a detached HEAD"),
+                         "commit_branch lands on a detached HEAD")
+        # an imperative that starts with Read or Right is what was done, and still names the run
+        self.assertEqual(dashboard.answer_head("**Read RESULT.json as bytes so non-UTF-8 files end failed.**"),
+                         "Read RESULT.json as bytes so non-UTF-8 files end failed")
+        self.assertEqual(dashboard.answer_head("Right-aligned the ETA"), "Right-aligned the ETA")
+
     def test_a_done_run_is_named_by_what_its_agent_said(self):
         # One brief run many times reads as many runs: each done one is named by its answer's first line.
         self.assertEqual(dashboard.answer_head("**Reject a job whose `accept` is a list — untested: I could not**\n\nWhy"),
@@ -227,7 +278,7 @@ class ListsTest(unittest.TestCase):
         # and what is left starts as a sentence does (critic r10 F3)
         self.assertEqual(dashboard.answer_head("Done — renamed the label to Run"), "Renamed the label to Run")
         self.assertEqual(dashboard.answer_head("Done. · fixed it"), "Fixed it")
-        self.assertEqual(dashboard.answer_head("rh/serve.py — x"), "x")  # no status word stripped: left as written
+        self.assertEqual(dashboard.answer_head("rh/serve.py — x"), "X")  # the words after a lone path, in sentence case
         # a label is cut by the list's ellipsis, which would cut a line number to a false ':1…': the number goes whole
         self.assertEqual(dashboard.answer_head("The label is renamed at rh/dashboard.py:1623"),
                          "The label is renamed at rh/dashboard.py")
@@ -309,6 +360,28 @@ class ListsTest(unittest.TestCase):
         self.assertIsNotNone(row)
         self.assertIn("Write the notes", row.group(0))
 
+    def test_a_layered_swarm_draws_its_whole_team_on_the_lead_page(self):
+        # A preset's team runs in layers: the lead's page must show who reports to whom, with each agent's state,
+        # and light the work each judge kept; a flat swarm keeps its runs card alone.
+        page = dashboard.render(layered_view(), NOW, token=TOKEN)
+        card = re.search(r'data-region="j-team".*?</section>', page, re.S).group(0)
+        self.assertIn("8 agents", text(card))
+        self.assertIn("1 working", text(card))
+        tree = re.search(r'<ul class="lt-tree">(.*)</ul></div>', card, re.S).group(1)
+        m1 = re.search(r'data-lt="t.m1".*?</ul>', tree, re.S).group(0)  # the manager's own team sits under it
+        self.assertIn('data-lt="t.w1"', m1)
+        self.assertIn('data-lt="t.w2"', m1)
+        self.assertNotIn('data-lt="t.w3"', m1)
+        self.assertIn('data-lt="t.w2" data-up="t.m1" data-tone="live"', tree)
+        self.assertIn('data-lt="t.w4" data-up="t.m2" data-tone="fail"', tree)
+        self.assertRegex(tree, r'class="lt-n s-done kept"[^>]*data-lt="t.w3"')  # m2 kept w3
+        self.assertNotRegex(tree, r'class="[^"]*kept"[^>]*data-lt="t.w4"')
+        for word in ("Lead", "Plan", "Manager", "Agent", "SWE-2 Max", "Claude Opus 5.5", "Running"):
+            self.assertIn(word, text(card))
+        self.assertIn('href="/job/t.w2?t=', card)
+        flat = opened(layered_view(flat=True), "t.best", kind="local-shell", state="waiting")
+        self.assertNotIn('data-region="j-team"', dashboard.render(flat, NOW, token=TOKEN))
+
     def test_a_swarm_is_one_row_and_its_judge_page_lists_each_run(self):
         # The runs of a /swarm are the judge's work, not jobs of their own: a sidebar row per run, a judge page
         # that only says "waiting for fix.w2", or a swarm that reads "Up next" while its runs work, must fail.
@@ -338,6 +411,9 @@ class ListsTest(unittest.TestCase):
         # a done run's ring already says it: its row shows the time alone, with no "Done" said a second time
         self.assertNotIn("Done", text(card))
         self.assertIn('href="/job/fix.w1?t=', card)
+        # the run at work wears the sheen; the finished one does not
+        self.assertRegex(card, r'href="/job/fix\.w2\?t=[^"]*" data-nav data-live>')
+        self.assertNotRegex(card, r'href="/job/fix\.w1\?t=[^"]*" data-nav data-live>')
         self.assertIn("keeps the best work once every run has ended", text(page))
         self.assertNotIn("waiting for fix.w2", page)
         status = re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)
@@ -579,8 +655,8 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<button class="sw-again" data-k="w" aria-keyshortcuts="w">', card(page))
         self.assertIn("Swarm again", text(card(page)))
         # r21 F2: Swarm again and Judge again shared the circular arrow, so only the labels told them apart and the w
-        # key showed nowhere. Swarm again leads with no arrow and ends on its key chip, as the composer's hint chips;
-        # a phone, with no key to show, draws the Swarm chip's glyph instead.
+        # key showed nowhere. Swarm again leads with the swarm glyph, not the arrow, and ends on its key chip, as the
+        # composer's hint chips; a phone, with no key to show, drops the chip.
         btn = re.search(r'<button class="sw-again".*?</button>', card(page), re.S).group(0)
         self.assertNotIn(dashboard._ic("again", True), btn)
         self.assertTrue(btn.endswith('<span>Swarm again</span><kbd aria-hidden="true">W</kbd></button>'), btn)
@@ -588,16 +664,17 @@ class ListsTest(unittest.TestCase):
         chip = dashboard.STYLE.split("\n.sw-again kbd {", 1)[1].split("}", 1)[0]
         for spec in ("height: 18px", "background: #1a1f2c", "font: 11px/18px var(--mono)"):
             self.assertIn(spec, chip)
-        self.assertIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
-        self.assertIn(".sw-again > .ic { display: block; } .sw-again kbd { display: none; }", dashboard.STYLE)
-        # on a phone the head's right side is a quiet pill like the dock's Judge again — 32px, a hairline edge,
-        # fully round — so it reads as an action, not a second 'Swarm' title in the title's own grey; the desktop
-        # keeps the bare label and its W chip
+        self.assertIn(".sw-again > .ic { display: block; }", dashboard.STYLE)
+        self.assertNotIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
+        self.assertIn(".sw-again kbd { display: none; }", dashboard.STYLE)
+        # the head's right side is a quiet pill like the dock's Judge again — a hairline edge, fully round — so it
+        # reads as an action, not a second 'Swarm' title in the title's own grey; a phone only grows it a step
         phone_again = dashboard.STYLE.split("@media (max-width: 600px) { .sw-again {", 1)[1].split("}", 1)[0]
-        for spec in ("height: 32px", "border: 1px solid #2a3142", "border-radius: 16px", "padding: 0 12px"):
+        for spec in ("height: 32px", "border-radius: 16px", "padding: 0 12px"):
             self.assertIn(spec, phone_again)
+        self.assertNotIn("border:", phone_again)  # the edge is the shared rule's now, not the phone's own
         desk_again = dashboard.STYLE.split("\n.sw-again {", 1)[1].split("}", 1)[0]
-        for spec in ("height: 28px", "padding: 0 10px", "border: 0", "border-radius: 8px"):
+        for spec in ("height: 28px", "padding: 0 10px", "border: 1px solid #2a3142", "border-radius: 14px"):
             self.assertIn(spec, desk_again)
         # the page's w key presses it, once: no other control on the page may carry the key
         self.assertEqual(page.count('data-k="w"'), 1)
@@ -625,6 +702,35 @@ class ListsTest(unittest.TestCase):
         self.assertFalse(Forms(card(page)).forms)
         self.assertNotIn("sw-again", card(page))
         self.assertNotIn('data-k="w"', page)
+
+    def test_a_combined_swarms_head_carries_the_final_trees_check(self):
+        # When the judge combined its runs there is no one run's row to carry the check the harness ran on the
+        # combined tree, so the head's 'Combined' does, in the same chip a row uses; a result the harness never
+        # checked leaves 'Combined' to say it alone.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix", "timeout_min": 90}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                            "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "fix.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"]["swarm_kept"] = "combined"
+        head = lambda page: re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>',  # noqa: E731
+                                      page, re.S).group(1)
+        done["open"]["swarm_final"] = "passed"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn("Combined" + dashboard._SEP_HTML + '<span class="sw-c">Check passed</span>', head(page))
+        done["open"]["swarm_final"] = "failed: exit 1"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn("Combined" + dashboard._SEP_HTML + '<span class="sw-c bad">Check failed</span>', head(page))
+        del done["open"]["swarm_final"]
+        page = dashboard.render(done, NOW, token=TOKEN)
+        self.assertIn('<span class="lines">Combined</span>', head(page))
+        self.assertNotIn('class="sw-c', head(page))
 
     def test_an_answers_attachments_open_from_one_side(self):
         # Under an answer the file row opened from a trailing 'Preview ›' and the folded Output below it from a
@@ -719,9 +825,12 @@ class ListsTest(unittest.TestCase):
         top = re.search(r'<span class="top-meta mono">.*?</span></span>', busy, re.S).group(0)
         self.assertNotIn("settled", text(top))
         self.assertIn("Settled today", text(busy))
-        # r24 F1: a settled row steps back as a unit: its reason and id lines sit a step under its grey title
+        # r24 F1: a settled row steps back as a unit: its reason and id lines sit a step under its grey title.
+        # r26 F6: and still read at AA, 4.5:1 or more on a raised (hovered or picked) row: #7f8594 is 4.6:1 on
+        # #1c1c1f and 5.2:1 on the page; #737a8a was 4.4:1
         for sel in (".ib.done .ib-s", ".ib.done .ib-id"):
-            self.assertIn("color: #737a8a", dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0])
+            self.assertIn("color: #7f8594", dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0])
+        self.assertIn("color: #8b92a3", dashboard.STYLE.split("\n.ib.done .ib-t {", 1)[1].split("}", 1)[0])
 
     def test_the_swarm_line_opens_the_swarms_models(self):
         # r19 F3: in swarm mode the model picker stepped aside for grey text, so the one row of controls had a line
@@ -777,7 +886,7 @@ class ListsTest(unittest.TestCase):
         says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span></p>', page).group(1)
         # 'A + B' names one Fusion model everywhere else, so the runs are listed with commas and the judge is a verb
         # (critic r11 F1)
-        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge: Max".split())  # r22 F2, r23 F6
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge SWE-2 Max".split())  # r22 F2, r23 F6
         # the chip's × shows on hover or focus where there is a pointer, always on touch, with a 24px hit area
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("gap: 12px", rule(".swarm-note"))
@@ -841,6 +950,23 @@ class ListsTest(unittest.TestCase):
         rule = dashboard.STYLE.split("\n.swarm-x {", 1)[1].split("}", 1)[0]
         self.assertIn("border: 1.5px solid #6e7383", rule)
 
+    def test_every_swarm_tick_list_leads_with_its_box(self):
+        # r27 F12: the same tick list put its box on the left in Settings (moved there by an 'order' rule) and on the
+        # right in the composer's /swarm popover. Every row now leads with its 16px box, in the markup, so both lists
+        # draw box, glyph, name and no stylesheet rule reorders them.
+        page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
+                                                          "choices": ["swe-2-max", "swe-2-high", "claude-opus-5-5"]}},
+                                NOW, token=TOKEN)
+        settings = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)
+        pop = re.search(r'<div class="swarm-pop".*?</details>', page, re.S).group(0)
+        for where, part in (("settings", settings), ("popover", pop)):
+            rows = re.findall(r'<label class="swarm-m">.*?</label>', part, re.S)
+            self.assertEqual(len(rows), 3, where)
+            for row in rows:
+                self.assertRegex(row, r'^<label class="swarm-m"><input type="checkbox"[^>]*><span class="swarm-x" '
+                                      r'aria-hidden="true"></span><svg', where)
+        self.assertNotRegex(dashboard.STYLE, r'\.swarm-x \{[^}]*(?<![\w-])order:')
+
     def test_settings_names_the_fusion_pair_and_its_cost_as_the_picker_does(self):
         # A settings row that says only 'Fusion', hiding which pair and which paid API a swarm would run, must fail.
         # r21 F9: cost is said once, by the group's head ('Fusion · API' as 'SWE-2 · Free'), not by a chip on a row.
@@ -857,19 +983,19 @@ class ListsTest(unittest.TestCase):
 
     SWARM_LINES = [  # r22 F2: a shared family is printed once. r23 F6: '+' is Fusion's (one model of two), so runs
         # join with commas, and the judge is named as one ('Max judges' read as 'maximum judges')
-        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max, Flash · judge: Max"),
-        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · judge: Max"),
-        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max, Flash · judge: Claude Opus 5.5"),
-        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · judge: SWE-2 Max"),
+        (["SWE-2 Max", "SWE-2 Flash"], "SWE-2 Max", "SWE-2 Max, Flash · judge SWE-2 Max"),
+        (["SWE-2 Max"], "SWE-2 Max", "SWE-2 Max · judge SWE-2 Max"),
+        (["SWE-2 Max", "SWE-2 Flash"], "Claude Opus 5.5", "SWE-2 Max, Flash · judge Claude Opus 5.5"),
+        (["SWE-2 Max", "Claude Opus 5.5"], "SWE-2 Max", "SWE-2 Max, Claude Opus 5.5 · judge SWE-2 Max"),
         (["Fable 5.2 Medium + SWE-2 High", "SWE-2 Max"], "SWE-2 Max",
-         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · judge: SWE-2 Max"),
-        (["Opus"], "Opus", "Opus · judge: Opus"),
+         "Fable 5.2 Medium + SWE-2 High, SWE-2 Max · judge SWE-2 Max"),
+        (["Opus"], "Opus", "Opus · judge Opus"),
     ]
 
     def test_settings_shows_every_swarm_group_when_it_opens(self):
         # r23 F3: a fourth tick group still started at the sheet's foot, and the ticks sat in a filled, bordered box
-        # inside the sheet. In Settings the ticks sit on the sheet (no box), rows are 28px, group heads 24px, and the
-        # Colour swatches share their label's row. The composer's popover keeps its own box.
+        # inside the sheet. In Settings the ticks sit on the sheet (no box), rows are 28px, group heads 24px. The
+        # composer's popover strips the box too.
         rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         box = rule(".settings .swarm-models")
         for spec in ("padding: 0", "border: 0", "background: none"):
@@ -889,11 +1015,8 @@ class ListsTest(unittest.TestCase):
         self.assertIn("padding-left: 0", rule(".settings .swarm-opts + .set-hint"))
         # r24 F7: each box sat ~440px right of its name across a 28px row with nothing joining them; a square box sits
         # beside its label, as macOS lists put it: box, glyph, name, 8px apart, on the sheet's text edge
-        self.assertIn("order: -1", rule(".settings .swarm-m > .swarm-x"))
+        # (the box leads in the markup now, in Settings and the popover alike: r27 F12)
         self.assertIn("gap: 8px", rule(".settings .swarm-m"))
-        legend = rule(".settings fieldset:has(.tint-choices) > legend")
-        for spec in ("float: left", "line-height: 24px"):
-            self.assertIn(spec, legend)
 
     def test_settled_inbox_rows_step_back(self):
         # r23 F1: settled rows wore the white 15px title, row height and id line of the rows that need you; only the
@@ -929,7 +1052,7 @@ class ListsTest(unittest.TestCase):
             self.assertEqual(dashboard._swarm_line(names, judge), line)
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max", "swe-2-flash-high"],
                                                           "judge": "swe-2-max"}}, NOW, token=TOKEN)
-        self.assertIn(f'SWE-2 Max, Flash{dashboard._SEP_HTML}judge: Max', page)
+        self.assertIn(f'SWE-2 Max, Flash{dashboard._SEP_HTML}judge SWE-2 Max', page)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_script_writes_the_swarm_line_as_the_page_does(self):
@@ -937,7 +1060,7 @@ class ListsTest(unittest.TestCase):
         code = code[:code.index("\n}\n") + 3]
         cases = json.dumps([[n, j] for n, j, _ in self.SWARM_LINES])
         out = subprocess.run(["node", "-e", code + f"console.log(JSON.stringify({cases}.map(([n, j]) => swarmLine(n, j))))"],
-                             capture_output=True, text=True, timeout=30, check=True).stdout
+                             capture_output=True, text=True, encoding="utf-8", timeout=30, check=True).stdout
         self.assertEqual(json.loads(out), [line for _, _, line in self.SWARM_LINES])
 
     def test_the_swarm_ticks_list_devin_as_the_picker_does(self):
@@ -960,10 +1083,238 @@ class ListsTest(unittest.TestCase):
         self.assertIn('<p class="swarm-g">SWE-2 · Free</p>', only)
         self.assertNotIn(">Fusion", only)
 
+    def test_swarm_teams_are_picked_in_the_composer_and_edited_in_settings(self):
+        # The owner's teams (a lead over managers over workers) are chosen where /swarm is typed and edited in a
+        # dialog from Settings. The picked team names the composer's line, the ticks step aside for it, each radio
+        # carries its line as plain text (markup there was once drawn as literal text), and the editor gets every
+        # preset, model and role as escaped JSON in the page's one script's reach.
+        from rh import hierarchy
+        presets = {**hierarchy.defaults(), "active": "free-research"}
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "presets": presets,
+                 "choices": ["swe-2-max", "swe-2-flash-high"],
+                 "team_models": [["swe-2-max", "devin"], ["claude-opus-5-5", "claude"], ["gpt-6.2-astra", "codex"]]}
+        page = dashboard.render({**live_view(), "swarm": swarm}, NOW, token=TOKEN)
+        pick = re.search(r'<details class="swarm-pick">.*?</details>', page, re.S).group(0)
+        self.assertIn("Free research team", text(re.search(r"<summary.*?</summary>", pick, re.S).group(0)))
+        self.assertIn('data-team="preset"', pick)
+        radios = re.findall(r'<input type="radio" name="active" value="([^"]+)"[^>]*data-says="([^"]*)"', pick)
+        self.assertEqual([r[0] for r in radios], ["quick", "free-research", "astra-lead"])
+        for _, says in radios:
+            self.assertNotIn("&lt;", says)
+            self.assertIn(" · ", says)
+        self.assertIn('value="free-research" form="team-pick-f" checked', pick)
+        own = re.search(r'<form id="team-pick-f"[^>]*>', page).group(0)
+        self.assertIn('action="/settings/swarm-active"', own)
+        dialog = re.search(r'<dialog[^>]*id="team".*?</dialog>', page, re.S).group(0)
+        self.assertIn('action="/settings/swarm-presets"', dialog)
+        blob = json.loads(html.unescape(re.search(r'id="team-data" data-json="([^"]*)"', page).group(1)))
+        self.assertEqual([p["id"] for p in blob["presets"]["presets"]], ["free-research", "astra-lead"])
+        self.assertIn("gpt-6.2-astra", [m["id"] for m in blob["models"]])
+        self.assertEqual(page.count("<script"), 1)
+        self.assertEqual(dashboard._gpt_name("gpt-6.2-astra"), "GPT-6.2 Astra")
+        self.assertEqual(dashboard._names(["gpt-6.2-sol"]), "GPT-6.2 Sol")
+        # with the quick swarm active, the ticks are the swarm again
+        quick = dashboard.render({**live_view(), "swarm": {**swarm, "presets": hierarchy.defaults()}}, NOW, token=TOKEN)
+        self.assertIn('data-team="quick"', quick)
+        self.assertIn("judge SWE-2 Max", text(re.search(r'<details class="swarm-pick">.*?</summary>', quick, re.S).group(0)))
+
+    def test_the_swarm_popover_hides_the_page_behind_it(self):
+        # r153 swarm-teams-phone: the popover opens inside the glass composer, whose backdrop filter keeps the
+        # popover's own blur from reaching the page, so a 96% fill let the big title show through the model list.
+        rule = dashboard.STYLE.split("\n.swarm-pop {", 1)[1].split("}", 1)[0]
+        fill = re.search(r"background:[^;]*", rule).group(0)
+        self.assertRegex(fill, r"rgb\(\d+ \d+ \d+\)$")  # the last layer is a solid colour
+        self.assertNotIn("backdrop-filter", rule)
+
+    def test_a_cut_sidebar_name_ends_on_a_word_not_a_space(self):
+        # r26 F7: the browser's ellipsis cut names after a space or comma ('Improve research-harness, ...'). The
+        # script cuts them itself, trims what the cut leaves dangling, and keeps the whole name for screen readers.
+        fit = dashboard.SCRIPT.split("function fitName(el) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".replace(CUT_END, '') + '…'", fit)
+        self.assertIn("whole.className = 'vh'", fit)
+        self.assertIn("shown.setAttribute('aria-hidden', 'true')", fit)
+        self.assertRegex(dashboard.SCRIPT, r"const CUT_END = /\[\\s,;:")
+        self.assertIn("document.addEventListener('rh:page', fitNames);", dashboard.SCRIPT)
+        self.assertIn("\n.vh {", dashboard.STYLE)
+
+    def test_the_team_editor_is_an_outline_on_a_phone(self):
+        # r155 teams-phone: the tree ran off the dialog's right edge, cards could not be scrolled past (touch-action:
+        # none), and the title wore a focus ring. On a phone the team is an indented outline, a vertical swipe
+        # scrolls, drop zones run top to bottom, a scroll's pointercancel picks nothing, and the title has no ring.
+        phone = dashboard.STYLE.split("/* On a phone the team is an indented outline", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("@media (max-width: 760px)", phone)
+        self.assertIn(".tm-canvas[data-shape] .tt ul { position: relative; padding: 0 0 0 24px; }", phone)
+        self.assertIn("touch-action: pan-y", phone)
+        # with the lead picked on open, the settings follow the tree in one scroll instead of squeezing it to a sliver
+        small = dashboard.STYLE.split("@media (max-width: 760px) {\n  dialog.team", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn(".tm-main { display: block; overflow: auto; }", small)
+        self.assertIn("dialog.team :is(h2:focus, :focus:not(:focus-visible)) { outline: none; }", dashboard.STYLE)
+        self.assertIn("const OUTLINE = matchMedia('(max-width: 760px)')", dashboard.SCRIPT)
+        self.assertIn("p.shape === 'vertical' && !OUTLINE.matches ? (x - rect.left)", dashboard.SCRIPT)
+        drop = dashboard.SCRIPT.split("function drop(e) {", 1)[1].split("\n}", 1)[0]
+        self.assertLess(drop.index("if (e.type === 'pointercancel')"), drop.index("// a click: pick the agent"))
+
+    def test_role_chips_read_as_draggable_and_add_under_is_a_button(self):
+        # r28 F9/F10: each role chip began with a grey dot that meant nothing and did not say it could be dragged,
+        # and 'Add under' was text with no edge, 10px right of the inspector's labels. A chip leads with a six-dot
+        # grip and lifts with a soft shadow under the cursor (no overshoot); 'Add under' is a 28px outlined pill
+        # with a '+', its edge on the labels' edge.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertNotIn("tm-chip-dot", dashboard.SCRIPT + dashboard.STYLE)
+        self.assertIn("h('span', {class: 'tm-grip', 'aria-hidden': 'true'})", dashboard.SCRIPT)
+        grip = rule(".tm-grip")
+        for want in ("width: 8px", "height: 12px", "radial-gradient(circle, #7c818c"):
+            self.assertIn(want, grip)
+        lift = rule(".tm-chip:hover")
+        self.assertIn("translateY(-1px)", lift)
+        self.assertIn("box-shadow: 0 4px 12px rgb(0 0 0 / .4)", lift)
+        self.assertIn("cubic-bezier(.16, 1, .3, 1)", rule(".tm-chip"))
+        self.assertIn("cursor: grabbing", rule(".tm-chip:active"))
+        self.assertEqual(dashboard.SCRIPT.count("class: 'tm-add-under', 'data-add': n._k"), 2)
+        pill = rule(".tm-add-under")
+        for want in ("height: 28px", "border: 1px solid var(--control)", "border-radius: 999px", "margin-left: 0"):
+            self.assertIn(want, pill)
+        self.assertIn('content: "+"', rule(".tm-add-under::before"))
+
+    def test_the_inspector_chooses_with_the_apps_own_controls(self):
+        # r28 F5: Role, Model and Effort were plain form selects beside a custom canvas, and Model read 'GPT-6.2 Astra
+        # · not in policy' as flat text, unlike the composer's picker and the card's lock. Role is a segmented switch
+        # like Shape; Model is a picker button (vendor mark, name, the card's 12px lock) over a menu grouped like the
+        # old one; Effort is the composer's slider, with Auto as its first stop. Only 'Reports to' stays a select.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        ins = dashboard.SCRIPT.split("function inspector(p) {", 1)[1].split("\n}", 1)[0]
+        for field in ("role", "model", "effort"):
+            self.assertNotIn(f"h('select', {{'data-f': '{field}'}}", ins)
+        self.assertIn("h('select', {'data-f': 'parent'}", ins)
+        self.assertIn("seg('Role', p.roles.map(r => [r.id, r.name]), n.role)", ins)
+        self.assertIn("modelButton(n)", ins)
+        self.assertIn("effortSlider(n, efforts)", ins)
+        button = dashboard.SCRIPT.split("function modelButton(n) {", 1)[1].split("\n}", 1)[0]
+        for want in ("icon(m.prov)", "modelMarks(m)", "'aria-haspopup': 'listbox'"):
+            self.assertIn(want, button)
+        # the button and the menu rows mark a model the policy leaves out with the cards' own 12px lock
+        marks = dashboard.SCRIPT.split("function modelMarks(m) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("m.off ? h('span', {class: 'tn-lock'", marks)
+        menu = dashboard.SCRIPT.split("function modelMenu(p, n, at) {", 1)[1].split("\n}", 1)[0]
+        for want in ("`Allowed for ${role.name}`", "'Other models'", "role: 'option'", "'aria-selected'"):
+            self.assertIn(want, menu)
+        slider = dashboard.SCRIPT.split("function effortSlider(n, efforts) {", 1)[1].split("\n}", 1)[0]
+        for want in ("['', ...efforts]", "class: 'ef-slider tm-ef'", "role: 'slider'", "'ef-thumb'", "'Auto'"):
+            self.assertIn(want, slider)
+        self.assertIn("height: 28px", rule(".tm-seg-f button"))
+        self.assertIn("height: 32px", rule(".tm-mp"))
+        self.assertIn("overflow: auto", rule(".tm-mp-pop"))
+        # the menu closes on Escape without closing the dialog, and on a click outside it
+        self.assertIn("if (e.key === 'Escape' && $('.tm-mp-pop'))", dashboard.SCRIPT)
+        # r29 F3: at the composer's size the slider (a 14px saturated track, 20px thumb) was the loudest mark in the
+        # dialog, ahead of the tree it exists to shape. In the inspector it is a 4px rail with 4px stops and a 14px
+        # thumb; the composer's popover, where it is the only control, keeps its size.
+        track = rule(".tm-ef .ef-track")
+        for want in ("height: 4px", "background: #2a3042", "box-shadow: none"):
+            self.assertIn(want, track)
+        self.assertIn("height: 14px", rule(".tm-ef"))
+        for want in ("width: 14px", "height: 14px", "box-shadow: 0 1px 2px rgb(0 0 0 / .4)"):
+            self.assertIn(want, rule(".tm-ef .ef-thumb"))
+        self.assertIn("background: #5a6070", rule(".tm-ef .ef-tick"))
+        self.assertIn("box-shadow: none", rule(".tm-ef .ef-tick.current"))
+        self.assertIn("height: 28px", rule(".ef-thumb"))  # the composer's own thumb is unchanged
+
+    def test_a_cards_plus_shows_only_under_the_pointer(self):
+        # r29 F6: the selected card always wore a 22px '+' on its bottom edge, astride the connector, so it read as a
+        # joint in the line, and it was a third way to grow the tree beside the role chips and 'Add under'. It shows
+        # now only while the card is hovered or holds focus: an 18px circle 6px under the card, right of the line.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertNotIn(".tn.sel .tn-add", dashboard.STYLE)
+        self.assertIn("opacity: 1", rule(".tn:hover .tn-add, .tn:focus-within .tn-add"))
+        plus = rule(".tn-add")
+        for want in ("width: 18px", "height: 18px", "bottom: -24px", "left: calc(50% + 6px)", "background: #1b2030",
+                     "border: 1px solid rgb(255 255 255 / .2)", "opacity: 0"):
+            self.assertIn(want, plus)
+        self.assertIn("right: -24px", rule('.tm-canvas[data-shape="horizontal"] .tn-add'))
+
+    def test_the_team_dialogs_head_is_one_quiet_row(self):
+        # r28 F4/F8: a 600px boxed name field sat over a row of six controls, Delete as loud as Duplicate, and the
+        # white 'Use for /swarm' was a rounded box where the Inbox's primary is a pill. The name's own borderless
+        # rule never applied: the app's input[type="text"] rule outranked '.tm-name'. The name reads as 17px text
+        # (a border only on hover or focus), Duplicate and Delete live in a '...' menu (Delete in red, still asking
+        # once), and 'Use for /swarm' is a 30px pill. Vertical / Horizontal stays: the owner asked for both shapes.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        name = rule(".tm-bar > input.tm-name")
+        for want in ("font-size: 17px", "background: transparent", "border: 1px solid transparent", "width: auto"):
+            self.assertIn(want, name)
+        bar = dashboard.SCRIPT.split("function bar(p) {", 1)[1].split("\n}", 1)[0]
+        more = bar.split("'tm-more'", 1)[1]
+        self.assertIn("'data-dup': ''", more)
+        self.assertIn("'data-del': ''", more)
+        self.assertNotIn("'data-dup'", bar.split("'tm-more'", 1)[0])
+        self.assertIn("'data-shape': s", bar)
+        self.assertIn("color: var(--red)", rule(".tm-menu [data-del]"))
+        use = rule(".tm-bar-r [data-use]")
+        for want in ("border-radius: 999px", "height: 30px", "padding: 0 14px"):
+            self.assertIn(want, use)
+        self.assertIn("for (const m of $$('details.tm-more[open]'))", dashboard.SCRIPT)
+
+    def test_the_team_dialog_is_as_tall_as_its_team(self):
+        # r28 F2: the dialog was fixed at 800px, so a three-layer team left about 190px of empty glass under the
+        # tree, 300px under the inspector and 500px under the team list. It is as tall as what it holds now, up to
+        # the same cap, and scrolls inside only past that; a phone keeps its full-height sheet.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        box = rule("dialog.team")
+        self.assertNotRegex(box, r"(?<![\w-])height: min\(800px")
+        self.assertIn("max-height: min(800px, calc(100dvh - 48px))", box)
+        phone = dashboard.STYLE.split("@media (max-width: 760px) {\n  dialog.team", 1)[1].split("\n}\n", 1)[0]
+        self.assertIn("{ height: calc(100dvh - 24px); }", phone.split("\n", 1)[0])
+
+    def test_a_tree_card_is_two_lines_and_never_cuts_its_model(self):
+        # r28 F1/F3: a 145px card cut 'Claude Opus 5…' (the version is what tells two models apart), and lead and
+        # manager cards carried two chips ('Max', 'Not in policy') under the name, so cards in one tree were 80 and
+        # 58px tall. A card is two lines now: role and effort ('Lead · Max'), then the short model name as Settings
+        # writes it ('Opus 5.5'), wrapping to a second line before it is ever cut, with a 12px lock right after a
+        # model the policy does not allow; the words live in the card's label and the inspector.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        card = dashboard.SCRIPT.split("function card(p, n, depth) {", 1)[1].split("\n}", 1)[0]
+        self.assertNotIn("tn-tags", card)
+        self.assertNotIn("tn-tag", card)
+        self.assertIn("const short = m.name.replace(/^Claude /, '')", card)
+        self.assertIn("'tn-lock'", card)
+        self.assertIn("[role.name, effort, count].filter(Boolean).join(' · ')", card)
+        name = rule(".tn-m")
+        for want in ("white-space: normal", "-webkit-line-clamp: 2"):
+            self.assertIn(want, name)
+        self.assertNotIn("nowrap", name)
+        self.assertIn("min-height: 58px", rule(".tn"))
+        lock = rule(".tn-lock")
+        for want in ("width: 12px", "height: 12px"):
+            self.assertIn(want, lock)
+        self.assertNotRegex(dashboard.STYLE, r"\.tn-tags? \{")
+
+    def test_the_team_dialog_is_the_apps_own_glass(self):
+        # r27 F3/F7/F8/F11/F14/F2: the teams dialog was a grey stock panel with a white 'In use' pill, amber 'Not in
+        # policy' chips (amber means 'needs you'), a count that included the lead's plan, the same subtitle on every
+        # team, and a help paragraph where an agent's settings belong.
+        from rh import hierarchy
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        glass = dashboard.STYLE.split("/* Neutral glass lets the artwork supply its colour. */", 1)[1].split("}", 1)[0]
+        self.assertIn("dialog.team", glass)
+        self.assertNotIn("background", rule("dialog.team"))
+        self.assertNotIn("background", rule(".tm-use"))
+        lock = rule(".tn-lock")
+        self.assertNotIn("amber", lock)
+        self.assertNotIn("amber", rule(".tm-mchip.off"))
+        self.assertNotIn("dashed", rule(".tm-new"))
+        self.assertNotIn("'tn-tag warn'", dashboard.SCRIPT)
+        self.assertIn("agents: workers + judges", dashboard.SCRIPT)
+        self.assertIn("if (p && !(T.sel && find(p.tree, T.sel))) T.sel = p.tree._k;", dashboard.SCRIPT)
+        free, astra = hierarchy.defaults()["presets"]
+        self.assertEqual(dashboard._team_size(astra), 7)  # lead, two managers, four workers; the plan is the lead's
+        self.assertEqual(dashboard._team_sub(free), "SWE-2 Max · 3 layers")
+        self.assertEqual(dashboard._team_sub(astra), "GPT-6.2 Astra · 3 layers")
+        self.assertEqual(dashboard._team_sub({**free, "shape": "horizontal"}), "SWE-2 Max · side by side")
+
     def test_the_swarm_options_form_one_grouped_list(self):
         rule0 = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         # The section's own description reads 'each model ticked' and 'the judge then keeps the best work', and the
-        # composer's line is 'SWE-2 Max, Flash · judge: Max': the sheet must follow that order — the tick groups,
+        # composer's line is 'SWE-2 Max, Flash · judge SWE-2 Max': the sheet must follow that order — the tick groups,
         # then one group holding the Judge row and the 'Check each run' row, then the hint. A Judge above the ticks,
         # two .swarm-opts groups, or a check row before the judge must fail.
         page = dashboard.render({**live_view(), "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
@@ -989,8 +1340,8 @@ class ListsTest(unittest.TestCase):
         # both controls are the same 60% column, so their left edges line up
         self.assertIn("width: 60%", rule0(".swarm-sel"))
         self.assertIn("width: 60%", rule0('.swarm-judge input[type="text"]'))
-        # the composer's popover keeps its own order and box: its ticks, then the Judge row in .swarm-opts in-pop
-        pop = re.search(r'<div class="swarm-pop">(.*?)</div></details>', page, re.S).group(1)
+        # the composer's popover keeps its own order: its ticks, then the Judge row in .swarm-opts in-pop
+        pop = re.search(r'<div class="swarm-pop"[^>]*>(.*?)</div></details>', page, re.S).group(1)
         self.assertLess(pop.index('class="swarm-models"'), pop.index('class="swarm-opts in-pop"'))
         self.assertIn('name="judge"', pop)
         self.assertNotIn('name="check"', pop)
@@ -1052,6 +1403,26 @@ class ListsTest(unittest.TestCase):
         sheet = re.search(r'<dialog class="settings".*?</dialog>', page, re.S).group(0)
         self.assertRegex(sheet, r'</header><div class="settings-body"><form action="/appearance".*</footer></div></dialog>$')
 
+    def test_colour_swatches_take_their_own_line_under_the_legend(self):
+        # 'Colour' floated its legend left so the tint dots shared the label's row, while 'Background' stacked its
+        # label over the wallpaper grid. The swatches now take their own line under the legend, starting at the same
+        # left edge and under the same gap: neither legend carries a rule of its own.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("padding: 0", rule(".settings fieldset"))  # legend and choices share the fieldset's edge
+        # each choices box is a block-level container on its own line: a grid for the wallpapers, a flex row for
+        # the tints
+        self.assertIn("display: grid", rule(".background-choices"))
+        choices = rule(".tint-choices")
+        self.assertIn("display: flex", choices)
+        self.assertIn("gap: 10px", choices)
+        # and neither legend is special-cased, so both take the shared .settings legend gap below the label
+        for sel, _ in re.findall(r"([^{}]+)\{([^{}]*)\}", dashboard.STYLE):
+            if "legend" in sel:
+                self.assertNotIn("tint-choices", sel)
+                self.assertNotIn("background-choices", sel)
+        legend = dashboard.STYLE.split("\n.settings legend {")[-1].split("}", 1)[0]
+        self.assertIn("margin-bottom: 12px", legend)
+
     def test_an_agent_pages_status_reads_on_its_model_line(self):
         # An agent page whose Done/checks/time floats at the column's right edge, outside the answer's measure,
         # while shell pages lead with it on the left, must fail: it follows the model on the same line.
@@ -1100,7 +1471,7 @@ class ListsTest(unittest.TestCase):
         # with, so the next file's header is not read as code
         self.assertNotIn("diff --git", dashboard._peek_html("changes.patch", two))
         self.assertIn(":is(.peek-sum, .peek .dl.file, .sw-d) .n.add", dashboard.STYLE)
-        self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono">2 files</span>'))
+        self.assertTrue(dashboard._diff_head(two).startswith('<span class="mono files">2 files</span>'))
         self.assertIn('<span class="n del zero">−0</span>', dashboard._diff_head("+++ b/x.py\n@@ -0,0 +1 @@\n+a\n"))
         self.assertEqual(dashboard._peek_html("notes.md", "+ a list item\n"), "+ a list item\n")
         self.assertEqual(dashboard._diff_head("+ a list item\n"), "")
@@ -1159,9 +1530,9 @@ class ListsTest(unittest.TestCase):
         self.assertIn("background: #1c2030", rule(".peek-copy:hover, .peek-copy:focus-visible"))
         self.assertIn("display: none", rule(".session-file:not(:has(> .file-preview[open])) .peek-copy"))
         # on a phone the open head is too narrow for name, path, counts, size, Copy and Preview: the counts drew
-        # over the size (layout check, r117). There the path and size step aside and Copy is its glyph alone.
+        # over the size (layout check, r117). There a lone path and the size step aside and Copy is its glyph alone.
         phone = dashboard.STYLE.split("/* phone patch head */", 1)[1].split("\n}", 1)[0]
-        for spec in (".peek-sum .mono { display: none; }", ".peek-copy .pc-t { display: none; }",
+        for spec in (".peek-sum .mono:not(.files) { display: none; }", ".peek-copy .pc-t { display: none; }",
                      ".session-file:has(> .file-preview[open]) .session-file-size { display: none; }"):
             self.assertIn(spec, phone)
         self.assertNotIn("peek-copy", pane(dashboard.render(done, NOW)))
@@ -1186,7 +1557,7 @@ class ListsTest(unittest.TestCase):
         view["fails"] = {r["id"]: ["make test", 2, ""] for r in view["recent"] if r["state"] in dashboard._FAILED}
         self.assertTrue(view["fails"])
         detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
-        self.assertIn('<p class="fail-c"><code>make test</code><span class="exit mono">exit 2</span></p>', detail)
+        self.assertIn('<p class="fail-c"><code>make test</code></p>', detail)
         self.assertIn("The command exited with code 2", text(detail))
         # without a recorded check the one-line headline stays
         # an agent run names its CLI and model, never the agent.py line that carries the whole brief
@@ -1208,6 +1579,68 @@ class ListsTest(unittest.TestCase):
         # on a narrow screen the list and an item are two screens: the list unless an item was asked for
         self.assertIn('class="page ibx" data-view="list"', page)
         self.assertIn('class="page ibx" data-view="item"', inbox(live_view(), live_view()["inbox"][0]["id"]))
+
+    def test_the_inbox_list_says_it_is_done_where_a_phone_would_keep_looking(self):
+        # On a phone the Inbox is the list alone: one row over a long blank reads as still loading, so when no
+        # Settled today section follows, the list ends with a quiet 'Nothing else needs you'. The empty Inbox
+        # keeps its one 'Nothing needs you.', settled rows mean the list is not the page's end, and the line
+        # itself is drawn inside the phone query only.
+        one = {**live_view(), "inbox": live_view()["inbox"][:1], "live": [], "not_started": [], "recent": [],
+               "stops": []}
+        wait = lambda v: re.search(r'<section class="s-ib-wait".*?</section>', inbox(v), re.S).group(0)  # noqa: E731
+        section = wait(one)
+        self.assertEqual(section.count('<p class="ib-end">Nothing else needs you</p>'), 1)
+        self.assertIn('</ul><p class="ib-end">Nothing else needs you</p>', section)  # right after the rows
+        empty = inbox({**one, "inbox": []})
+        self.assertNotIn('class="ib-end"', empty)
+        self.assertEqual(empty.count("Nothing needs you."), 1)
+        settled = {**one, "settled": [{"id": 90, "job": "live-job", "kind": "question", "body": "Which?",
+                                       "created": NOW - 600, "resolved": NOW - 60, "note": "the first"}]}
+        self.assertNotIn('class="ib-end"', inbox(settled))
+        # r35 F7: the desktop list ends the same way (it stopped bare above ~730px of column), 24px under the
+        # last card; a phone keeps 32px
+        line = dashboard.STYLE.split("\n.ib-end {", 1)[1].split("}", 1)[0]
+        for decl in ("margin: 24px 0 0", "text-align: center", "font-size: 13px", "color: var(--faint)"):
+            self.assertIn(decl, line)
+        self.assertNotIn("display: none", line)
+        self.assertIn("@media (max-width: 600px) { .ib-end { margin-top: 32px; } }", dashboard.STYLE)
+
+    def test_the_inbox_who_line_wraps_like_the_status_line_so_no_line_starts_or_ends_with_a_dot(self):
+        # On a 390px phone the meta line wrapped after a separator and left a dangling "·" at line 1's end. It
+        # now wraps as the job's status line does: each part wears the dot that leads it inside one nowrap
+        # span, the parts are joined only by a break chance, and the .sl class hangs those dots in the same
+        # clipped 16px band.
+        view = {**live_view(), "meta": {"live-job": {"kind": "local-shell"}}}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view, 7), re.S).group(0)
+        who = re.search(r'<p class="q-who sl"[^>]*>(.*?)</p>', detail, re.S).group(1)
+        parts = who.split("<wbr>")
+        self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
+                         ["live-job", "·" + dashboard.HERE,
+                          "·asked at " + dashboard._clock(NOW - 31, NOW) + ", waiting 31 s"])
+        # no separator is a child of the line itself: each opens the nowrap span of the segment it leads
+        self.assertEqual(who.count('class="sep"'),
+                         len(re.findall(r'<span class="nowrap"><span class="sep">', who)))
+        self.assertRegex(parts[0], r'^<span class="nowrap"><span class="mono">live-job</span></span>$')
+        for part in parts[1:]:
+            self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')
+        self.assertIn(".q-who.sl .nowrap { white-space: nowrap", dashboard.STYLE)
+        rule = dashboard.STYLE.split("\n.q-who.sl {", 1)[1].split("}", 1)[0]
+        for decl in ("display: block", "max-width: none", "margin-left: -16px", "text-indent: 16px",
+                     "clip-path: inset(0 0 0 16px)"):
+            self.assertIn(decl, rule)
+        sep = dashboard.STYLE.split("\n.q-who.sl .sep {", 1)[1].split("}", 1)[0]
+        for decl in ("width: 16px", "margin: 0", "text-indent: 0"):
+            self.assertIn(decl, sep)
+        self.assertIn(".q-who > .mono, .q-who .nowrap > .mono { color: var(--text); font-size: 13px; }",
+                      dashboard.STYLE)
+        # the failed-job pane's quiet line is left alone: its separators and the last id stay direct
+        # children, so the desktop rule that leaves the id to the selected row beside it still matches
+        lead = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}
+        pane_html = re.search(r'data-region="ib-detail".*?</section>', inbox(lead), re.S).group(0)
+        sub = re.search(r'<p class="q-who q-sub"[^>]*>(.*?)</p>', pane_html, re.S).group(1)
+        self.assertTrue(sub.endswith('<span class="sep">·</span><span class="mono">broke-job</span>'), sub)
+        self.assertIn(".q-who.q-sub > .mono:last-child, .q-who.q-sub > .sep:nth-last-child(2)",
+                      dashboard.STYLE)
 
     def test_a_failed_jobs_title_folds_a_long_brief(self):
         # The detail title is the job's brief: one its name in the lists cannot say whole folds to three
@@ -1243,7 +1676,9 @@ class ListsTest(unittest.TestCase):
         # r19 F1: at 15px #c3c8d2 the pane had no title at all, so the eye fell on whatever came next. The brief
         # is the pane's title again: 17px semibold, a step under the page headings, the failure banner's red still
         # carrying the second look
-        self.assertIn("font: 600 17px/22px var(--ui)", face)
+        # r29 F4: at 17px semibold for four lines it was a slab, heavier than any title in the app: 16/24 at 500,
+        # the first line at 600, so it still reads as the pane's title without the weight of a paragraph in bold
+        self.assertIn("font: 500 16px/24px var(--ui)", face)
         self.assertIn("color: #e6e8ee", face)
         self.assertIn("max-width: 600px", face)
         more = dashboard.STYLE.split(".q-head .q-title.user-message + .ask-more {", 1)[1].split("}", 1)[0]
@@ -1251,7 +1686,8 @@ class ListsTest(unittest.TestCase):
             self.assertIn(spec, more)
         # folded, its last line fades out instead of taking the clamp's "…", which after a full stop read "...."
         fold = dashboard.STYLE.split(".q-head .q-title.user-message:has(+ .ask-more):not(.whole) {", 1)[1].split("}", 1)[0]
-        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 2lh", "overflow: hidden", "mask-image:"):
+        # r28 F11: four lines, not two, so the pane does not hide a brief it has room for behind Show all
+        for spec in ("display: block", "-webkit-line-clamp: unset", "max-height: 4lh", "overflow: hidden", "mask-image:"):
             self.assertIn(spec, fold)
         # folded, its paragraphs run on, so a brief and its follow-up fill both lines instead of a line and a blank
         # (critic r18 F4: 'Show all' under one visible line read as a control with nothing to show)
@@ -1265,6 +1701,11 @@ class ListsTest(unittest.TestCase):
         self.assertIn("font-size: 12px", rule(".q-who.q-sub"))
         # r16 F5: Show all shares the meta line, and on a desktop the id is left to the selected row beside it
         self.assertIn("grid-column: 2; grid-row: 2;", rule(".q-head .q-head-in > .q-title.user-message + .ask-more"))
+        # r31 F11: folded, Show all sat on the fourth line's end, over the words fading out under it ('Chec  Show
+        # all'). It keeps its place on the meta line folded too, and the fourth line fades out downward instead
+        self.assertNotIn(".q-title.user-message:not(.whole) + .ask-more {", dashboard.STYLE)
+        self.assertIn("mask-image: linear-gradient(to bottom, #000 calc(100% - 1lh), transparent)", fold)
+        self.assertNotIn("to right", fold)
         self.assertIn(".q-who.q-sub > .mono:last-child", dashboard.STYLE)
         short = re.search(r'data-region="ib-detail".*?</section>',
                           inbox({**view, "meta": meta("Fix the flaky test.")}), re.S).group(0)
@@ -1362,6 +1803,31 @@ class ListsTest(unittest.TestCase):
         # without a recorded check the headline stays
         self.assertNotIn('class="ib-why ib-exit"', inbox({**view, "fails": {}}))
 
+    def test_the_inbox_stop_card_shows_its_tail_without_counting_it(self):
+        # r26: the pane's 'Where it stopped' shows the kept tail whole, so '· N lines' counted what was already in
+        # view; the card heads with its name alone.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}  # a failed job leads
+        view["tails"] = {"broke-job": "counting\nls: drafts/: No such file or directory"}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
+        card = re.search(r'<section class="out">.*?</section>', detail, re.S).group(0)
+        self.assertIn("Where it stopped", card)
+        self.assertIn("ls: drafts/: No such file or directory", card)
+        self.assertNotIn('class="lines', card)
+
+    def test_the_inbox_stop_card_trims_blank_edges_and_bold_marks(self):
+        # The kept tail is the agent's own markdown: a leading blank line pushed the card's first text a line
+        # lower than the same card on a failed job's page, and '**Checking ...**' kept its markers. Paired '**'
+        # come off; a lone one stays, since logs can hold code.
+        view = {**live_view(), "inbox": [], "live": [], "not_started": [], "stops": []}  # a failed job leads
+        view["tails"] = {"broke-job": "\n**Checking shared fieldset CSS**\nx = a ** b\ny = a ** b ** c\n\n"}
+        detail = re.search(r'data-region="ib-detail".*?</section>', inbox(view), re.S).group(0)
+        card = re.search(r'<section class="out">.*?</section>', detail, re.S).group(0)
+        pre = re.search(r'<pre class="log ended err" tabindex="0">(.*?)</pre>', card, re.S).group(1)
+        lines = re.findall(r'<span class="ln[^"]*">(.*?)</span>', pre)
+        # a spaced ** is Python's power operator, not bold: a chain of two must not lose both
+        self.assertEqual(lines, ["Checking shared fieldset CSS", "x = a ** b", "y = a ** b ** c"])
+        self.assertFalse(lines[0].startswith("**"))
+
     def test_a_running_job_says_how_far_along_its_log_says_it_is(self):
         self.assertEqual(dashboard._progress("start\nstep 357: window 357 of 2400\n"), (357, 2400))
         self.assertIsNone(dashboard._progress("1 of 1 done"))
@@ -1439,8 +1905,121 @@ class ListsTest(unittest.TestCase):
         for part in parts[1:]:
             self.assertRegex(part, r'^<span class="nowrap"><span class="sep">·</span>.*</span>$')
 
+    def test_a_job_past_its_limit_says_when_it_last_wrote_output(self):
+        # Past its limit, the question is whether it still works or hangs (chat-on-steroids' "why is it stuck"):
+        # while the output is fresh the line says when it last changed, right after the limit, and keeps ticking
+        # on the live page. Once it has been quiet a while the log card says it instead, under the last line.
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["job"]["started"] = NOW - 3 * 3600
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 120
+        status = lambda page: re.search(r'<span class="job-result-status sl">(.*?)</span></span>(?:</p>|<progress)',  # noqa: E731
+                                        page, re.S).group(1)
+        parts = status(dashboard.render(view, NOW, token=TOKEN)).split("<wbr>")
+        self.assertEqual([re.sub(r"</?span[^>]*>", "", part) for part in parts],
+                         ["Past its 2 h limit", "·last output 2 min ago"])
+        self.assertIn('data-pre="last output "', parts[1])
+        self.assertIn(f'data-t="{NOW - 120}"', parts[1])
+        # a running job within its limit is not asked that: its line stays as it was
+        view["open"]["job"]["state"] = "running"
+        self.assertNotIn("last output", dashboard.render(view, NOW, token=TOKEN))
+
+    def test_a_quiet_job_past_its_limit_looks_stopped_and_its_log_fills_the_page(self):
+        # critic r25 F1: a one-line live log left ~640px of nothing under it; the live log card fills the page
+        # whatever it holds. F3: past its limit and quiet for over 5 min, the ring dims to half, and the status
+        # line reads at the running size so 'last output' is as loud as the limit.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn(".worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 310px)); "
+                      "max-height: max(240px, calc(100dvh - 310px));", dashboard.STYLE)
+        self.assertIn("@media (max-width: 600px) { .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 300px)); "
+                      "max-height: max(240px, calc(100dvh - 300px)); } }", dashboard.STYLE)
+        self.assertIn("font-size: 15px", rule(':is(.jd[data-state="running"], .jd[data-state="stalled"]) .job-result-status'))
+        self.assertIn("opacity: .5", rule(".job-result .st.quiet"))
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["log"] = "still indexing"
+        ring = lambda page: re.search(r'<p class="job-result[^"]*"[^>]*>.*?(<svg class="st[^"]*")', page, re.S).group(1)  # noqa: E731
+        view["open"]["log_at"] = NOW - 301
+        self.assertIn(" quiet", ring(dashboard.render(view, NOW, token=TOKEN)))
+        view["open"]["log_at"] = NOW - 299
+        self.assertNotIn(" quiet", ring(dashboard.render(view, NOW, token=TOKEN)))
+
+    def test_a_stalled_jobs_quiet_log_says_its_output_stopped(self):
+        # critic r26: one line of log in a page-tall frame read as broken. Once output has been quiet over 5 min,
+        # the card says so under its last line ('no output since HH:MM · 3 h', ticking on the same j:quiet key the
+        # status line used), and the status line names the limit without repeating the quiet time.
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["job"]["started"] = NOW - 4 * 3600
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 3 * 3600
+        page = dashboard.render(view, NOW, token=TOKEN)
+        row = re.search(r'<span class="log-quiet">(.*?)</span></pre>', page, re.S)
+        self.assertIsNotNone(row)
+        self.assertEqual(re.sub(r"</?span[^>]*>", "", row.group(1)),
+                         f"no output since {dashboard._clock(NOW - 3 * 3600, NOW)}·3 h")
+        self.assertIn('data-tk="j:quiet"', row.group(1))
+        self.assertIn('data-short="1"', row.group(1))
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span></span>', page, re.S).group(1)
+        self.assertIn("Past its 2 h limit", status)
+        self.assertNotIn("last output", status)
+
+    def test_a_stalled_job_whose_output_is_fresh_adds_no_quiet_row(self):
+        # Quiet five minutes or less is not a stop: the card adds nothing, and the status line still carries
+        # 'last output', ticking.
+        self.assertIn(".log-quiet", dashboard.STYLE)
+        view = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        view["open"]["job"]["spec"]["timeout_min"] = 120
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 120
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertNotIn('class="log-quiet"', page)
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span></span>', page, re.S).group(1)
+        self.assertIn("last output 2 min ago", status)
+
+    def test_a_running_jobs_log_adds_no_quiet_row(self):
+        # The stopped row belongs to a job past its limit: a running job's card and status line carry neither it
+        # nor 'last output', however long its output has been quiet, and live updates know the row as .log-quiet.
+        self.assertIn(".log-quiet", dashboard.STYLE)
+        self.assertIn("log-quiet", dashboard.SCRIPT)
+        view = opened(live_view(), "live-job", kind="local-shell", state="running")
+        view["open"]["log"] = "still indexing"
+        view["open"]["log_at"] = NOW - 3 * 3600
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertNotIn('class="log-quiet"', page)
+        self.assertNotIn("no output since", page)
+        status = re.search(r'<span class="job-result-status sl">(.*?)</span></span>', page, re.S).group(1)
+        self.assertNotIn("last output", status)
+
+    def test_the_place_beside_a_hidden_title_hides_with_it(self):
+        # critic r25 F2: the header title fades while the brief bubble shows the same words, and its '· This Mac'
+        # was left floating alone
+        self.assertIn("opacity: 0", dashboard.STYLE.split("\n.detail .jd-head.echo :is(h1, .job-worker) {", 1)[1].split("}", 1)[0])
+        self.assertIn(".detail .jd-head-in > :is(h1, .job-worker) { transition: opacity 160ms", dashboard.STYLE)
+
 
 class DashboardTest(unittest.TestCase):
+    def test_the_quick_swarm_is_named_one_way_everywhere(self):
+        # One team read three ways: the dialog's left list said 'SWE-2 Max, SWE-2 Flash · judge SWE-2 Max' and was
+        # cut mid-word at 190px, the /swarm popover said 'the models ticked below', and the chip's 'judge: Max'
+        # read as an effort level. The one line is now the chip's: the ticked models with a shared family named
+        # once, then 'judge' with the judge's whole name; each list's subtitle is its models part.
+        from rh import hierarchy
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max",
+                 "presets": hierarchy.defaults(), "choices": ["swe-2-max", "swe-2-flash-high"],
+                 "team_models": [["swe-2-max", "devin"], ["claude-opus-5-5", "claude"], ["gpt-6.2-astra", "codex"]]}
+        page = dashboard.render({**live_view(), "swarm": swarm}, NOW, token=TOKEN)
+        says = re.search(r'<span class="swarm-says"[^>]*>(.*?)</span><', page, re.S).group(1)
+        self.assertEqual(re.sub(r"<[^>]+>", " ", says).split(), "SWE-2 Max, Flash · judge SWE-2 Max".split())
+        quick = re.search(r'<input type="radio" name="active" value="quick".*?</label>', page, re.S).group(0)
+        self.assertIn('<span class="swarm-team-d">SWE-2 Max, Flash</span>', quick)
+        self.assertNotIn("the models ticked below", dashboard.SCRIPT)
+        self.assertNotIn("judge: ", dashboard.SCRIPT)
+        # one formatter, shared: team.js writes the same subtitle in the dialog's list with it
+        self.assertIn("window.RHswarmLine = swarmLine", dashboard.SCRIPT)
+        self.assertIn("swarmLine(q.models)", dashboard.SCRIPT)
+
     def test_detail_is_escaped(self):
         # Removing escaping must expose the worker's script and fail this test.
         view = full_view()
@@ -1549,6 +2128,28 @@ class DashboardTest(unittest.TestCase):
                     self.assertGreaterEqual(contrast(colours[fg], colours[bg]), 4.5)
         # Positive control: #777 on white is just under the floor.
         self.assertLess(contrast("#777777", "#ffffff"), 4.5)
+
+    def test_the_type_scale_has_no_half_pixel_step(self):
+        # A 12.5px size beside 12px reads as drift, not a level: any declaration or shorthand still carrying
+        # 12.5px, a rule that lost its size in the fold to 12px, or the log card's comment naming the old size
+        # must fail.
+        self.assertNotIn("12.5px", dashboard.STYLE)
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for sel, spec in (
+            ("input.mono, textarea.mono", "font-size: 12px"),
+            ('.mode-tabs [role="tab"]', "font: 500 12px/1 var(--ui)"),
+            (".op-edit input.mono", "font: 12px var(--mono)"),
+            (".swarm-note", "font-size: 12px; line-height: 18px"),
+            ('.swarm-judge input[type="text"]', "font-size: 12px"),
+            (".who-status", "font-size: 12px; font-weight: 400"),
+            (".lt-m", "font-size: 12px"),
+        ):
+            with self.subTest(selector=sel):
+                self.assertIn(spec, rule(sel))
+        # the empty-box Run again pill's selector opens three other rules; the font lives in the one that
+        # also sizes it to its word
+        self.assertIn("border-radius: 14px; font: 500 12px var(--ui)", dashboard.STYLE)
+        self.assertIn("12px on 21px", dashboard.STYLE)  # the running log card's comment
 
     def test_all_text_fields_are_present_and_escaped(self):
         # Any unescaped or silently omitted visible string field must fail.
@@ -1846,6 +2447,266 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_repeat_run_says_which_run_it_is_beside_its_time(self):
+        # r33 F4: runs of one chain share the brief's name (r32 F5), so two runs showed as two identical rows and
+        # the user could not tell which they were opening. A repeat run says 'run 2' before its time, in the sidebar
+        # and in the palette; a first run says nothing; an unrelated job with the same brief still shows its id.
+        view = live_view()
+        view["meta"] = {**view.get("meta", {}),
+                        "live-job": {"kind": "local-shell", "brief": "Count the words."},
+                        "web-job": {"kind": "local-shell", "brief": "Count the words.\n\nFollow-up: skip drafts",
+                                    "prior": "live-job"}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        time_of = lambda jid: re.search(rf'<li class="row" data-key="job:{jid}".*?<span class="time mono num">(.*?)</span></a>',  # noqa: E731
+                                        page, re.S).group(1)
+        self.assertIn('<span class="rn">run 2 · </span>', time_of("web-job"))
+        self.assertNotIn("run", text(time_of("live-job")))
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        row = re.search(r'<a class="p-row[^"]*" role="option" data-id="web-job".*?</a>', pal, re.S).group(0)
+        self.assertIn('<span class="rn">run 2 · </span>', row)
+        first = re.search(r'<a class="p-row[^"]*" role="option" data-id="live-job".*?</a>', pal, re.S).group(0)
+        self.assertNotIn('class="rn"', first)
+        # r36 F1: the dot between 'run 2' and a time is in the markup. A CSS '.rn:not(:last-child)::after' never
+        # matched, since the time is a bare text node, so Earlier rows read 'run 217:44'.
+        self.assertEqual(dashboard._run_tag(2, "17:44"), '<span class="rn">run 2 · </span>17:44')
+        self.assertEqual(dashboard._run_tag(2, ""), '<span class="rn">run 2</span>')
+        self.assertEqual(dashboard._run_tag(1, "17:44"), "17:44")
+        cell = time_of("web-job")
+        self.assertTrue(cell.startswith('<span class="rn">run 2'), cell)
+        self.assertEqual(" · " in cell, bool(text(cell.split("</span>", 1)[1])))  # a dot only when a time follows
+        self.assertNotIn(".rn:not(:last-child)::after", dashboard.STYLE)
+        self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "b"}, "b": {}}), 3)
+        self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "x"}}), 2)  # a gone prior ends the walk
+        self.assertEqual(dashboard._run_no({"prior": "a"}, {"a": {"prior": "a"}}), 2)  # a loop ends it too
+
+    def test_a_follow_up_is_named_by_its_brief_not_its_id_before_any_answer(self):
+        # r32 F5: a failed job and its follow-up share one brief, so each was marked a duplicate and named by its raw
+        # id ('count-words', 'count-words-r2') in the sidebar, the palette and its page's head, while every other row
+        # reads as a sentence. Runs of one chain are one thread, answered or not: chain-mates never mark each other.
+        # Two unrelated jobs with one brief still show their ids.
+        view = live_view()
+        view["meta"] = {**view.get("meta", {}),
+                        "live-job": {"kind": "local-shell", "brief": "Count the words."},
+                        "web-job": {"kind": "local-shell", "brief": "Count the words.\n\nFollow-up: skip drafts",
+                                    "prior": "live-job"}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        for jid in ("live-job", "web-job"):
+            row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', page, re.S).group(0)
+            self.assertIn('<span class="name">Count the words</span>', row)
+            self.assertNotIn('class="nm"', row)
+        one = opened(view, "web-job", kind="local-shell")
+        one["open"]["job"]["spec"].update(brief="Count the words.\n\nFollow-up: skip drafts", prior="live-job")
+        head = re.search(r'data-region="j-head".*?</section>', dashboard.render(one, NOW, token=TOKEN), re.S).group(0)
+        self.assertIn(">Count the words</h1>", head)
+        self.assertNotIn(">web-job</h1>", head)
+
+    def test_a_queued_rows_words_are_a_target_the_height_of_its_row(self):
+        # r32 F7: since r31 F4 a queued row's words are its edit button, but the button was 20px tall in a 32px row,
+        # below the 24px minimum, with 12px dead between rows. The button fills its row: 32px with a pointer, 44px
+        # on a phone, where Remove is a 44px square too.
+        rule = lambda block, sel: block.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("min-height: 32px", rule(dashboard.STYLE, ".un-row"))
+        t = rule(dashboard.STYLE, ".un-t")
+        self.assertIn("align-self: stretch", t)
+        self.assertIn("min-height: 32px", t)
+        phone = "\n" + dashboard.STYLE.split("/* phone queue rows */", 1)[1].split("\n}", 1)[0]
+        self.assertIn("min-height: 44px", rule(phone, "  .un-row, .un-t"))
+        self.assertIn("width: 44px; height: 44px", rule(phone, '  .un-b[data-q="remove"]'))
+
+    def test_a_running_agent_job_says_which_agent_and_model_it_steers(self):
+        # r31 F5: a running job's status was a bare 15px 'Running' heading that named no one, while a finished turn
+        # names its agent and model. The page whose composer steers a live agent says which one, in the same quiet
+        # 13px line a finished turn uses: 'Claude · Opus 5.5 · Running · …'.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", command=[
+            "python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go", "--model", "claude-opus-5-5"])
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        line = re.search(r'<p class="job-result agent-run" data-region="job-result"[^>]*>(.*?)</p>', page, re.S)
+        self.assertIsNotNone(line, "the running agent's status line is not marked agent-run")
+        self.assertRegex(text(line.group(1)), r"^Claude ?· ?Opus 5\.5 ?· ?Running")
+        self.assertIn(".jd .job-result.agent-run .job-result-status { font-size: 13px; font-weight: 400;",
+                      dashboard.STYLE)
+        # a running shell job, with no agent to name, keeps its headline
+        shell = pane(dashboard.render(opened(live_view(), "live-job", kind="local-shell"), NOW, token=TOKEN))
+        self.assertIn('<p class="job-result" data-region="job-result"', shell)
+
+    def test_a_running_job_says_running_once(self):
+        # r32 F8: the status line said 'Running' with its moving ring, and 34px below the Output fold said it again
+        # with a breathing blue dot and 'live'. One running signal: the fold names only its output.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["log"] = "step 1\n"
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        fold = re.search(r'<summary class="worked-summary">.*?</summary>', page, re.S).group(0)
+        self.assertNotIn("live", text(fold).lower())
+        self.assertNotIn("livetag", page + dashboard.STYLE)
+        self.assertRegex(text(re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)), "Running")
+
+    def test_a_running_jobs_status_ring_breathes_and_rests_under_reduced_motion(self):
+        # r33 F6: with '• live' gone from the Output fold (r32 F8), nothing on a running job's page moved, so running
+        # and hung looked the same. The status line's ring is the page's one live sign: it breathes 1 -> .5 -> 1 over
+        # 1.6 s while the job launches, runs or is checked, and is still under reduced motion. Sidebar rings stay still.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        status = re.search(r'data-region="job-result".*?</p>', page, re.S).group(0)
+        self.assertIn('data-s="half"', status)
+        self.assertIn('.job-result .st:is([data-s="quarter"], [data-s="half"], [data-s="three"]) '
+                      '{ animation: run-breathe 1.6s cubic-bezier(.65, 0, .35, 1) infinite; }', dashboard.STYLE)
+        self.assertIn("@keyframes run-breathe { 50% { opacity: .5; } }", dashboard.STYLE)
+        self.assertIn("@media (prefers-reduced-motion: reduce) { .job-result .st { animation: none; } }",
+                      dashboard.STYLE)
+
+    def test_a_running_job_with_no_output_yet_shows_its_output_card_waiting(self):
+        # r31 F6: an empty log was two bare lines saying one thing twice ('No output received yet' over 'The worker
+        # has not produced output yet.') above an empty band. A running job's output is one card, so the empty one
+        # is that card, with one quiet line in it that the first output replaces.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        out = re.search(r'data-region="j-output".*?</details>', page, re.S).group(0)
+        self.assertIn('<span class="worked-output">Output</span>', out)
+        self.assertRegex(out, r'<pre class="log"[^>]*data-follow[^>]*><span class="log-wait">Waiting for first output'
+                              r'</span></pre>')
+        self.assertNotIn("No output received yet", page)
+        self.assertNotIn("has not produced output", page)
+        self.assertIn(".log-wait { color: var(--faint); }", dashboard.STYLE)
+
+    def test_a_running_claude_job_takes_messages_as_t3_codes_composer_does(self):
+        # After T3 Code: while the agent works, the dock is a composer. Empty, its button is Stop ('Stop generation',
+        # tooltip 'Interrupt'); it posts to /job/message. Steers that landed read as the owner's messages with a Steer
+        # badge; queued messages wait Up next, numbered, each with Edit, Steer and Remove; a removed one is gone.
+        # A composer on a job that cannot take messages, or on a finished one, fails.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"])
+        ids = [c * 12 for c in "abcdef"]
+        view["open"]["inbox"] = [
+            {"id": ids[0], "mode": "steer", "text": "use tabs", "state": "steered"},
+            {"id": ids[1], "mode": "queue", "text": "lint it", "state": "steered"},
+            {"id": ids[2], "mode": "queue", "text": "the <docs>", "state": "queued"},
+            {"id": ids[3], "mode": "queue", "text": "gone", "state": "removed"},
+            {"id": ids[4], "mode": "queue", "text": "the tests", "state": "waiting"}]
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        form = [f for f in Forms(page).forms if f["action"] == "/job/message"]
+        self.assertEqual(len(form), 1)
+        self.assertEqual({k: form[0]["fields"].get(k) for k in ("job", "mode", "target", "text")},
+                         {"job": "live-job", "mode": "steer", "target": "", "text": ""})
+        dock = re.search(r'data-region="j-message".*?</form>', page, re.S).group(0)
+        # the box says what Enter does to whom (r31 F7: 'Ask anything' was a stock chat-product tell)
+        self.assertIn('placeholder="Steer Claude…"', dock)
+        self.assertRegex(dock, r'<button[^>]*aria-label="Stop generation"[^>]*title="Interrupt"')
+        self.assertIn("Click to steer, Ctrl/⌘-click to queue", dock)
+        # the app's own glyphs, not T3 Code's (owner): Stop is the app's stop ring, steer its send arrow, queue its
+        # clock; no hint line under the box, and no red Stop fill
+        for name, cls in (("stop", "t-stop"), ("up", "t-steer"), ("clock", "t-queue"), ("check", "t-update")):
+            self.assertIn(dashboard._ic(name).replace('class="ic"', f'class="ic {cls}"'), dock)
+        self.assertNotIn("talk-hint", dock)
+        for t3 in ("square", "steer", "queue"):
+            self.assertNotIn(t3, dashboard._ICONS)
+        self.assertNotIn("var(--red-bg); color: var(--red);\n  box-shadow: inset 0 0 0 1px var(--red-line)", dashboard.STYLE)
+        # r31 F10: the mark is a caption under the bubble, set like a timestamp, not a label line inside it
+        badges = [(tip, said) for said, tip in re.findall(
+            r'<div class="talk-steered"><div class="user-message"><span class="um-t">([^<]*)</span></div>'
+            r'<p class="um-cap" title="([^"]+)">.*?Steered</p></div>', page)]
+        self.assertNotIn("um-badge", page + dashboard.STYLE)
+        self.assertIn(".s-j-said { display: flex; flex-direction: column; gap: 8px;", dashboard.STYLE)
+        self.assertEqual(badges, [("Steered the active turn", "use tabs"),
+                                  ("Originally queued, then promoted to steer the active turn", "lint it")])
+        up = re.search(r'data-region="j-up-next".*?</section>', page, re.S).group(0)
+        self.assertIn("Up next", text(up))
+        self.assertIn("Up next · 2", text(up))
+        self.assertNotIn("queued", text(up).split("Up next", 1)[1].split("1", 1)[0])  # 'Up next' says it once
+        rows = re.findall(r'<li class="un-row[^"]*" data-id="([0-9a-f]+)" aria-label="([^"]+)"', up)
+        self.assertEqual(rows, [(ids[2], "Queued message 1 of 2, not sent"), (ids[4], "Queued message 2 of 2, not sent")])
+        self.assertIn("the &lt;docs&gt;", up)
+        self.assertNotIn("gone", text(page))
+        for label in ('aria-label="Edit queued message"', 'title="Send as a steer instead"',
+                      'aria-label="Remove queued message" title="Remove from queue"'):
+            self.assertEqual(up.count(label), 2, label)
+        # r31 F4: the queued words are the content, the actions occasional. The text itself edits (a button), the
+        # actions are icons that show on hover or focus where there is a pointer, and a phone keeps only Remove
+        # (its Steer shows on the row being edited)
+        self.assertEqual(len(re.findall(r'<button type="button" class="un-t" data-q-edit[^>]*>', up)), 2)
+        self.assertNotIn("<span>Steer</span>", up)
+        self.assertEqual(up.count('aria-label="Steer" title="Send as a steer instead"'), 2)
+        hover = dashboard.STYLE.split("@media (hover: hover) and (min-width: 601px) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".un-acts { opacity: 0;", hover)
+        self.assertIn(".un-row:is(:hover, :focus-within, .editing) .un-acts { opacity: 1; }", hover)
+        phone = dashboard.STYLE.split("/* phone queue rows */", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".un-row:not(.editing) .un-b:not([data-q=\"remove\"]) { display: none; }", phone)
+        self.assertIn(".un-row [data-q-edit].un-b { display: none; }", phone)
+        # more than three wait: the first three show, then 'n more' (r31 F8: it showed two, and said the count twice)
+        view["open"]["inbox"] += [{"id": ids[5], "mode": "queue", "text": "and more", "state": "queued"},
+                                  {"id": "9" * 12, "mode": "queue", "text": "and more", "state": "queued"}]
+        up = re.search(r'data-region="j-up-next".*?</section>', pane(dashboard.render(view, NOW, token=TOKEN)), re.S).group(0)
+        self.assertEqual(up.count('class="un-row un-more"'), 1)
+        self.assertIn("1 more", text(up))
+        self.assertIn('data-more="1 more"', up)
+        # the tray is the composer's own glass, not a grey tab with a dashed edge (r31 F3)
+        glass = dashboard.STYLE.split("border: 1px solid rgb(255 255 255 / .10);", 1)[0].rsplit("}", 1)[1]
+        self.assertIn(".up-next", glass)
+        tray = re.search(r"\n\.up-next \{[^}]*\}", dashboard.STYLE).group(0)
+        self.assertNotIn("dashed", tray)
+        self.assertNotIn("background", tray)
+        # a job that cannot take messages (no inbox from the app), or one that has ended, has no composer
+        del view["open"]["inbox"]
+        self.assertNotIn('action="/job/message"', dashboard.render(view, NOW, token=TOKEN))
+        done = opened(live_view(), "finished-job", kind="local-shell")
+        done["open"]["inbox"] = [{"id": ids[0], "mode": "steer", "text": "use tabs", "state": "steered"},
+                                 {"id": ids[2], "mode": "queue", "text": "the docs", "state": "dropped"}]
+        page = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertNotIn('action="/job/message"', page)
+        self.assertNotIn('data-region="j-up-next"', page)
+        self.assertIn('<span class="um-t">use tabs</span>', page)
+        self.assertRegex(text(page), "the docs.{0,3}Not sent: the run ended first")
+        # a Stop reads where it was asked, as T3 Code's lifecycle rows do: requested until the agent acts, then done
+        done["open"]["inbox"].append({"id": "f" * 12, "mode": "stop", "text": "", "state": "stopped"})
+        said = re.search(r'data-region="j-said".*?</section>', pane(dashboard.render(done, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<p class="talk-stop">', said)
+        self.assertTrue(text(said).endswith("You stopped the run"), text(said))
+        view["open"]["inbox"] = [{"id": "f" * 12, "mode": "stop", "text": "", "state": "waiting"}]
+        said = re.search(r'data-region="j-said".*?</section>', pane(dashboard.render(view, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn("Interrupt requested", text(said))
+        self.assertNotIn("user-message", said)  # a Stop is not a message: no bubble, no Up next row
+
+    def test_the_up_next_tray_and_the_composer_are_one_glass_object(self):
+        # r32 F1: the tray sat 8px above the composer as a second, brighter card with its own rim, shine and shadow,
+        # the loudest surface on a running job's page. Shown, it joins the composer: one rim, a 1px divider where
+        # they meet, one fill through both (in frosted and in liquid glass), and its words at 60% white.
+        J, LG = ".jd-dock:has(> .up-next:not([hidden]))", "html.lg-on[data-live-app] .jd-dock:has(> .up-next:not([hidden]))"
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        tray, comp = rule(J + " > .up-next"), rule(J + " .composer")
+        for want in ("margin-bottom: 0;", "border-bottom: 0;", "border-radius: 16px 16px 0 0;"):
+            self.assertIn(want, tray)
+        self.assertNotIn("var(--glass-shadow)", tray)
+        for want in ("border-top: 1px solid rgb(255 255 255 / .06);", "border-top-left-radius: 0;",
+                     "border-top-right-radius: 0;"):
+            self.assertIn(want, comp)
+        self.assertNotIn("inset 0 1px 0", comp)  # no top shine on the seam
+        # liquid glass outranks the plain scope, so it has its own join: no lit top-left rim on the composer's seam
+        lg_comp = rule(LG + " .composer")
+        self.assertIn("border-top-color: rgb(255 255 255 / .06);", lg_comp)
+        self.assertNotIn("inset 1.5px 1.5px", lg_comp)
+        self.assertIn("inset 1.5px 1.5px", rule(LG + " > .up-next"))
+        # hidden, the tray changes nothing: the plain rules are as they were
+        self.assertIn("\n.up-next { margin: 0 0 8px;", dashboard.STYLE)
+        self.assertIn("color: rgb(255 255 255 / .6);", rule(".un-row"))
+
+    def test_a_steer_sits_8px_under_the_brief_it_continues(self):
+        # r32 F9: the brief and the owner's messages are one group. They live in sibling regions of the job body,
+        # whose 24px gap made a steer read as a new turn; the messages region pulls up to 8px under the brief.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        view["open"]["job"]["spec"].update(kind="local-shell", brief="Tidy the README",
+                                           command=["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo",
+                                                    "Tidy the README"])
+        view["open"]["inbox"] = [{"id": "a" * 12, "mode": "steer", "text": "use tabs", "state": "steered"}]
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        self.assertRegex(page, r'data-region="j-brief".*?</section>\s*<section[^>]*data-region="j-said"')
+        self.assertIn(".detail .jd-body { width: 100%; max-width: 768px; gap: 24px;", dashboard.STYLE)
+        pull = dashboard.STYLE.index(".detail .jd-body > .s-j-brief + .s-j-said { margin-top: -16px; }")
+        # only where the brief's hover Copy can move beside its bubble; otherwise it would sit on the steer
+        self.assertGreater(pull, dashboard.STYLE.rindex("@supports (anchor-name: --a) {", 0, pull))
+        self.assertRegex(dashboard.STYLE, r"\.s-j-brief:has\(\+ \.s-j-said\) > \.msg-acts\.me \{ position: absolute; "
+                                          r"position-anchor: --brief;[^}]*right: calc\(anchor\(left\) \+ 4px\)")
+
     def test_an_agents_answer_reads_as_its_message(self):
         # An answer that is not shown as a message from the agent that ran, or that loses its text, must fail.
         view = opened(live_view(), "finished-job", kind="local-shell")
@@ -2129,6 +2990,63 @@ class DashboardTest(unittest.TestCase):
         pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
         self.assertNotIn('data-press="w"', pal)
 
+    def test_a_swarm_runs_page_says_it_is_one_run_of_a_swarm(self):
+        # A run opened straight (from the judge's Swarm card or a shared link) must say it is one run of a swarm,
+        # what the judge made of it, and give the way back; a page that stays silent leaves no path to the swarm.
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "g"}
+        view["recent"] = [*view["recent"], *({"id": j, "state": "done", "paused": False, "detail": "",
+                                             "external_id": None} for j in ("g.w1", "g.w2", "g.best"))]
+        view["meta"] = {**view.get("meta", {}),
+                        "g.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "g.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "g.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                   "kept": "w2", "after": ["g.w1", "g.w2"]}}
+        head = lambda page: re.search(r'data-region="j-head".*?</section>', page, re.S).group(0)  # noqa: E731
+        page = dashboard.render(opened(view, "g.w1", kind="local-shell", state="done"), NOW, token=TOKEN)
+        self.assertIn("Run 1 of 2 in a swarm", head(page))
+        self.assertIn("Not kept", head(page))
+        self.assertIn('href="/job/g.best?t=', head(page))
+        page = dashboard.render(opened(view, "g.w2", kind="local-shell", state="done"), NOW, token=TOKEN)
+        self.assertIn("Run 2 of 2 in a swarm", head(page))
+        self.assertIn("Kept", head(page))
+        self.assertNotIn("Not kept", head(page))
+        self.assertIn('href="/job/g.best?t=', head(page))
+        # a job that is no swarm's run shows no swarm line, and the static page says the same without the link
+        page = dashboard.render(opened(view, "finished-job", kind="local-shell", state="done"), NOW, token=TOKEN)
+        self.assertNotIn("in a swarm", page)
+        page = dashboard.render(opened(view, "g.w2", kind="local-shell", state="done"), NOW)
+        self.assertIn("Run 2 of 2 in a swarm", head(page))
+        self.assertNotIn('href="/job/g.best', head(page))
+
+    def test_swarm_again_is_an_outlined_pill_on_desktop_too(self):
+        # On desktop 'Swarm again' was borderless text and read as a label, not a button, while the dock's 'Judge
+        # again' and the phone's version were pills: the shared rule now wears the same hairline edge at the
+        # desktop's 28px and shows the swarm glyph, so a phone only grows the pill and drops the W chip.
+        desk = dashboard.STYLE.split("\n.sw-again {", 1)[1].split("}", 1)[0]
+        self.assertIn("border: 1px solid #2a3142", desk)
+        self.assertIn("border-radius: 14px", desk)
+        self.assertNotIn(".sw-again > .ic { display: none; }", dashboard.STYLE)
+        # the rendered button keeps its w key and chip
+        view = live_view()
+        base = {"brief": "Fix the typo", "kind": "local-shell", "created": NOW - 300, "started": NOW - 290,
+                "goal": "fix", "timeout_min": 90}
+        view["recent"] = [*view["recent"], {"id": "fix.best", "state": "done", "paused": False, "detail": "",
+                                            "external_id": None}]
+        view["meta"] = {**view.get("meta", {}),
+                        "fix.w1": {**base, "state": "done", "updated": NOW - 230, "model": "swe-2-max"},
+                        "fix.w2": {**base, "state": "done", "updated": NOW - 235, "model": "swe-2-flash-high"},
+                        "fix.best": {**base, "state": "done", "updated": NOW - 200, "model": "swe-2-max",
+                                     "after": ["fix.w1", "fix.w2"]}}
+        done = opened(view, "fix.best", kind="local-shell", state="done")
+        done["open"]["swarm_kept"] = "fix.w1"
+        page = dashboard.render(done, NOW, token=TOKEN)
+        card = re.search(r'data-region="j-swarm".*?</section>', page, re.S).group(0)
+        btn = re.search(r'<button class="sw-again".*?</button>', card, re.S).group(0)
+        self.assertIn('data-k="w"', btn)
+        self.assertIn("<kbd", btn)
+
     def test_a_composer_keeps_its_draft_across_pages(self):
         # A reply typed on one job and left for another came back empty, since the page swap renders a new form
         # (T3 Code keeps each thread's draft). Each composer saves its words per page and box as they are typed,
@@ -2400,6 +3318,8 @@ class DashboardTest(unittest.TestCase):
         # without any test noticing) must fail, so must a guard that finds no selectors at all.
         literals = re.findall(r"'((?:[^'\\\n]|\\.)*)'", dashboard.SCRIPT)
         made = set(" ".join(re.findall(r"className = '([^']*)'", dashboard.SCRIPT)).split())
+        # and those the team editor (rh/web/team.js) builds with h(tag, {class: '...'}), whole or as a prefix
+        made |= set(" ".join(re.findall(r"class: '([^']*)'", dashboard.SCRIPT)).split())
         selected = {c for lit in literals for c in re.findall(r"(?:^|[\s>(,a-z\]])\.([a-z][a-z0-9-]*)", lit)}
         self.assertGreaterEqual(len(selected), 15)
         view = opened(live_view(), "live-job")
@@ -2407,6 +3327,9 @@ class DashboardTest(unittest.TestCase):
         view["open"]["answer"] = "Fixed it."  # a markdown answer, so .assistant-message.md renders
         view["open"]["files"] = [{"path": "changes.patch", "size": 90}]  # and a patch preview, so .peek.diff does
         view["open"]["peek"] = {"path": "changes.patch", "text": "+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n", "more": False}
+        # and stalled quiet past its limit, so the card's 'no output since' row (.log-quiet) renders
+        view["open"]["job"]["state"] = "stalled"
+        view["open"]["log_at"] = NOW - 400
         # and a swarm's judge page, so its run rows (.sw-run, .sw-a) render
         swarm = live_view()
         swarm["not_started"] = [{"id": "fix.best", "state": "waiting", "paused": False, "detail": "", "external_id": None}]
@@ -2418,9 +3341,16 @@ class DashboardTest(unittest.TestCase):
                          "fix.best": {**base, "updated": NOW - 5, "model": "swe-2-max", "goal": "fix", "after": ["fix.w1"]}}
         pages = (dashboard.render(live_view(), NOW, token=TOKEN) + dashboard.render(view, NOW, token=TOKEN)
                  + dashboard.render({**live_view(), "new": True, "swarm": {"models": ["swe-2-max"], "judge": "swe-2-max",
-                                    "choices": ["swe-2-max"]}}, NOW, token=TOKEN)  # and the composer's swarm popover
+                                    "choices": ["swe-2-max"]},  # and the composer's swarm popover and folder menu
+                                    "folders": [["/w/rh", "rh"]], "repo_path": "/w/rh", "workspace": {"repo": "rh", "branch": "main"}},
+                                   NOW, token=TOKEN)
                  + inbox(live_view())
                  + dashboard.render(opened(swarm, "fix.best", kind="local-shell", state="waiting"), NOW, token=TOKEN))
+        # and a running Claude job with a message queued, so its composer and Up next row render
+        talk = opened(live_view(), "live-job", kind="local-shell")
+        talk["open"]["job"]["spec"]["command"] = ["python3", "/x/rh/agent.py", "claude", "/bin/claude", "/repo", "go"]
+        talk["open"]["inbox"] = [{"id": "a" * 12, "mode": "queue", "text": "then the docs", "state": "queued"}]
+        pages += dashboard.render(talk, NOW, token=TOKEN)
         rendered = set(" ".join(re.findall(r'class="([^"]*)"', pages)).split())
         self.assertEqual(sorted(selected - made - rendered), [])
         self.assertIn("g-needs", {c[2:] for c in rendered if c.startswith("s-")})  # positive control for the regex
@@ -2474,6 +3404,88 @@ class DashboardTest(unittest.TestCase):
         self.assertIn('class="st t-red"', row)
         self.assertIn('data-tone="bad"', row)
 
+    def test_the_phone_front_doors_field_stays_behind_its_controls(self):
+        # r33 F1: on a phone the New page's field peaked near-white right behind the sidebar button, which lost its
+        # edge, and the glow outranked the folder title and the composer. On a phone it is three-quarters strong,
+        # held at 15% under the top bar, full from 200px, and gone by 80% of the height, where the composer sits.
+        # The composer stays at the foot (under the thumb); job pages keep their own dim wash.
+        rule = dashboard.STYLE.split("@media (max-width: 600px) { html[data-live-app] .app:has(.sea-page) .bg-field {", 1)
+        self.assertEqual(len(rule), 2)
+        body = rule[1].split("} }", 1)[0]
+        self.assertIn("opacity: .75;", body)
+        self.assertIn("mask-image: linear-gradient(to bottom, rgb(0 0 0 / .15) 64px, #000 200px, #000 50%, transparent 80%);",
+                      body)
+        self.assertIn("html[data-live-app] .app:not(:has(.sea-page)) .bg-field { opacity: .2;", dashboard.STYLE)
+
+    def test_each_earlier_day_is_a_group_in_the_sidebar_and_in_the_palette(self):
+        # r33 F3: a second day's heading sat on the row above it while 'Yesterday' had the group gap; every day
+        # heading is a group heading's 24px box, and a later one sits 16px down, as the groups do. F5: the palette
+        # still said 'Earlier' and dated each row; it heads its days as the sidebar does and keeps the clock time,
+        # which tells runs of one day apart.
+        view = live_view()
+        midnight = dashboard._midnight(NOW)
+        stamps = {"earlier-am": midnight - 5400, "earlier-pm": midnight - 9000, "earlier-old": midnight - 216000}
+        view["recent"] += [{"id": jid, "state": "done", "paused": False, "detail": "", "external_id": None}
+                           for jid in stamps]
+        view["meta"] = {"finished-job": {"kind": "local-shell", "updated": NOW - 600},
+                        **{jid: {"kind": "local-shell", "updated": ts} for jid, ts in stamps.items()}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        self.assertIn(".lane .s-g-earlier .rows > .day { padding-block: 2px; }", dashboard.STYLE)
+        self.assertIn(".lane .s-g-earlier .rows > .day:not(:first-child) { margin-top: 16px; }", dashboard.STYLE)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        old_day = dashboard._clock(stamps["earlier-old"], NOW)
+        secs = re.findall(r'<p class="p-sec">([^<]+)</p>', pal)
+        self.assertNotIn("Earlier", secs)
+        yday = dashboard._clock(stamps["earlier-am"], NOW)  # r34 F10: a date, as the row stamps say it
+        self.assertNotIn("Yesterday", secs)
+        self.assertEqual(secs[secs.index(yday):secs.index(yday) + 2], [yday, old_day])
+        for jid, ts in stamps.items():
+            row = re.search(rf'<a class="p-row[^"]*" role="option" data-id="{jid}".*?</a>', pal, re.S).group(0)
+            t = time.localtime(ts)
+            self.assertIn(f'<span class="p-when mono num">{t.tm_hour:02d}:{t.tm_min:02d}</span>', row)
+        # each row sits under its own day
+        self.assertLess(pal.index('data-id="earlier-pm"'), pal.index(f'<p class="p-sec">{old_day}</p>'))
+        self.assertLess(pal.index(f'<p class="p-sec">{old_day}</p>'), pal.index('data-id="earlier-old"'))
+
+    def test_the_earlier_group_heads_each_day_and_keeps_the_time_on_the_title(self):
+        # A '24 Nov' down the sidebar's right edge on every Earlier row says nothing new: each day's first row
+        # gets one quiet heading ('Yesterday' for the day before today's, the day itself for older ones), the
+        # time cell keeps the clock time (r35 F6: an empty slot under a day broke the column every other ended
+        # group fills), and the row's title keeps the full date and time.
+        # A row with no time takes no heading, and every other group's rows are as they were.
+        view = live_view()
+        midnight = dashboard._midnight(NOW)
+        stamps = {"earlier-am": midnight - 5400, "earlier-pm": midnight - 9000,
+                  "earlier-old": midnight - 216000}
+        view["recent"] += [{"id": jid, "state": "done", "paused": False, "detail": "", "external_id": None}
+                           for jid in stamps]
+        view["meta"] = {"finished-job": {"kind": "local-shell", "updated": NOW - 600},
+                        **{jid: {"kind": "local-shell", "updated": ts} for jid, ts in stamps.items()}}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        earlier = re.search(r'<section class="s-g-earlier group".*?</section>', page, re.S).group(0)
+        old_day = dashboard._clock(stamps["earlier-old"], NOW)
+        self.assertEqual(re.findall(r'<li class="day"[^>]*><span>([^<]+)</span></li>', earlier),
+                         [dashboard._clock(stamps["earlier-am"], NOW), old_day])  # r34 F10: dates, not 'Yesterday'
+        at = lambda needle: earlier.index(needle)  # noqa: E731
+        self.assertLess(at(f"<span>{dashboard._clock(stamps['earlier-am'], NOW)}</span>"), at('data-key="job:earlier-am"'))
+        self.assertLess(at('data-key="job:earlier-am"'), at('data-key="job:earlier-pm"'))
+        self.assertLess(at('data-key="job:earlier-pm"'), at(f"<span>{old_day}</span>"))
+        self.assertLess(at(f"<span>{old_day}</span>"), at('data-key="job:earlier-old"'))
+        for jid, ts in stamps.items():
+            row = re.search(rf'<li class="row" data-key="job:{jid}".*?</li>', earlier, re.S).group(0)
+            t = time.localtime(ts)
+            self.assertIn(f'<span class="time mono num">{t.tm_hour:02d}:{t.tm_min:02d}</span>', row)
+            title = f'{dashboard._clock(ts, NOW)} · {t.tm_hour:02d}:{t.tm_min:02d}'
+            self.assertRegex(row, rf'<a class="item"[^>]*title="{re.escape(title)}"')
+        # the days replace the group's own heading on screen, so it never reads 'Earlier' over 'Yesterday'
+        self.assertIn('.lane .s-g-earlier:has(.day) > .head { position: absolute; width: 1px; height: 1px;',
+                      dashboard.STYLE)
+        self.assertIn('<h3 id="g-earlier">Earlier</h3>', earlier)  # still a heading for a screen reader
+        ended = re.search(r'<section class="s-g-ended group".*?</section>', page, re.S).group(0)
+        self.assertIn(f'<span class="time mono num">{dashboard._clock(NOW - 600, NOW)}</span>', ended)
+        live = re.search(r'<a class="item"[^>]*>', item(page, "live-job")).group(0)
+        self.assertNotIn("title=", live)
+
     def test_a_failure_already_run_again_gets_a_quieter_ring(self):
         # A rerun failure still drawn in the full red of one that needs you, a failure nobody ran again drawn
         # quieter, or the quiet rule missing from the stylesheet, must fail.
@@ -2490,6 +3502,41 @@ class DashboardTest(unittest.TestCase):
                          pal, re.S).group(1)
         self.assertIn('class="st t-red past"', ring)
         self.assertRegex(dashboard.STYLE, r"\.st\.past \{[^}]*opacity: \.45")
+
+    def test_a_stalled_jobs_ring_steps_back_wherever_it_is_drawn(self):
+        # A job past its limit wore the running job's lively accent ring in the sidebar, the palette and the
+        # Inbox, so a stuck job read as a working one; only its own page's status line dimmed it. One rule on
+        # the late ring (svg.st[data-s="late"]) steps it back everywhere now, while a running job's ring is
+        # unchanged.
+        rules = re.findall(r'\.st(?![\w-])[^{}]*\[data-s="late"\][^{}]*\{([^}]*)\}', dashboard.STYLE)
+        stepped = [body for body in rules if "opacity: .5" in body and "animation: none" in body]
+        self.assertTrue(stepped, "no stylesheet rule steps a stalled job's ring back")
+        ring = lambda markup: re.search(r'<svg class="([^"]+)" data-s="([^"]+)"', markup).groups()  # noqa: E731
+        # one stalled job live, another waiting on you: the rule is on the ring's shape, not its tone
+        view = live_view()
+        view["live"] += [{"id": j, "state": "stalled", "paused": False,
+                          "detail": "still going", "external_id": None} for j in ("slow-job", "late-job")]
+        view["inbox"].append({"id": 9, "kind": "decision", "job": "late-job", "action": "stop it?", "detail": "",
+                              "created": NOW - 1, "resolved": None, "resolution": None})
+        page = dashboard.render(view, NOW, token=TOKEN)
+        for jid in ("slow-job", "late-job"):
+            cls, shape = ring(item(page, jid))  # the sidebar row
+            self.assertIn("st", cls.split())
+            self.assertEqual(shape, "late", jid)
+            pal = re.search(rf'data-id="{jid}"[^>]*><span class="p-ic">(.*?)</span>',
+                            re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0), re.S).group(1)
+            cls, shape = ring(pal)  # the palette row
+            self.assertIn("st", cls.split())
+            self.assertEqual(shape, "late", jid)
+        cls, shape = ring(re.search(r'<li class="ib-li" data-key="job:late-job".*?</li>',
+                                    inbox(view, 9), re.S).group(0))  # the Inbox row
+        self.assertIn("st", cls.split())
+        self.assertEqual(shape, "late")
+        # a running job's ring is not the stepped-back one
+        cls, shape = ring(item(page, "live-job"))
+        self.assertIn("st", cls.split())
+        self.assertEqual(shape, "half")
+        self.assertNotIn('data-s="late"', item(page, "live-job"))
 
     def test_one_filled_button_per_page_and_destructive_actions_marked(self):
         # A page with no filled button or with two, or a pause or cancel styled like a safe action, must fail.
@@ -2636,6 +3683,18 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("new IntersectionObserver", tank_code)
         # The water is plain: no grid behind the creatures.
         self.assertNotIn("background", dashboard.STYLE.split(".tank-c {", 1)[1].split("}", 1)[0])
+
+    def test_on_a_phone_the_wash_behind_a_job_page_shows_only_by_the_dock(self):
+        # A phone's dot pitch (~3px) sits near the stroke width of its 15-17px body text, so answers, inbox rows
+        # and brief bubbles shimmer over the dots: there the wash shows only by the composer docked at the foot.
+        sel = "html[data-live-app] .app:not(:has(.sea-page)) .bg-field"
+        phone = dashboard.STYLE.split("@media (max-width: 600px) { " + sel + " {", 1)[1].split("}", 1)[0]
+        mask = "linear-gradient(to bottom, transparent calc(100% - 160px), #000)"
+        self.assertIn("-webkit-mask-image: " + mask, phone)
+        self.assertIn("; mask-image: " + mask, phone)
+        desk = dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]
+        self.assertIn("opacity: .2", desk)
+        self.assertIn("rgb(0 0 0 / .35), #000 90%", desk)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_sea_draws_each_creature_whole(self):
@@ -2834,6 +3893,63 @@ console.log('TANK PLACEMENT PASSED');
         self.assertEqual(r.stdout.strip(), "TANK PLACEMENT PASSED")
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_running_composer_empties_at_once_and_never_drops_a_message(self):
+        # T3 Code's composer clears as a message goes, so what is typed next is the next message. A box that empties
+        # only when the request returns (it wiped words typed meanwhile), a second message dropped while the first is
+        # on its way, a failed send that loses its words, or an empty Enter that stops the run, must fail.
+        block = dashboard.SCRIPT[dashboard.SCRIPT.index("// <talk>"):dashboard.SCRIPT.index("// </talk>")]
+        probe = """
+const posted = [], waiting = [];
+let ok = true;
+const fetch = (url, o) => { posted.push(Object.fromEntries(o.body)); const good = ok;
+  return new Promise(r => waiting.push(() => r({ ok: good, status: good ? 200 : 409, text: async () => 'no' }))); };
+class HTMLTextAreaElement {}
+const box = Object.assign(new HTMLTextAreaElement(), { value: '', dispatchEvent() {}, focus() {}, setSelectionRange() {} });
+const btn = { dataset: { tip: 'tip' }, setAttribute() {}, removeAttribute() {}, getAttribute() { return null } };
+const cancel = { hidden: true }, fields = { t: { value: 'tok' }, job: { value: 'j1' }, text: box };
+const form = { action: '/job/message', dataset: {}, elements: { namedItem: n => fields[n] }, hasAttribute: () => true };
+box.form = form;
+const $ = sel => ({ 'form[data-message]': form, '.talk-send': btn, '[data-q-cancel]': cancel })[sel] || null;
+const $$ = () => [];
+const handlers = {};
+const document = { addEventListener(kind, f) { (handlers[kind] = handlers[kind] || []).push(f); } };
+const window = { addEventListener() {} };
+let timer = 0;
+const poll = () => {}, live = () => {}, toast = () => {}, play = () => {}, CSS = { escape: s => s };
+""" + block + """
+(async () => {
+  box.value = 'one';
+  const a = talkSend(false);
+  const cleared = box.value;
+  box.value = 'two';
+  const b = talkSend(true);
+  waiting.splice(0).forEach(go => go());
+  await Promise.all([a, b]);
+  ok = false; box.value = 'three';
+  const c = talkSend(false);
+  waiting.splice(0).forEach(go => go());
+  await c;
+  const back = box.value;
+  const enter = meta => handlers.keydown.forEach(f => f({ key: 'Enter', target: box, shiftKey: false, altKey: false,
+    metaKey: meta, ctrlKey: false, repeat: false, isComposing: false, keyCode: 13, preventDefault() {} }));
+  ok = true; box.value = '';
+  enter(false);  // an empty box: Enter sends nothing, and never a Stop
+  box.value = 'four';
+  enter(true);  // ⌘ Enter queues
+  waiting.splice(0).forEach(go => go());
+  console.log(JSON.stringify({ cleared, posted: posted.map(p => [p.mode, p.text || '']), back, state: form.dataset.state }));
+})();
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got["cleared"], "")
+        self.assertEqual(got["posted"], [["steer", "one"], ["queue", "two"], ["steer", "three"], ["queue", "four"]])
+        self.assertEqual(got["back"], "three")
+        # on a phone, Up next's rows keep their buttons inside the card: its one column is the card's width
+        self.assertIn(".un-list { display: grid; grid-template-columns: minmax(0, 1fr);", dashboard.STYLE)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_seas_characters_fit_their_cells(self):
         # Rows stretched to fill a tank, characters wider than their column (neighbours run together), characters too
         # small to read beside the list, or specks of plankton that touch, must fail.
@@ -2914,15 +4030,112 @@ console.log(JSON.stringify([
         r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
         self.assertEqual(r.returncode, 0, r.stderr)
         foot, head, short = json.loads(r.stdout)
-        self.assertEqual(foot, {"up": True, "right": True, "max": 586})  # over the button, against its right edge
-        self.assertEqual(head, {"up": False, "right": False, "max": 496})  # under it, from its left edge
-        self.assertEqual(short, {"up": True, "right": False, "max": 126})  # the roomier side, scrolling within
+        self.assertEqual(foot, {"up": True, "right": True, "max": 570})  # over the button, against its right edge
+        self.assertEqual(head, {"up": False, "right": False, "max": 480})  # under it, from its left edge
+        self.assertEqual(short, {"up": True, "right": False, "max": 110})  # the roomier side, scrolling within
         rule = lambda sel: dashboard.STYLE.split(sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
         self.assertIn("bottom: calc(100% + 6px)", rule(".opts-body.up"))
         self.assertIn("top: auto", rule(".opts-body.up"))
         self.assertIn("right: 0", rule(".opts-body.right"))
         self.assertIn("overflow: auto", rule(".opts-body"))
-        self.assertIn("d.matches('.opts')) place(d);", dashboard.SCRIPT)
+        self.assertIn("d.matches('.opts, .swarm-pick')) place(d);", dashboard.SCRIPT)
+        # r27 F5: the /swarm popover ran past the window's foot, its last ticks cut mid-glyph. It is placed as Options
+        # is: capped to what shows, over the line when the room is above, measured from the composer's glass, and a
+        # phone's sheet above the composer is left to rh.css.
+        self.assertIn("$(':scope > .opts-body, :scope > .swarm-pop', d)", dashboard.SCRIPT)
+        self.assertIn("bottom: Math.max(at.bottom, glass.bottom + 2)", dashboard.SCRIPT)
+        self.assertIn("if (p.up) body.style.bottom = (inBottom - glass.top + 8) + 'px'", dashboard.SCRIPT)
+        # inside the glass composer a popover's own blur never reaches the page, so see-through let the title show
+        solid = dashboard.STYLE.split(":root[data-live-app] .composer details.opts > .opts-body {", 1)[1].split("}", 1)[0]
+        self.assertRegex(re.search(r"background:[^;]*", solid).group(0), r"rgb\(19 24 38\)$")
+        self.assertIn("if (body.matches('.swarm-pop') && matchMedia('(max-width: 600px)').matches) return;", dashboard.SCRIPT)
+        self.assertIn("bottom: calc(100% + 8px)", rule(".swarm-pop.up"))
+        self.assertIn("top: auto", rule(".swarm-pop.up"))
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_a_popover_keeps_24px_clear_of_the_room_edge(self):
+        # The /swarm popover opened upward with its top 10px from the window's top and its last row cut. placePop
+        # must leave 24px between the popover and the room's edge on the side it opens toward, so it never hugs it.
+        fn = dashboard.SCRIPT[dashboard.SCRIPT.index("function placePop("):]
+        block = fn[:fn.index("\n}\n") + 3]
+        probe = block + """
+const room = { top: 0, right: 1440, bottom: 900, left: 0 };
+const at = { top: 700, bottom: 732, left: 560, right: 640 };
+console.log(JSON.stringify([
+  placePop(at, room, 320, 600, 6),
+  placePop(at, room, 320, 100, 6),
+  placePop(at, { top: 690, right: 1440, bottom: 740, left: 0 }, 320, 600, 6),
+]));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        tall, short, tiny = json.loads(r.stdout)
+        self.assertEqual(tall, {"up": True, "right": False, "max": 670})  # over the button: 700 - 6 - 24
+        self.assertEqual(short, {"up": False, "right": False, "max": 138})  # under it: 900 - 732 - 6 - 24
+        self.assertEqual(tiny, {"up": True, "right": False, "max": 80})  # a tiny room still floors at 80
+
+    def test_the_swarm_popover_drops_the_tick_lists_box_and_fades_its_foot(self):
+        # The /swarm popover drew the tick list as a second box inside its own, and a popover capped to the
+        # window cut its last row mid-glyph. The ticks sit on the panel now, stripped the way Settings strips
+        # the same list, and the scroll area fades its last 24px only while more lies below — app.js's place()
+        # and scroll listener wear the class on and off.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        box = rule(".swarm-pop .swarm-models")
+        for spec in ("padding: 0", "border: 0", "border-radius: 0", "background: none"):
+            self.assertIn(spec, box)
+        # the rows keep their padding, so the boxes stay on the team radios' edge: the 4px the list's own
+        # inset used to lend moves onto the list as a margin. The teams' hairline stays the one divider.
+        self.assertIn("margin-left: 4px", box)
+        self.assertIn("border-bottom: 1px solid var(--rule)", rule(".swarm-teams"))
+        # the rows fade into the panel's own fill: a mask faded the opaque panel too, and the composer showed
+        # through its foot
+        fade = rule(".swarm-pop.more::after")
+        for spec in ("position: sticky", "height: 24px", "linear-gradient(rgb(19 24 38 / 0), rgb(19 24 38))"):
+            self.assertIn(spec, fade)
+        self.assertNotIn("mask-image", rule(".swarm-pop"))
+        self.assertNotIn("\n.swarm-pop.more {", dashboard.STYLE)
+        self.assertIn("bubble.classList.toggle('more', bubble.scrollTop + bubble.clientHeight "
+                      "< bubble.scrollHeight - 2)", dashboard.SCRIPT)
+        self.assertIn("if (body.matches('.swarm-pop')) fadeLong(body);", dashboard.SCRIPT)
+        self.assertIn("t.classList.contains('swarm-pop')) fadeLong(t);", dashboard.SCRIPT)
+
+    def test_the_teams_bar_leaves_the_count_to_the_tree(self):
+        # The header row counted the team again ('7 agents · 4 workers · 3 layers') when the cards drawn under
+        # it and the list's own subline already say it. A tm-census in the script or the sheet must fail;
+        # census() stays — the list's subline and the radio's 'N agents' still read it — and sub() still
+        # writes ' layers'.
+        self.assertNotIn("tm-census", dashboard.SCRIPT)
+        self.assertNotIn("tm-census", dashboard.STYLE)
+        self.assertIn("function census(", dashboard.SCRIPT)
+        self.assertIn("function sub(", dashboard.SCRIPT)
+        sub = dashboard.SCRIPT.split("function sub(", 1)[1].split("\n}", 1)[0]
+        self.assertIn("' layers'", sub)
+
+    def test_the_team_radios_draw_an_empty_ring_until_picked(self):
+        # 'Off' had two looks in the /swarm popover: the model ticks read as outlined boxes while the team radios
+        # were native filled discs. The radios draw themselves now — an outlined ring, empty until the team is
+        # picked — so an unticked team reads like an unticked box.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        radio = rule('.swarm-team input[type="radio"]')
+        for spec in ("appearance: none", "width: 14px", "height: 14px", "border-radius: 50%",
+                     "border: 1.5px solid #5b6070", "background: transparent", "place-content: center",
+                     "transition: border-color 120ms"):
+            self.assertIn(spec, radio)
+        self.assertIn("border-color: var(--on)", rule('.swarm-team input[type="radio"]:checked'))
+        dot = rule('.swarm-team input[type="radio"]:checked::before')
+        for spec in ("width: 6px", "height: 6px", "border-radius: 50%", "background: var(--on)"):
+            self.assertIn(spec, dot)
+        self.assertIn("outline: 2px solid var(--on)", rule('.swarm-team input[type="radio"]:focus-visible'))
+        self.assertIn("outline-offset: 2px", rule('.swarm-team input[type="radio"]:focus-visible'))
+        self.assertIn("border-color: #7a8091", rule('.swarm-team:hover input[type="radio"]:not(:checked)'))
+        # and the new-job page still draws one radio per team in the popover
+        from rh import hierarchy
+        presets = {**hierarchy.defaults(), "active": "free-research"}
+        swarm = {"models": ["swe-2-max", "swe-2-flash-high"], "judge": "swe-2-max", "presets": presets,
+                 "choices": ["swe-2-max", "swe-2-flash-high"],
+                 "team_models": [["swe-2-max", "devin"], ["claude-opus-5-5", "claude"], ["gpt-6.2-astra", "codex"]]}
+        page = dashboard.render({**live_view(), "new": True, "swarm": swarm}, NOW, token=TOKEN)
+        self.assertIn('<label class="swarm-team"><input type="radio" name="active"', page)
 
     def test_test_when_done_wears_a_flask_not_a_tick(self):
         # The row's value often reads "Don't test", and everywhere else a tick means done or passed. The row
@@ -2932,6 +4145,49 @@ console.log(JSON.stringify([
         self.assertIn("Test when done", row)
         self.assertNotIn('d="M20 6 9 17l-5-5"', row)
         self.assertIn(dashboard._ICONS["flask"], row)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_preview_thumbnails_are_brightened_and_off_draws_nothing(self):
+        # Orbit and Quiet previews read as near-black rectangles at thumbnail size, so drawPreviews() brightens
+        # what it copies into each tile — and only there: the page's own drawField() keeps its brightness, and
+        # Off's tile is the CSS diagonal alone, so nothing may be drawn or brightened onto its canvas. A
+        # thumbnail drawn without the filter, a filter left set, or a brightened Off, must fail.
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("function drawPreviews()"):]
+        code = code[:code.index("\n}\n") + 3]
+        probe = code + """
+class Ctx {
+  constructor(rec) { this.rec = rec; this._filter = 'none'; }
+  set filter(v) { this.rec.filters.push(v); this._filter = v; }
+  get filter() { return this._filter; }
+  drawImage() { this.rec.draws.push(this._filter); }
+}
+function preview(name) {
+  const rec = { name, filters: [], draws: [] };
+  const ctx = new Ctx(rec);
+  return { dataset: { preview: name }, rec, ctx, getContext: () => ctx };
+}
+const orbit = preview('orbit'), off = preview('off');
+const $$ = () => [orbit, off];
+const big = {};
+const document = { createElement: () => big, body: { dataset: { tint: 'cobalt' } } };
+const window = { RHBackground: { render() {} } };
+drawPreviews();
+console.log(JSON.stringify({
+  orbit: { draws: orbit.rec.draws, filters: orbit.rec.filters, filter: orbit.ctx.filter },
+  off: { draws: off.rec.draws, filters: off.rec.filters, filter: off.ctx.filter },
+}));
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = json.loads(r.stdout)
+        self.assertEqual(got["orbit"]["draws"], ["brightness(1.9) saturate(1.15)"])
+        self.assertEqual(got["orbit"]["filters"], ["brightness(1.9) saturate(1.15)", "none"])
+        self.assertEqual(got["orbit"]["filter"], "none")
+        self.assertEqual(got["off"]["draws"], [])
+        self.assertEqual(got["off"]["filters"], [])
+        field = dashboard.SCRIPT[dashboard.SCRIPT.index("function drawField()"):]
+        field = field[:field.index("\n}\n") + 3]
+        self.assertNotIn("brightness(", field)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_the_page_script_parses(self):
@@ -2965,6 +4221,49 @@ console.log(JSON.stringify([
             for key in pressed:
                 self.assertIn(f'data-k="{key}"', page.replace(pal, ""))
         self.assertNotIn('id="pal"', dashboard.render(live_view(), NOW))
+
+    def test_a_needs_you_row_in_the_palette_wears_the_sidebar_ring(self):
+        # A job that needs you drawn in ⌘K with its state ring instead of amber (red for a failure), or a job that
+        # needs nothing given amber, must fail.
+        view = live_view()
+        view["live"].append({"id": "running-alone", "state": "running", "paused": False, "detail": "",
+                             "external_id": None})
+        pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        needs = pal.split('<p class="p-sec">Needs you</p>', 1)[1].split('<p class="p-sec">', 1)[0]
+
+        def ring(jid, src=pal):
+            row = re.search(rf'<a class="p-row(?: one)?" role="option" data-id="{jid}"[^>]*>.*?</a>', src, re.S).group(0)
+            return re.search(r'<span class="p-ic">(.*?)</span>', row, re.S).group(1)
+        self.assertIn('class="st t-amber"', ring("live-job", needs))  # running, waiting on an answer
+        self.assertIn('class="st t-red"', ring("broke-job", needs))  # a failure that needs you
+        alone = ring("running-alone")
+        self.assertIn('class="st t-accent"', alone)  # its own ring, as the sidebar draws it
+        self.assertNotIn("t-amber", alone)
+        self.assertNotIn("t-amber", ring("finished-job"))
+
+    def test_settled_items_asked_and_answered_alike_fold_into_one_row(self):
+        # critic r25 F6: four 'Push or touch git config · Job cancelled' rows, one per run of a swarm, filled the
+        # bottom third of the Inbox and only their id lines told them apart. Items with the same question and the
+        # same outcome are one row for the newest, which counts its runs; any of them picked lights that row.
+        held = lambda i, jid, ago: {"id": i, "kind": "decision", "job": jid, "action": "Push or touch git config",  # noqa: E731
+                                    "detail": "", "created": NOW - ago - 30, "resolved": NOW - ago,
+                                    "resolution": "job cancelled"}
+        view = {**live_view(), "settled": [held(11, "swarm-api.w1", 300), held(12, "swarm-api.w2", 290),
+                                           held(13, "swarm-api.best", 280), held(14, "swarm-api", 400),
+                                           {**held(15, "live-job", 200), "resolution": "yes, ship"}]}
+        page = dashboard.render({**view, "box": True}, NOW, token=TOKEN)
+        keys = re.findall(r'<li class="ib-li settled" data-key="([^"]+)"', page)
+        self.assertEqual(keys, ["settled:15", "settled:13"])  # newest first; the four alike are one row, the newest
+        row = re.search(r'data-key="settled:13".*?</li>', page, re.S).group(0)
+        self.assertIn('<span class="ib-why">Job cancelled</span>' + dashboard._SEP_HTML + '<span class="ib-n">4 runs</span>',
+                      row)
+        self.assertIn('<span class="ib-id mono">swarm-api.best</span>', row)
+        self.assertIn("/inbox/13", row)
+        self.assertNotIn("ib-n", re.search(r'data-key="settled:15".*?</li>', page, re.S).group(0))
+        # an older run of the folded four, picked by its address, lights the row that holds it
+        page = dashboard.render({**view, "box": True, "pick": 11, "picked": view["settled"][0]}, NOW, token=TOKEN)
+        self.assertEqual(re.findall(r'<li class="ib-li[^"]*" data-key="([^"]+)"[^>]*><a[^>]*aria-current', page),
+                         ["settled:13"])
 
     def test_inbox_lists_what_waits_newest_first_and_shows_one(self):
         # An ask missing from the list, the list out of order, the detail showing another item than the one picked, a
@@ -3091,6 +4390,84 @@ console.log(JSON.stringify([
             self.assertNotIn(gone, bg)
         self.assertIn('data-tint="cobalt"', dashboard.render({**live_view(), "tint": "violet"}, NOW, token=TOKEN))
 
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_beams_brightest_dot_stays_below_the_heading(self):
+        # r34 F5: the beam's near-white corner was the brightest thing on the New page, ahead of the 28px heading
+        # and the composer, so the eye went corner -> heading -> composer. Its luminance is capped at 0.7 (on the
+        # cobalt ramp about #7f9be0) with the falloff below the cap untouched, so content is the brightest thing on
+        # screen; the beam itself still reaches the cap. A dot's radius is half a cell times sqrt(L).
+        # r35 F4: at 0.7 the lit core (about 540x280px top right) still won the squint over the heading, so the
+        # cap is 0.5 (about #5f78c4) and the core's lit-dot coverage is halved, 0.40 -> about 0.21 of its cells;
+        # the streak keeps its shape and length.
+        bg = open(os.path.join(os.path.dirname(dashboard.__file__), "web", "bg.js"), encoding="utf-8").read()
+        probe = """
+const radii = [], core = [];
+class Path2D { moveTo() {} arc(x, y, r) { radii.push(r); if (x > 900 && y < 280) core.push(r); } }
+const ctx = { setTransform() {}, fillRect() {}, fill() {}, beginPath() {}, arc() {}, createPattern() { return {}; } };
+const document = { createElement: () => ({ getContext: () => ctx }) };
+const window = { devicePixelRatio: 1 };
+""" + bg + """
+for (const preset of ['beam', 'quiet']) {
+  radii.length = 0; core.length = 0;
+  window.RHBackground.render({ getContext: () => ctx }, { preset, tint: 'cobalt', width: 1440, height: 900, dpr: 1 });
+  const half = 2, peak = Math.max(...radii.map(r => (r / half) ** 2));
+  const cover = core.reduce((s, r) => s + (r / half) ** 2, 0) / ((540 / 4) * (280 / 4));
+  console.log(preset + ' ' + peak.toFixed(4) + ' ' + cover.toFixed(4));
+}
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        got = {p: (float(a), float(b)) for p, a, b in (line.split() for line in r.stdout.split("\n") if line.strip())}
+        self.assertLessEqual(got["beam"][0], 0.5001)
+        self.assertGreater(got["beam"][0], 0.45)  # still a beam, not a haze
+        self.assertLessEqual(got["beam"][1], 0.22)  # half the 0.40 the core had at round 35
+        self.assertGreater(got["beam"][1], 0.15)
+        self.assertLessEqual(got["quiet"][0], 0.22 * 0.5 + 1e-4)  # Quiet is the beam at 22%
+
+    def test_every_control_switched_on_wears_the_tints_blue(self):
+        # Three "on" colours sat side by side: near-white checkboxes and radios beside blue ticks. --on is the
+        # tint's accent (body's --ef-accent, so it follows the owner's tint), and every control that switches
+        # something on uses it; --accent stays the near-white ink for buttons and pills.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("--on: var(--ef-accent)", dashboard.STYLE)
+        for sel in ('input[type="checkbox"]', ".swarm-m input", ".swarm-team input",
+                    ".tm-tog input:checked + .tm-sw", ".tm-use::before"):  # the teams list's 'In use' tick (r30 F8)
+            body = rule(sel)
+            self.assertIn("var(--on)", body)
+            self.assertNotIn("var(--accent)", body)
+
+    def test_the_inbox_title_reads_as_a_title_and_its_show_all_ends_its_last_line(self):
+        # r29 F4: the brief set as a 17px semibold slab, heavier than any title in the app, with its Show all 90px
+        # below where the text fades, must fail. r31 F11: at the fourth line's end it sat over the words fading out,
+        # so folded or not, Show all is on the meta line right under the title, 8px below where the text fades.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        title = rule(".q-head .q-title.user-message")
+        self.assertIn("500 16px/24px", title)
+        self.assertNotIn("600 17px", title)
+        self.assertIn("font-weight: 600", rule(".q-head .q-title.user-message::first-line"))
+        placed = rule(".q-head .q-head-in > .q-title.user-message + .ask-more")
+        for want in ("grid-column: 2", "grid-row: 2", "margin: 8px 0 0"):
+            self.assertIn(want, placed)
+
+    def test_the_folder_title_reads_as_a_control_and_its_menu_names_the_default(self):
+        # r30 F1, F7: a folder picker drawn as a bare page title (no glyph, a faint chevron, no hover shape), rows
+        # that repeat the folder's name in its path, a white tick, or no sign of which folder is the configured
+        # one, must fail.
+        view = {**live_view(), "new": True, "workspace": {"repo": "rh", "branch": "main"}, "repo_path": "/w/rh",
+                "folders": [["/w/other", "other"], ["/w/rh", "rh"]]}
+        page = dashboard.render(view, NOW, token=TOKEN)
+        button = page.split('class="folder-btn"', 1)[1].split("</button>", 1)[0]
+        self.assertLess(button.index("<svg"), button.index('class="fb-name"'))  # the folder glyph leads the name
+        menu = page.split('class="folder-menu"', 1)[1].split("</div>", 1)[0]
+        rows = dict(re.findall(r'data-folder="([^"]+)"[^>]*>(.*?)</button>', menu))
+        self.assertIn('<span class="fm-p">/w</span>', rows["/w/other"])  # the parent only, not the name again
+        self.assertIn("Default", rows["/w/rh"])
+        self.assertNotIn("Default", rows["/w/other"])
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("var(--on)", rule('.fm-row[aria-checked="true"] > .ic:last-child'))
+        self.assertIn("background", rule(".folder-btn:hover, .folder-btn[aria-expanded=\"true\"]"))
+        self.assertIn("var(--muted)", rule(".fb-glyph"))
+
     def test_the_palette_has_a_way_out_without_a_keyboard(self):
         # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.
         pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(live_view(), NOW, token=TOKEN), re.S).group(0)
@@ -3138,7 +4515,7 @@ console.log(JSON.stringify([
         done = opened(live_view(), "finished-job", kind="local-shell", log=None)
         done["open"]["log"] = log
         body = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last", "j-output"])
+        self.assertEqual(re.findall(r'data-region="(j-output|j-last)"', body), ["j-last"])  # r27 F13: the rest folds in
         card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
         self.assertIn("Last output", card)
         # r18 F8: the title says 'last'. r22 F7: '12 of 30' and the fold's '30 lines' named one total twice; the card
@@ -3157,19 +4534,17 @@ console.log(JSON.stringify([
         self.assertNotIn("last 12", card)
         self.assertIn("line 30", card)
         self.assertNotIn("line 18\n", card)
-        fold = re.search(r'<summary class="worked-summary">.*?</summary>', body, re.S).group(0)
-        self.assertIn('<span class="worked-output">All output</span>', fold)
-        self.assertNotIn('class="lines', fold)
-        done["open"]["log_cut"] = True  # only the tail was kept: the fold says so, and never calls it all
+        self.assertIn('<span class="om-show">Show all</span>', card)
+        done["open"]["log_cut"] = True  # only the tail was kept: the foot says so, and never calls it all
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
+        self.assertIn('<span class="om-show">Show last 30 lines</span>', cut)
         # r19 F4: '12 of 30' named the kept tail as the whole. With no total known the card counts what it shows;
         # with the log's real length the card names it once, and the fold says how much of it it holds
         self.assertIn('<span class="lines mono">12 lines</span>', cut)
         done["open"]["log_total"] = 2412
         cut = pane(dashboard.render(done, NOW, token=TOKEN))
         self.assertIn('<span class="lines mono">2,412 lines</span>', cut)
-        self.assertIn('<span class="worked-output">Output</span><span class="lines mono">last 30 lines</span>', cut)
+        self.assertIn('<span class="om-show">Show last 30 lines</span>', cut)
         self.assertEqual(cut.count("2,412"), 1)
         del done["open"]["log_total"]
         done["open"]["log_cut"] = False
@@ -3183,6 +4558,41 @@ console.log(JSON.stringify([
         self.assertNotIn('data-region="j-last"', body)
         self.assertIn('data-region="j-output"', body)
 
+    def test_the_last_output_card_unfolds_the_rest_from_its_own_foot(self):
+        # r27 F13: a 'Last output · 2,400 lines' card sat over a separate 'Output · last 200 lines' row, two output
+        # labels with two counts. The card holds the rest itself: a hairline foot with a right-hand 'Show all' (or
+        # 'Show last N lines' for a kept tail) that swaps its last lines for the whole, as the diff card's foot does.
+        log = "\n".join(f"line {n}" for n in range(1, 31))
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"]["log"] = log
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        self.assertNotIn('data-region="j-output"', body)
+        card = re.search(r'data-region="j-last".*?</section>', body, re.S).group(0)
+        foot = re.search(r'<details class="out-more"><summary>(.*?)</summary>(.*?)</details>', card, re.S)
+        self.assertIsNotNone(foot, "the card has no foot that unfolds the rest")
+        self.assertIn('<span class="om-show">Show all</span>', foot.group(1))
+        self.assertIn("line 1</span>", foot.group(2))  # the whole kept log, in the card's own line markup
+        self.assertEqual(card.count('class="lines'), 1)  # one count: the head's
+        done["open"].update(log_cut=True, log_total=2412)
+        card = re.search(r'data-region="j-last".*?</section>', pane(dashboard.render(done, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="om-show">Show last 30 lines</span>', card)
+        self.assertEqual(card.count("2,412"), 1)
+        done["open"].update(log_cut=False, log_total=None, log="one\ntwo")  # all of it in view: no foot
+        self.assertNotIn("out-more", pane(dashboard.render(done, NOW, token=TOKEN)))
+        broke = opened(live_view(), "broke-job", kind="local-shell")  # a failed job's card folds the same way
+        broke["open"].update(log=log, receipt={"route": "local-shell", "checks": [{"cmd": "sh run.sh", "exit": 2}],
+                                               "ended": NOW - 10, "detail": "command exited 2"})
+        body = pane(dashboard.render(broke, NOW, token=TOKEN))
+        self.assertNotIn('data-region="j-output"', body)
+        self.assertIn('<details class="out-more">', re.search(r'data-region="j-error".*?</section>', body, re.S).group(0))
+        # open, the whole replaces the last lines and the foot stays under it; the foot is a 36px hairline row,
+        # its 12px label on the right
+        self.assertRegex(dashboard.STYLE, r'\.out:has\(> details\.out-more\[open\]\) > pre\.log \{ display: none; \}')
+        rule = dashboard.STYLE.split("\ndetails.out-more > summary {", 1)[1].split("}", 1)[0]
+        for want in ("height: 36px", "justify-content: flex-end", "border-top: 1px solid var(--rule)", "font-size: 12px"):
+            self.assertIn(want, rule)
+        self.assertIn("flex-direction: column-reverse", dashboard.STYLE.split("\ndetails.out-more[open] {", 1)[1].split("}", 1)[0])
+
     def test_finished_pages_keep_output_collapsible_and_the_reply_in_the_dock(self):
         # Output stays folded in Worked and the real Run again form lives after the session scroll area.
         log = "\n".join(f"line {n}" for n in range(1, 31))
@@ -3191,7 +4601,7 @@ console.log(JSON.stringify([
                             peek={"path": "notes.md", "text": "# Notes", "more": False})
         page = pane(dashboard.render(done, NOW, token=TOKEN))
         body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
-        self.assertIn('data-region="j-output"', body)
+        self.assertIn('<details class="out-more">', body)  # the output folds, in the card's foot
         # r21 F8: the file row and the Output row below it open the same way, so they say the same verb, 'Show ›'
         self.assertIn('<details class="file-preview"><summary>Show</summary>', body)
         self.assertNotIn("<summary>Preview</summary>", page)
@@ -3205,7 +4615,7 @@ console.log(JSON.stringify([
         page = pane(dashboard.render(broke, NOW, token=TOKEN))
         body = page.split('<div class="jd-scroll">', 1)[1].split('</div></div>', 1)[0]
         order = re.findall(r'data-region="(j-output|j-error)"', body)
-        self.assertEqual(order, ["j-error", "j-output"])
+        self.assertEqual(order, ["j-error"])  # its whole output folds into the card's foot
         self.assertIn('data-region="j-reply"', page.split('<div class="jd-dock">', 1)[1])
         error = re.search(r'data-region="j-error".*?</section>', body, re.S).group(0)
         self.assertIn('<span class="lines mono">30 lines</span>', error)  # the exit code leads the page, not this card
@@ -3218,8 +4628,8 @@ console.log(JSON.stringify([
         fail = re.search(r'<section class="s-j-fail".*?</section>', body, re.S).group(0)
         self.assertLess(body.index('class="s-j-fail"'), body.index('class="s-j-brief"'))
         words = lambda h: html.unescape(re.sub(r"<[^>]+>", " ", h)).split()  # noqa: E731
-        # the sentence the Inbox uses too, then the command and its exit chip
-        self.assertEqual(words(fail), ["The", "command", "exited", "with", "code", "2", "sh", "run.sh", "exit", "2"])
+        # the sentence the Inbox uses too, then the command — the sentence already says the code, no chip repeats it
+        self.assertEqual(words(fail), ["The", "command", "exited", "with", "code", "2", "sh", "run.sh"])
         broke["open"]["receipt"]["checks"] = [{"cmd": "sh run.sh", "exit": 0}, {"cmd": "notes.md exists", "exit": 1}]
         fail = re.search(r'<section class="s-j-fail".*?</section>', dashboard.render(broke, NOW, token=TOKEN), re.S)
         self.assertEqual(words(fail.group(0))[:4], ["The", "done-when", "check", "failed:"])
@@ -3258,6 +4668,41 @@ console.log(JSON.stringify([
         self.assertEqual(body.count("ls: docs/: No such file or directory"), 1)
         self.assertNotIn(".jd-compose { flex: none", dashboard.STYLE)
 
+    def test_the_fail_banner_drops_the_exit_chip_the_sentence_already_says(self):
+        # "The command exited with code 2" already says the code, so the red chip under it was a second label
+        # with nothing new; a sentence that says something else keeps the chip as the code's one place.
+        plain = dashboard._fail_banner("failed", {}, ("make test", 2))
+        self.assertIn("The command exited with code 2", text(plain))
+        self.assertIn('<p class="fail-c"><code>make test</code></p>', plain)
+        self.assertNotIn('class="exit', plain)
+        check = dashboard._fail_banner("failed", {"accept": "pytest -q"}, ("pytest -q", 1))
+        self.assertIn("The done-when check failed:", text(check))
+        self.assertIn('<span class="exit mono">exit 1</span>', check)
+        found = dashboard._fail_banner("failed", {}, ("test -s notes.md", 1))
+        self.assertIn("The command failed: notes.md is missing or empty", text(found))
+        self.assertIn('<span class="exit mono">exit 1</span>', found)
+
+    def test_a_log_card_counts_only_the_lines_kept_out_of_view(self):
+        # critic r26: 'Where it stopped · 2 lines' over the two lines it shows counts nothing hidden. The count
+        # stays only for a log longer than the card's tail, or a kept tail cut from a longer log.
+        broke = opened(live_view(), "broke-job", kind="local-shell")
+        broke["open"]["log"] = "one\ntwo"
+        error = re.search(r'data-region="j-error".*?</section>',
+                          pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn("Where it stopped", error)
+        self.assertIn("two", error)
+        self.assertNotIn('class="lines', error)
+        broke["open"]["log"] = "\n".join(f"line {n}" for n in range(1, 31))
+        error = re.search(r'data-region="j-error".*?</section>',
+                          pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">30 lines</span>', error)  # the count is real: only the tail shows
+        self.assertIn("line 30", error)
+        self.assertNotIn("line 18\n", error)
+        broke["open"].update(log="one\ntwo", log_cut=True)  # a kept tail: what shows is a part, so it counts itself
+        error = re.search(r'data-region="j-error".*?</section>',
+                          pane(dashboard.render(broke, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">2 lines</span>', error)
+
     def test_a_stopped_log_wraps_each_line_as_its_own_hanging_block(self):
         # Each tail line is its own block so a wrapped line indents under the line's start, not the card's edge;
         # a newline-joined tail, a line rendered outside its span, or a < reaching the page raw, must fail.
@@ -3295,6 +4740,30 @@ console.log(JSON.stringify([
         added["open"]["events"] = [{"seq": 1, "ts": NOW, "job": "live-job", "kind": "job-added",
                                     "data": {"kind": "local-shell"}}]
         self.assertIn(f"Added to run on {dashboard.HERE}", text(dashboard.render(added, NOW, token=TOKEN)))
+
+    def test_a_patch_row_drops_its_size_once_it_says_what_the_patch_changes(self):
+        # A patch row reading '2 files +2 −2 1.3 KB' says the size where the counts are the fact a reader needs:
+        # once the row shows what the patch changes, the byte size must go. Any other file's row keeps its size —
+        # there it is the row's one fact. On a phone the summary keeps 'N files' (what the link cannot say) and
+        # sheds a lone path, which repeats the row's link.
+        patch = ("diff --git a/x.py b/x.py\n--- a/x.py\n+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"
+                 "diff --git a/y.py b/y.py\n--- a/y.py\n+++ b/y.py\n@@ -1 +1 @@\n-c\n+d\n")
+        done = opened(live_view(), "finished-job", kind="local-shell", log=None)
+        done["open"].update(files=[{"path": "changes.patch", "size": 300}, {"path": "notes.md", "size": 2048}],
+                            peek={"path": "changes.patch", "text": patch, "more": False})
+        body = pane(dashboard.render(done, NOW, token=TOKEN))
+        rows = re.findall(r'<li class="session-file">(.*?)</li>', body, re.S)
+        patch_row = next(r for r in rows if ">changes.patch<" in r)
+        self.assertIn('<span class="peek-sum"><span class="mono files">2 files</span>'
+                      '<span class="n add">+2</span><span class="n del">−2</span></span>', patch_row)
+        self.assertNotIn("session-file-size", patch_row)
+        note_row = next(r for r in rows if ">notes.md<" in r)
+        self.assertIn('<span class="session-file-size">2.0 KB</span>', note_row)
+        # the phone rule sheds the name only when it is a lone path: the 'N files' span is marked to stay
+        self.assertIn('<span class="mono">x.py</span>', dashboard._diff_head("+++ b/x.py\n@@ -1 +1 @@\n-a\n+b\n"))
+        phone = dashboard.STYLE.split("/* phone patch head */", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".peek-sum .mono:not(.files) { display: none; }", phone)
+        self.assertNotIn(".peek-sum .mono { display: none; }", phone)
 
     def test_today_opens_on_what_needs_you(self):
         # The queue belongs to the only sidebar, and the main workspace keeps the composer and live background.
@@ -3362,9 +4831,68 @@ console.log(JSON.stringify([
         self.assertIn("function echoTitle()", dashboard.SCRIPT)
         self.assertIn("document.addEventListener('rh:page', echoTitle);", dashboard.SCRIPT)
         self.assertIn("new IntersectionObserver(", dashboard.SCRIPT.split("function echoTitle()", 1)[1])
-        self.assertIn(".detail .jd-head.echo h1 { opacity: 0; }", dashboard.STYLE)
-        self.assertIn(".detail .jd-head-in > h1 { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }",
+        self.assertIn(".detail .jd-head.echo :is(h1, .job-worker) { opacity: 0; }", dashboard.STYLE)
+        self.assertIn(".detail .jd-head-in > :is(h1, .job-worker) { transition: opacity 160ms cubic-bezier(0.16, 1, 0.3, 1); }",
                       dashboard.STYLE)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_job_header_title_does_not_flash_before_the_script_decides(self):
+        # The server renders the head without 'echo', so the title painted for a frame and faded out once
+        # echoTitle() ran (a design review saw it at 0.0 s, gone by 0.25 s). Until the script decides, the live
+        # app hides the title and the worker crumb with no transition; echoTitle() marks the head 'ready' on the
+        # next frame, echo or not. A snapshot has no data-live-app, so it keeps its title.
+        rule = dashboard.STYLE.split("\nhtml[data-live-app] .detail .jd-head:not(.ready) :is(h1, .job-worker) {",
+                                     1)[1].split("}", 1)[0]
+        self.assertIn("opacity: 0", rule)
+        self.assertIn("transition: none", rule)
+        code = dashboard.SCRIPT[dashboard.SCRIPT.index("let echoIo = null;"):]
+        code = code[:code.index("\n}\n") + 3]
+        probe = """
+const assert = require('node:assert/strict');
+function headStub() {
+  const classes = new Set(), calls = [];
+  return { calls,
+    classList: {
+      add: c => { calls.push(['add', c]); classes.add(c); },
+      remove: c => { calls.push(['remove', c]); classes.delete(c); },
+      toggle: (c, on) => {
+        calls.push(['toggle', c, on]);
+        const yes = on === undefined ? !classes.has(c) : on;
+        if (yes) classes.add(c); else classes.delete(c);
+        return yes;
+      },
+      contains: c => classes.has(c),
+    },
+    has: c => classes.has(c) };
+}
+function exercise(withTwin) {
+  const head = headStub();
+  const h = { textContent: 'Fix the flaky suite', closest: () => head };
+  const scroller = {};
+  const twin = { textContent: 'Fix the flaky suite: it passes now' };
+  const seen = [];
+  class IntersectionObserver {
+    constructor(cb, opts) { this.cb = cb; this.opts = opts; }
+    observe(el) { seen.push(el); }
+    disconnect() {}
+  }
+  const window = { IntersectionObserver };
+  const $ = sel => sel === '.jd-scroll' ? scroller : h;
+  const $$ = () => withTwin ? [twin] : [];
+  const requestAnimationFrame = fn => { fn(); return 1; };
+""" + code + """
+  echoTitle();
+  assert(head.has('ready'), 'the head is marked decided on the next frame');
+  assert.equal(head.has('echo'), withTwin);
+  assert.equal(seen.length, withTwin ? 1 : 0);
+}
+exercise(true);
+exercise(false);
+console.log('ECHO TITLE PASSED');
+"""
+        r = subprocess.run(["node", "-e", probe], capture_output=True, text=True, encoding="utf-8", timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(r.stdout.strip(), "ECHO TITLE PASSED")
 
     def test_an_inbox_rows_run_id_reads_as_an_identifier(self):
         # The run id under the reason was the same sans one pixel smaller in a near-identical grey, so the two read
@@ -3677,10 +5205,22 @@ console.log(JSON.stringify([
         self.assertIn(">rh3-composer-agents<", page)
         self.assertIn(".c-strip .where-bar { top: auto; bottom: calc(100% + ", dashboard.STYLE)
         # on a phone, with no row under it, the composer sits at the reply box's 24px from the foot
-        self.assertIn(".sea-page > .dock:has(> .c-strip.has-repo) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
+        self.assertIn(".sea-page > .dock:has(> .c-strip) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
                       dashboard.STYLE)
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
+
+    def test_the_line_under_the_heading_clears_it_with_no_repository_known(self):
+        # The packaged app's first run knows no repository, so its page is headed "What are we building?". The
+        # where-bar ("This Mac", the branch) sits 14px above the composer on every new-job page, but only a
+        # repository-named page made room for it: the question kept 24px and the bar ran over its foot (seen in
+        # the 0.20.1 macOS build). The room, and the phone's foot padding, must not depend on a repository.
+        bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
+        self.assertIn('class="where-bar"', bare.split('<section class="c-strip', 1)[1].split("</section>", 1)[0])
+        self.assertIn(".c-strip .compose-intro { margin-bottom: 52px; }", dashboard.STYLE)
+        self.assertNotIn(".c-strip.has-repo .compose-intro { margin-bottom", dashboard.STYLE)
+        self.assertIn(".sea-page > .dock:has(> .c-strip) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
+                      dashboard.STYLE)
 
     def test_every_floating_surface_is_cut_from_one_navy(self):
         # Menus and the model picker floated on navy glass while the Cancel popover and the toast were neutral grey:
@@ -3733,8 +5273,8 @@ console.log(JSON.stringify([
         for spec in ("-webkit-line-clamp: unset", "overflow: visible", "max-height: none"):
             self.assertIn(spec, bubble)
         self.assertIn("b.querySelector(':scope > .um-t') || b", dashboard.SCRIPT)
-        # the Inbox title fades the same way
-        self.assertIn("linear-gradient(to right, #000 calc(100% - 64px), transparent)",
+        # the Inbox title fades too, its last line downward, with its Show all on the meta line under it (r31 F11)
+        self.assertIn("linear-gradient(to bottom, #000 calc(100% - 1lh), transparent)",
                       rule(".q-head .q-title.user-message:has(+ .ask-more):not(.whole)"))
 
     def test_a_files_preview_toggle_sits_on_its_row(self):
@@ -3847,6 +5387,27 @@ console.log(JSON.stringify([
         self.assertIn('<span class="lines mono">last 200 lines</span>', page)
         self.assertNotIn('<div class="jd-dock">', page)
 
+    def test_a_live_log_in_view_does_not_count_itself(self):
+        # r26: a stalled job's open fold read 'Output · 1 line' over its one line. A live log of twenty lines or
+        # fewer fits the open card without scrolling, so its summary counts nothing; a kept tail or a log that
+        # scrolls keeps its count.
+        stalled = opened(live_view(), "live-job", kind="local-shell", state="stalled")
+        stalled["open"]["log"] = "still here"
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>',
+                            pane(dashboard.render(stalled, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="worked-output">Output</span>', summary)
+        self.assertNotIn('class="lines', summary)
+        running = opened(live_view(), "live-job", kind="local-shell")
+        running["open"]["log"] = "\n".join(f"line {n}" for n in range(50))
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>',
+                            pane(dashboard.render(running, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">50 lines</span>', summary)
+        cut = opened(live_view(), "live-job", kind="local-shell")
+        cut["open"].update(log="one\ntwo", log_cut=True)
+        summary = re.search(r'<summary class="worked-summary">.*?</summary>',
+                            pane(dashboard.render(cut, NOW, token=TOKEN)), re.S).group(0)
+        self.assertIn('<span class="lines mono">last 2 lines</span>', summary)
+
     def test_a_job_keeps_its_full_request_and_searchable_title(self):
         # A clipped request or a palette entry too long to read would make it harder to identify the job.
         view = opened(live_view(), "live-job")
@@ -3894,7 +5455,8 @@ console.log(JSON.stringify([
         card = re.search(r'<div class="ask-card launch">.*?</ol>', pane(dashboard.render(view, NOW, token=TOKEN)),
                          re.S).group(0)
         self.assertRegex(card, r'<div class="clip" data-clip><textarea class="prompt mono" id="prompt-web-job"')
-        self.assertIn('<button type="button" class="btn small quiet" data-more hidden>Show all</button>', card)
+        self.assertIn('<button type="button" class="btn small quiet" data-more aria-expanded="false" hidden>'
+                      'Show all</button>', card)
         # The text is cut by its own box at exactly four lines; the padding and border sit outside it, on the clip,
         # so no part of a fifth line shows in them.
         rule = dashboard.STYLE.split(".steps .clip .prompt {", 1)[1].split("}", 1)[0]
@@ -3909,6 +5471,35 @@ console.log(JSON.stringify([
         self.assertIn(".clip.whole::after, .clip.open::after { display: none; }", dashboard.STYLE)
         self.assertIn("if (m) { more(m); return; }", dashboard.SCRIPT)
         self.assertIn("box.style.height = open ? box.scrollHeight + 'px' : '';", dashboard.SCRIPT)
+
+    def test_every_in_place_expander_ends_on_one_chevron(self):
+        # The three in-place expanders share one look: the label, then '›' folded and '⌄' open, 4px on at the
+        # label's own size and colour — the folded ask's Show all, the clipped prompt's, the log fold's. An
+        # expander missing its chevron, or one sized or coloured differently, must fail.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        for sel in (".ask-more::after", "[data-more]::after", "details.out-more .om-show::after"):
+            with self.subTest(folded=sel):
+                body = rule(sel)
+                self.assertIn('content: "›"', body)
+                self.assertIn("margin-left: 4px", body)
+        for sel in ('.ask-more[aria-expanded="true"]::after', '[data-more][aria-expanded="true"]::after',
+                    "details.out-more .om-hide::after"):
+            with self.subTest(open=sel):
+                self.assertIn('content: "⌄"', rule(sel))
+        for sel in (".ask-more::after", "[data-more]::after", "details.out-more .om-show::after",
+                    "details.out-more .om-hide::after"):
+            with self.subTest(plain=sel):
+                body = rule(sel)
+                self.assertNotIn("font", body)  # the chevron keeps the label's own size
+                self.assertNotIn("color", body)  # and its own colour
+        # The clipped prompt's Show all starts folded, and the page's script opens and closes it.
+        view = opened(live_view(), "web-job")
+        view["open"]["prompt"] = "line\n" * 12
+        card = re.search(r'<div class="ask-card launch">.*?</ol>', pane(dashboard.render(view, NOW, token=TOKEN)),
+                         re.S).group(0)
+        self.assertIn('data-more aria-expanded="false" hidden>Show all</button>', card)
+        more = dashboard.SCRIPT.split("function more(b) {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("b.setAttribute('aria-expanded', String(open))", more)
 
     def test_sessions_use_inline_status_and_inbox_keeps_its_seat_tones(self):
         for jid, status in (("broke-job", "Failed"), ("finished-job", "Done"), ("live-job", "Running")):
@@ -3974,19 +5565,69 @@ console.log(JSON.stringify([
         self.assertEqual(needs.count('class="p-row"'), badge)
         self.assertNotIn('<p class="p-sec">Jobs</p>', pal)
         row = dashboard.STYLE.split(".p-row {", 1)[1].split("}", 1)[0]
-        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) 240px auto", row)
+        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) 240px 48px auto", row)
         meta = dashboard.STYLE.split(".p-s {", 1)[1].split("}", 1)[0]
         for rule in ("flex-wrap: wrap", "justify-content: flex-end", "height: 20px", "line-height: 20px",
                      "overflow: hidden"):
             self.assertIn(rule, meta)
         self.assertNotIn("text-overflow", meta)
 
+    def test_a_palette_group_of_one_state_does_not_repeat_its_word(self):
+        # critic r26 F3: every Ended today row said 'Done ·' under a heading that already says they ended, beside the
+        # done ring, on two lines on a phone. A group whose rows all share one state word drops it and is one line.
+        page = dashboard.render(live_view(), NOW, token=TOKEN)
+        pal = re.search(r'<dialog class="pal".*?</dialog>', page, re.S).group(0)
+        done = re.search(r'<a class="p-row one" role="option" data-id="finished-job"[^>]*>.*?</a>', pal, re.S)
+        self.assertIsNotNone(done, "the Ended today row is a one-line row")
+        self.assertNotIn('class="p-w"', done.group(0))
+        # a group of mixed states keeps each word: it is what tells them apart
+        mixed = re.search(r'<a class="p-row" role="option" data-id="broke-job"[^>]*>.*?</a>', pal, re.S).group(0)
+        self.assertIn('<span class="p-w">Failed</span>', mixed)
+        phone = dashboard.STYLE.split("@media (max-width: 600px) {\n  .p-row {", 1)[1].split("\n}", 1)[0]
+        self.assertIn(".p-row.one { grid-template-rows: auto;", phone)
+        self.assertIn(".p-row.one .p-s { display: none;", phone)
+
+    def test_every_palette_row_keeps_its_time_on_the_title_line(self):
+        # On a phone a 'Needs you' or 'Live' row kept its time in the grey second line ('Failed · 05:31'), while an
+        # 'Ended today' row put it on the title line's right — one list with times in two places, so scanning by
+        # time broke at the group boundary. Every row's time is a cell of its own after the grey line's span, and
+        # the phone sheet's third column holds it on the title line for every row, where the one-line rows always
+        # had it; a row with no time keeps its layout, and the grey line keeps the state word only.
+        view = live_view()
+        view["live"].append({"id": "running-job", "state": "running", "paused": False, "detail": "",
+                             "external_id": None})
+        view["meta"] = {"running-job": {"kind": "local-shell", "started": NOW - 1800},
+                        "finished-job": {"kind": "local-shell", "updated": NOW - 600}}
+        pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(view, NOW, token=TOKEN), re.S).group(0)
+        timed = 0
+        for row in re.findall(r'<a class="p-row[^>]*>.*?</a>', pal, re.S):
+            grey = re.search(r'<span class="p-s">[^<]*(?:<span [^>]*>[^<]*</span>)*</span>', row)
+            self.assertIsNotNone(grey)
+            when = row.find('<span class="p-when')
+            if when == -1:
+                continue  # a row with no time keeps its layout
+            timed += 1
+            self.assertNotIn('class="p-when', grey.group(0), "the time is inside the grey line")
+            self.assertEqual(when, grey.end(), "the time is not a cell of its own after the grey line")
+        self.assertGreaterEqual(timed, 3)  # Needs you, Live and Ended today rows all carry a time
+        row = re.search(r'<a class="p-row" role="option" data-id="live-job"[^>]*>.*?</a>', pal, re.S).group(0)
+        self.assertRegex(row, r'<span class="p-s"><span class="p-w">[^<]+</span></span>'
+                              r'<span class="p-when mono num">[^<]+</span>')
+        # the phone sheet gives every row a title-line column for it and pins it there
+        phone = dashboard.STYLE.split("@media (max-width: 600px) {\n  .p-row {", 1)[1].split("\n}", 1)[0]
+        self.assertIn("grid-template-columns: 20px minmax(0, 1fr) auto", phone.split("}", 1)[0])
+        self.assertIn(".p-row .p-when { grid-area: 1 / 3", phone)
+        # on a wide window the time's column is one fixed width, so '15:37' and '23 Nov' rows keep the state column on
+        # one edge
+        self.assertIn("@media (min-width: 601px) { .p-row { grid-template-columns: 20px minmax(0, 1fr) 290px 48px auto; } }",
+                      dashboard.STYLE)
+
     def test_on_a_phone_the_clashing_names_brief_leaves_the_grey_line(self):
         # Two listed jobs that share a name tell their palette rows apart with the shared name on the grey line,
-        # in a span of its own after the time; on a phone that third phrase is cut to letters that name nothing
-        # ('In the research-harness …'), so the stylesheet hides it under 480px and the row reads 'Running ·
-        # 13:46'. The id still leads the title, the data-id still finds the row when typed, and a name that does
-        # not clash never carries the span.
+        # in a span of its own after the state word; on a phone that second phrase is cut to letters that name
+        # nothing ('In the research-harness …'), so the stylesheet hides it under 480px and the grey line keeps
+        # the state alone. The id still leads the title, the data-id still finds the row when typed, and a name
+        # that does not clash never carries the span.
         view = live_view()
         view["meta"] = {**view.get("meta", {}),
                         "live-job": {"kind": "local-shell", "brief": "Same brief."},
@@ -3997,8 +5638,8 @@ console.log(JSON.stringify([
             row = re.search(rf'<a class="p-row" role="option" data-id="{jid}"[^>]*>.*?</a>', pal, re.S).group(0)
             self.assertIn(f'<span class="p-t">{jid}</span>', row)
             self.assertRegex(row, r'<span class="p-s"><span class="p-w">[^<]+</span>'
-                                   r'<span class="p-when mono num">[^<]+</span>'
-                                   r'<span class="p-b">Same brief</span>')
+                                   r'<span class="p-b">Same brief</span></span>'
+                                   r'<span class="p-when mono num">[^<]+</span>')
         other = re.search(r'<a class="p-row" role="option" data-id="broke-job"[^>]*>.*?</a>',
                           pal, re.S).group(0)
         self.assertNotIn('class="p-b"', other)

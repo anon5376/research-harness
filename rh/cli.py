@@ -101,6 +101,10 @@ def main(argv=None):
     c.add_argument("id")
     c.add_argument("file", help="a UTF-8 reply file, or - for stdin")
 
+    p = sub.add_parser("mcp", help="MCP server over stdio so GPT Pro in ChatGPT can read and answer gpt-chat jobs; "
+                       "run it through OpenAI's tunnel-client (docs/gpt-pro-mcp.md)")
+    p.add_argument("--tunnel", action="store_true", help="run tunnel-client with this server as its stdio command")
+
     p = sub.add_parser("land", help="commit a done cloud job's diff on local branch cloud/<job> (never pushes)")
     p.add_argument("id")
 
@@ -227,12 +231,32 @@ def cmd_chat(args, cfg):
     return 0
 
 
+def cmd_mcp(args, cfg):
+    from rh import mcp
+    return mcp.run_tunnel(cfg) if args.tunnel else mcp.run(cfg)
+
+
 def _recent(jobs, now):
     """The ten newest ended jobs, plus any failure from the last day: it still waits on a person, so newer ends
-    (a swarm alone ends three) must not push it out of the status view and off the app's Needs you."""
+    must not push it out of the status view and off the app's Needs you. Ended jobs that share a spec goal (a
+    /swarm's runs and its judge) count once toward the ten: the slot is taken when the goal's newest ended job
+    is reached, and every job of a goal that got a slot is kept, so the app still folds the swarm into its
+    judge row."""
     ended = sorted((j for j in jobs if j["state"] in TERMINAL), key=lambda j: -j["updated"])
-    return [j for n, j in enumerate(ended) if n < 10 or (j["state"] not in ("done", "cancelled")
-                                                         and now - j["updated"] < 86400)]
+    kept, slots, goals = [], 0, set()
+    for j in ended:
+        goal = (j.get("spec") or {}).get("goal")
+        if goal and goal in goals:
+            kept.append(j)
+            continue
+        if slots < 10:
+            slots += 1
+            if goal:
+                goals.add(goal)
+            kept.append(j)
+        elif j["state"] not in ("done", "cancelled") and now - j["updated"] < 86400:
+            kept.append(j)
+    return kept
 
 
 def cmd_status(args, cfg):
@@ -637,4 +661,4 @@ def cmd_config(args, cfg):
 COMMANDS = {"job": cmd_job, "goal": cmd_goal, "status": cmd_status, "inbox": cmd_inbox, "stop": cmd_stop, "resume": cmd_resume,
             "supervise": cmd_supervise, "cloud": cmd_cloud, "land": cmd_land, "env": cmd_env, "doctor": cmd_doctor,
             "lease": cmd_lease, "service": cmd_service, "caps": cmd_caps, "config": cmd_config, "serve": cmd_serve,
-            "seats": cmd_seats, "chat": cmd_chat, "improve": cmd_improve}
+            "seats": cmd_seats, "chat": cmd_chat, "improve": cmd_improve, "mcp": cmd_mcp}

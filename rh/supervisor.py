@@ -334,11 +334,24 @@ class Supervisor:
             try:
                 st = self.cloud.status(j["external_id"])
             except RouteUnavailable as e:
-                self.led.route_fail(CLOUD, e.reason, e.retry_after)
-                return
+                if not self._same_state(j):
+                    return
+                if e.reason in OUTAGES:
+                    self.led.route_fail(CLOUD, e.reason, e.retry_after)
+                    return
+                prior = re.match(r"status error ([12])/3:", j["detail"])
+                tries = int(prior.group(1)) + 1 if prior else 1
+                detail = f"status error {tries}/3: {e.detail[:120]}"
+                if tries < 3:
+                    self.led.set_state(jid, j["state"], detail)
+                    return
+                return self._finish(j, "failed", collect.receipt(j, CLOUD, [], detail=detail), s)
             if not self._same_state(j):
                 return
             if st["state"] == "running":
+                # a good status clears a pending status-error count, so the next error starts at 1/3 again
+                if re.match(r"status error [12]/3:", j["detail"]):
+                    self.led.set_state(jid, j["state"], f"launched {j['external_id']}")
                 return self._alive(j)
             if st["state"] in ("failed", "aborted"):
                 return self._finish(j, st["state"], collect.receipt(

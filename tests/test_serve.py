@@ -205,7 +205,8 @@ class ServeTest(unittest.TestCase):
         self.assertEqual(code, 200)
         for group in ("Needs you", "Live", "Up next", "Ended today"):
             self.assertIn(f">{group}</h3>", page)
-        self.assertRegex(page, r'id="compose-title" tabindex="-1" data-repo="[^"]+">[^<]+</h1>')  # the repository heads it
+        self.assertRegex(page, r'id="compose-title" tabindex="-1" data-repo="[^"]+"><button type="button" '
+                               r'class="folder-btn"[^>]*>.*?<span class="fb-name">[^<]+</span>')  # the repository heads it
         self.assertIn('data-mode="coding"', page)
         self.assertIn('data-mode="research"', page)
         self.assertIn('/actions?t=serve-test-key', page)
@@ -318,14 +319,15 @@ class ServeTest(unittest.TestCase):
         self.cfg["repo"]["path"] = str(named)
         page = self.request("/new")[2]
         # the configured repository heads the page; the line under it names the branch
-        self.assertIn('data-repo="harness-visual-test">harness-visual-test</h1>', page)
+        self.assertIn('data-repo="harness-visual-test">', page)
+        self.assertIn('<span class="fb-name">harness-visual-test</span>', page)
         self.assertNotIn('title="Repository"', page)
         self.assertRegex(page, r'<span class="where-chip" title="Branch"><svg[^>]*>.*?</svg><span class="wc-t">main</span></span>')
         self.assertNotIn('compose-trail', page)
         self.cfg["repo"]["path"] = str(self.base / "missing")
         page = self.request("/new")[2]
         self.assertNotIn('where-chip"', page)
-        self.assertIn('tabindex="-1">What are we building?</h1>', page)  # no repository known: the page asks
+        self.assertIn('<span class="fb-name">Choose a folder</span>', page)  # no repository known: the page asks
         # A folder that is no git working tree is no workspace: the packaged desktop app's default repo path is its
         # own bundle's Contents/Resources, which headed a fresh install's page as 'Resources' (Devin macOS DMG check)
         bundle = self.base / "Research Harness.app" / "Contents" / "Resources"
@@ -333,7 +335,8 @@ class ServeTest(unittest.TestCase):
         self.cfg["repo"]["path"] = str(bundle)
         page = self.request("/new")[2]
         self.assertNotIn('data-repo="Resources"', page)
-        self.assertIn('tabindex="-1">What are we building?</h1>', page)
+        self.assertNotIn('data-folder="' + str(bundle.resolve()), page)
+        self.assertIn('<span class="fb-name">Choose a folder</span>', page)
 
     def test_inbox_opens_on_the_newest_item_and_each_item_has_its_own_address(self):
         # An Inbox that opens on an older item, a hand launch opened from it without its prompt, or an item address
@@ -647,7 +650,7 @@ class ServeTest(unittest.TestCase):
         # Under 200 lines and 64 KB the page has the whole log; past 64 KB it has the end, in fewer than 200 lines.
         self.local_job("short-local", log=b"one\ntwo\nthree\n")
         page = self.request("/job/short-local")[2]
-        self.assertIn('<span class="lines mono">3 lines</span>', page)
+        self.assertNotIn('class="lines', page)  # the log is whole and in view, so no count repeats it
         self.assertIn('class="job-result"', page)
         self.assertNotIn('<div class="jd-prog">', page)
         self.local_job("wide-local", log=b"".join(b"%04d " % i + b"x" * 995 + b"\n" for i in range(100)))
@@ -659,7 +662,7 @@ class ServeTest(unittest.TestCase):
         (self.home / "jobs" / "long-done" / "out.log").write_bytes(lines)
         page = self.request("/job/long-done")[2]
         self.assertIn('<span class="lines mono">401 lines</span>', page)  # the card names the whole once (r22 F7)
-        self.assertIn('<span class="lines mono">last 200 lines</span>', page)  # r24 F5: with its unit
+        self.assertIn('<span class="om-show">Show last 200 lines</span>', page)  # r24 F5, r27 F13: in the card's foot
         self.assertIn(f"Added to run on {dashboard.HERE}", page)
         code, _, page = self.request("/job/ghost")
         self.assertEqual(code, 404)
@@ -751,6 +754,128 @@ class ServeTest(unittest.TestCase):
         with self.ledger() as led:
             self.assertIsNone(led.job("use-a-banned-model"))
 
+    def test_a_running_agents_page_shows_what_became_of_each_message(self):
+        # The job's page rebuilds the conversation from the inbox and the agent's marks: steers that landed, what
+        # waits Up next with its latest words, and nothing the owner removed. A removed message still listed, an
+        # edit not shown, or an edit applied to a message already sent, fails.
+        folder = self.home / "runs" / "talk"
+        folder.mkdir(parents=True)
+        lines = [{"id": "a" * 12, "mode": "steer", "text": "use tabs"},
+                 {"id": "b" * 12, "mode": "queue", "text": "the docs"},
+                 {"id": "c" * 12, "mode": "queue", "text": "the tests"},
+                 {"id": "d" * 12, "mode": "update", "text": "the docs, briefly", "target": "b" * 12},
+                 {"id": "e" * 12, "mode": "remove", "text": "", "target": "c" * 12},
+                 {"id": "f" * 12, "mode": "queue", "text": "sent already"},
+                 {"id": "0" * 12, "mode": "update", "text": "too late", "target": "f" * 12},
+                 {"id": "1" * 12, "mode": "stop", "text": ""}]
+        (folder / "inbox.jsonl").write_text("".join(json.dumps(m) + "\n" for m in lines) + '{"id": "half', "utf-8")
+        (folder / "inbox-state.json").write_text(json.dumps(
+            {"a" * 12: "steered", "b" * 12: "queued", "c" * 12: "queued", "f" * 12: "sent", "0" * 12: "dropped"}))
+        got = self.serve._inbox(folder)
+        self.assertEqual([(m["text"], m["mode"], m["state"]) for m in got],
+                         [("use tabs", "steer", "steered"), ("the docs, briefly", "queue", "queued"),
+                          ("the tests", "queue", "removed"), ("sent already", "queue", "sent"), ("", "stop", "waiting")])
+        self.assertEqual(self.serve._inbox(self.home / "runs" / "none"), [])
+
+    def test_the_owner_can_steer_queue_or_stop_a_running_claude_job(self):
+        # After T3 Code: a running agent takes messages. A message to a job that is not running, not an agent on
+        # this Mac, or whose agent cannot take one yet, accepted anyway (it would vanish), or a steer or queue with no
+        # words, must fail; so must one that is not written to the job's inbox with its mode and an id to follow.
+        def agent_job(jid, provider):
+            command = [sys.executable, str(Path(dashboard.__file__).with_name("agent.py")), provider,
+                       f"/usr/local/bin/{provider}", str(self.repo), "Build it.", "--model", "m"]
+            with self.ledger() as led:
+                led.add_job({"id": jid, "kind": "local-shell", "write_root": f"runs/{jid}/", "write_paths": [],
+                             "brief": "Build it.", "needs": [], "command": command}, pinned_sha=self.sha)
+                led.set_state(jid, "ready")
+                led.set_state(jid, "launching", route="local-shell")
+                led.set_state(jid, "running")
+            (self.home / "runs" / jid).mkdir(parents=True, exist_ok=True)
+        agent_job("live", "claude")
+        agent_job("codex-live", "codex")
+        self.job("ready")  # web-job: a cloud job, not running
+        sent = []
+        for mode, text in (("steer", "use tabs"), ("queue", "and the docs"), ("stop", "")):
+            code, _, body = self.request("/job/message", {"job": "live", "mode": mode, "text": text})
+            self.assertEqual(code, 200, body)
+            sent.append(json.loads(body)["id"])
+        lines = [json.loads(line) for line in (self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()]
+        self.assertEqual([(m["id"], m["mode"], m["text"]) for m in lines],
+                         list(zip(sent, ("steer", "queue", "stop"), ("use tabs", "and the docs", ""))))
+        self.assertEqual(len(set(sent)), 3)
+        for fields, want in (({"job": "live", "mode": "steer", "text": "  "}, 400),
+                             ({"job": "live", "mode": "shout", "text": "hi"}, 400),
+                             ({"job": "web-job", "mode": "queue", "text": "hi"}, 409),
+                             ({"job": "codex-live", "mode": "steer", "text": "hi"}, 409),
+                             ({"job": "nope", "mode": "queue", "text": "hi"}, 404)):
+            with self.subTest(**fields):
+                self.assertEqual(self.request("/job/message", fields)[0], want)
+        self.assertEqual(len((self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()), 3)
+        # a queued message's row acts on it by its id: send it as a steer, take it out, or change its words
+        for fields in ({"mode": "promote", "target": sent[1]}, {"mode": "remove", "target": sent[1]},
+                       {"mode": "update", "target": sent[1], "text": "the docs, briefly"}):
+            self.assertEqual(self.request("/job/message", {"job": "live", **fields})[0], 200)
+        last = [json.loads(line) for line in (self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()][-3:]
+        self.assertEqual([(m["mode"], m["target"]) for m in last], [("promote", sent[1])] * 1 +
+                         [("remove", sent[1]), ("update", sent[1])])
+        self.assertEqual(last[-1]["text"], "the docs, briefly")
+        for fields in ({"mode": "promote"}, {"mode": "update", "target": sent[1], "text": " "}):
+            self.assertEqual(self.request("/job/message", {"job": "live", **fields})[0], 400)
+        self.assertEqual(self.request("/job/message", {"job": "live", "mode": "queue", "text": "x"}, token=False)[0],
+                         403)
+
+    def test_a_local_agent_works_in_the_folder_the_composer_picked(self):
+        # The owner: "where is working folder selection?" A This Mac job (or swarm) that still works in the configured
+        # repository, a folder that is not a git working tree let through, a cloud job sent to a folder the cloud
+        # cannot see, a refused folder that is not kept on the form, or a picked folder missing from the menu after,
+        # must fail.
+        other = self.base / "other"
+        (other / "sub").mkdir(parents=True)
+        for args in (("init", "-q", "-b", "main"), ("config", "user.name", "test"),
+                     ("config", "user.email", "test@example.com"), ("commit", "-q", "--allow-empty", "-m", "start")):
+            subprocess.run(["git", "-C", str(other), *args], check=True, capture_output=True)
+        plain = self.base / "plain"
+        plain.mkdir()
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/codex"):
+            for jid, folder in (("in-other", other), ("in-sub", other / "sub")):
+                self.assertEqual(self.request("/job", {"id": jid, "kind": "local-agent", "brief": "fix it",
+                                                       "folder": str(folder)})[0], 303)
+            for jid, folder in (("in-plain", plain), ("relative", "other"), ("gone", self.base / "gone")):
+                self.request("/job", {"id": jid, "kind": "local-agent", "brief": "fix it", "folder": str(folder)})
+        with self.ledger() as led:
+            for jid in ("in-other", "in-sub"):  # a folder inside a repository works at that repository's root
+                self.assertEqual(led.job(jid)["spec"]["command"][4], str(other.resolve()))
+            for jid in ("in-plain", "relative", "gone"):
+                self.assertIsNone(led.job(jid))
+        self.request("/job", {"id": "in-plain", "kind": "local-agent", "brief": "fix it", "folder": str(plain)})
+        _, _, page = self.request("/new")
+        self.assertIn("is not a git repository", page)
+        self.assertIn(f'name="folder" value="{plain}"', page)  # the refused folder stays on the form to correct
+        self.request("/job", {"id": "cloud-other", "kind": "codex-cloud", "brief": "fix it", "folder": str(other)})
+        with self.ledger() as led:
+            self.assertIsNone(led.job("cloud-other"))
+        # the composer's folder menu lists the folders jobs used, newest first, and the configured repository
+        _, _, page = self.request("/new")
+        menu = page.split('class="folder-menu"', 1)[1].split("</div>", 1)[0]
+        self.assertLess(menu.index(f'data-folder="{other.resolve()}"'),
+                        menu.index(f'data-folder="{Path(self.cfg["repo"]["path"]).resolve()}"'))
+        self.assertIn("Choose folder", menu)
+        # a /swarm sends every run, and its judge, to the picked folder
+        config.set_value("swarm.models", "swe-2-max", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        with patch("rh.serve.shutil.which", return_value="/usr/local/bin/devin"):
+            self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Fix it there", "folder": str(other)})
+        with self.ledger() as led:
+            runs = [j for j in led.jobs() if j["id"].startswith("fix-it-there.")]
+        self.assertTrue(runs)
+        for job in runs:
+            self.assertEqual(job["spec"]["command"][4], str(other.resolve()))
+        # the job's page names the folder beside where it runs, since it is not the configured repository
+        _, _, page = self.request("/job/in-other")
+        self.assertIn('<span class="job-folder"', page.split('class="job-worker"', 1)[1].split("</p>", 1)[0])
+        _, _, page = self.request("/job/fix-it-there.w1")
+        self.assertIn("other", page.split('class="job-worker"', 1)[1].split("</p>", 1)[0])
+
     def test_slash_swarm_runs_the_brief_on_every_swarm_model_then_a_judge_on_what_they_did(self):
         # /swarm must fan out to each model Settings names, and the judge must wait for all of them, see each run's
         # folder, and open as the swarm's page; a /swarm that ran one job, or a judge that needed every run done, fails.
@@ -783,6 +908,63 @@ class ServeTest(unittest.TestCase):
             self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Do more"})
         with self.ledger() as led:
             self.assertIsNone(led.job("do-more.best"))
+
+    def test_a_hierarchy_preset_runs_a_plan_then_teams_then_their_managers_then_the_lead(self):
+        # Settings > Swarm presets: a vertical team. The lead plans first; each worker reads that plan and runs with
+        # its role's system prompt; each manager judges its own team; the lead judges the managers and lists the plan,
+        # so its page shows the whole team.
+        from rh import hierarchy
+        config.set_value("swarm.check", "python3 -I tests/run.py", self.cfg["home"])
+        self.cfg.update(config.load(self.cfg["home"]))
+        w = lambda m: {"role": "worker", "model": m, "effort": "", "count": 1, "children": []}  # noqa: E731
+        team = {"id": "deep", "name": "Deep", "shape": "vertical", "plan": True, "roles": hierarchy._roles(),
+                "tree": {"role": "lead", "model": "claude-opus-5-5", "effort": "max", "count": 1, "children": [
+                    {"role": "manager", "model": "swe-2-max", "effort": "", "count": 1,
+                     "children": [w("swe-2-max"), w("swe-2-flash-high")]},
+                    {"role": "manager", "model": "swe-2-high", "effort": "", "count": 1, "children": [w("swe-2-high")]}]}}
+        code, _, _ = self.request("/settings/swarm-presets", {"data": json.dumps({"active": "deep", "presets": [team]})})
+        self.assertEqual(code, 204)
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
+            code, headers, _ = self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Fix the typo"})
+        self.assertEqual(code, 303)
+        self.assertEqual(headers["Location"], "/job/fix-the-typo.best?t=" + self.token)
+        with self.ledger() as led:
+            jobs = {j["id"].split(".", 1)[1]: j["spec"] for j in led.jobs() if j["id"].startswith("fix-the-typo.")}
+        self.assertEqual(sorted(jobs), ["best", "m1", "m2", "plan", "w1", "w2", "w3"])
+        home = Path(self.cfg["home"])
+        arg = lambda spec, flag: [spec["command"][i + 1] for i, a in enumerate(spec["command"]) if a == flag]  # noqa: E731
+        self.assertTrue(jobs["plan"]["brief"].startswith(hierarchy.PLAN_ASK))
+        self.assertIn("lead agent", arg(jobs["plan"], "--role")[0])
+        for wid in ("w1", "w2", "w3"):
+            self.assertEqual(jobs[wid]["after"], ["fix-the-typo.plan"])
+            self.assertEqual(arg(jobs[wid], "--context"), [str(home / "runs" / "fix-the-typo.plan" / "answer.md")])
+            self.assertIn("worker agent", arg(jobs[wid], "--role")[0])
+            self.assertEqual(jobs[wid]["brief"], "Fix the typo")
+        self.assertEqual((jobs["m1"]["after"], jobs["m1"]["after_any"]), (["fix-the-typo.w1", "fix-the-typo.w2"], True))
+        self.assertEqual(arg(jobs["m1"], "--swarm"), [str(home / "runs" / f"fix-the-typo.{x}") for x in ("w1", "w2")])
+        self.assertEqual(arg(jobs["m1"], "--check"), ["python3 -I tests/run.py"])
+        self.assertEqual(jobs["m2"]["after"], ["fix-the-typo.w3"])
+        self.assertEqual(jobs["best"]["after"], ["fix-the-typo.plan", "fix-the-typo.m1", "fix-the-typo.m2"])
+        self.assertEqual(arg(jobs["best"], "--swarm"), [str(home / "runs" / f"fix-the-typo.{x}") for x in ("m1", "m2")])
+        self.assertEqual(jobs["best"]["command"][2:4], ["claude", "/usr/local/bin/claude"])
+        self.assertEqual(arg(jobs["best"], "--effort"), ["max"])
+        # a preset that names a model the policy does not allow starts nothing, and says which agent
+        code, _, _ = self.request("/settings/swarm-active", {"active": "astra-lead"})
+        self.assertEqual(code, 400)  # 'deep' replaced the defaults, so there is no such preset
+        hierarchy.save(self.cfg["home"], {**hierarchy.defaults(), "active": "astra-lead"})
+        with patch("rh.serve.shutil.which", side_effect=lambda name: f"/usr/local/bin/{name}"):
+            code, headers, _ = self.request("/job", {"id": "", "kind": "local-agent", "brief": "/swarm Do more"})
+        self.assertEqual((code, headers["Location"].split("?")[0]), (303, "/new"))  # back to the form, with why
+        self.assertIn("swarm preset Astra lead: its lead (plan): model gpt-6.2-astra is not in the model policy",
+                      html.unescape(self.request("/new")[2]))
+        with self.ledger() as led:
+            self.assertIsNone(led.job("do-more.best"))
+        # bad presets are refused with the reason, as plain text
+        code, headers, page = self.request("/settings/swarm-presets", {"data": json.dumps({"presets": [{"id": "Bad"}]})})
+        self.assertEqual((code, headers["Content-Type"]), (400, "text/plain; charset=utf-8"))
+        self.assertIn("bad preset id", page)
+        code, _, _ = self.request("/settings/swarm-active", {"active": "quick"})
+        self.assertEqual((code, hierarchy.load(self.cfg["home"])["active"]), (204, "quick"))
 
     def test_the_swarm_again_form_posts_a_goal_add(self):
         # The ended Swarm card's 'Swarm again' form posts the fields its page renders: the composer's /job post
@@ -853,6 +1035,59 @@ class ServeTest(unittest.TestCase):
                       rows["w1"])
         self.assertNotIn("sw-d", rows["w2"])
 
+    def test_a_swarms_judge_page_carries_the_kept_results_check(self):
+        # A judge's swarm-result.json can carry the harness's check on what it kept: when the judge combined runs,
+        # the page data's swarm_final holds it and the Swarm card's head reads 'Combined · Check passed/failed'.
+        for jid, after, after_any in (("swarm-fix.w1", [], False), ("swarm-fix.w2", [], False),
+                                      ("swarm-fix.best", ["swarm-fix.w1", "swarm-fix.w2"], True)):
+            spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Fix the typo.",
+                                       "command": ["true"], "after": after, "after_any": after_any})
+            with self.ledger() as led:
+                led.add_job(spec)
+                for step in ("ready", "launching", "running"):
+                    led.set_state(jid, step)
+                led.finish(jid, "done", {"route": "local-shell", "checks": [], "model_requested": None,
+                                         "model_served": None, "ended": time.time(), "detail": "ok"})
+        run = self.home / "runs" / "swarm-fix.best"
+        run.mkdir(parents=True)
+        head = lambda page: re.search(r'data-region="j-swarm".*?<div class="head">(.*?)</div>',  # noqa: E731
+                                      page, re.S).group(1)
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "combined", "check": "passed"}),
+                                               encoding="utf-8")
+        code, _, page = self.request("/job/swarm-fix.best")
+        self.assertEqual(code, 200)
+        self.assertIn("Combined" + dashboard._SEP_HTML + '<span class="sw-c">Check passed</span>', head(page))
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "combined", "check": "failed: exit 1"}),
+                                               encoding="utf-8")
+        page = self.request("/job/swarm-fix.best")[2]
+        self.assertIn('<span class="sw-c bad">Check failed</span>', head(page))
+        # a result the harness never checked leaves the head's 'Combined' to say it alone
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "combined"}), encoding="utf-8")
+        page = self.request("/job/swarm-fix.best")[2]
+        self.assertNotIn('class="sw-c', head(page))
+
+    def test_a_failed_swarms_judge_still_names_the_run_it_kept(self):
+        # A judge whose kept work failed the check ends failed, not done; its swarm-result.json still says what it
+        # kept, so the swarm is named by that run's work all the same.
+        for jid, after, after_any in (("swarm-fix.w1", [], False), ("swarm-fix.w2", [], False),
+                                      ("swarm-fix.best", ["swarm-fix.w1", "swarm-fix.w2"], True)):
+            spec = contract.normalize({"id": jid, "kind": "local-shell", "brief": "Fix the typo.",
+                                       "command": ["true"], "after": after, "after_any": after_any})
+            with self.ledger() as led:
+                led.add_job(spec)
+                for step in ("ready", "launching", "running"):
+                    led.set_state(jid, step)
+                led.finish(jid, "failed" if jid == "swarm-fix.best" else "done",
+                           {"route": "local-shell", "checks": [], "model_requested": None,
+                            "model_served": None, "ended": time.time(), "detail": "ok"})
+        run = self.home / "runs" / "swarm-fix.best"
+        run.mkdir(parents=True)
+        (run / "swarm-result.json").write_text(json.dumps({"kept": "swarm-fix.w1", "check": "failed: exit 1"}),
+                                               encoding="utf-8")
+        meta = self.serve._meta({"home": str(self.home)})[0]
+        self.assertEqual(meta["swarm-fix.best"]["state"], "failed")
+        self.assertEqual(meta["swarm-fix.best"]["kept"], "swarm-fix.w1")
+
     def test_refused_new_job_returns_to_the_form_with_the_draft(self):
         cases = ({"id": "Bad Name", "kind": "codex-cloud", "brief": "x <b>"},
                  {"id": "bad-quote", "kind": "local-shell", "brief": "x <b>", "command": "echo 'open"},
@@ -878,6 +1113,24 @@ class ServeTest(unittest.TestCase):
         page = self.request("/new")[2]
         self.assertNotIn("x &lt;b&gt;</textarea>", page)
         self.assertNotIn('value="fine-job"', page)
+
+    def test_a_stalled_jobs_page_says_when_its_output_last_changed(self):
+        spec = contract.normalize({"id": "stuck-two", "kind": "local-shell", "brief": "Index.", "command": ["true"],
+                                   "timeout_min": 60})
+        with self.ledger() as led:
+            led.add_job(spec)
+            for step in ("ready", "launching", "running"):
+                led.set_state("stuck-two", step)
+            led.set_state("stuck-two", "stalled", "no finish after 60 min")
+        log = self.home / "jobs" / "stuck-two" / "out.log"
+        log.parent.mkdir(parents=True, exist_ok=True)
+        log.write_text("indexing\n", encoding="utf-8")
+        then = time.time() - 120  # still fresh: past 5 min quiet the log card says it once instead
+        os.utime(log, (then, then))
+        code, _, page = self.request("/job/stuck-two")
+        self.assertEqual(code, 200)
+        self.assertRegex(page, r'data-t="%d(\.\d+)?" data-tk="[^"]*" data-pre="last output ">last output 2 min ago'
+                         % int(then))
 
     def test_cancel_only_stops_a_job_that_has_not_started_or_has_stalled(self):
         self.local_job("queued-one", "ready")

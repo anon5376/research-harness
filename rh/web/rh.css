@@ -330,7 +330,7 @@ a.ws-btn:hover { background: var(--raised); }
 .opts-body.right { left: auto; right: 0; }
 .needs { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 6px; }
 .needs label { display: flex; align-items: center; gap: 5px; font: 12px var(--ui); color: var(--text); }
-input[type="checkbox"] { accent-color: var(--accent); margin: 0; }
+input[type="checkbox"] { accent-color: var(--on); margin: 0; }
 .c-hint { margin-left: auto; color: var(--faint); white-space: nowrap; }
 .send { width: 32px; height: 32px; padding: 0; border-radius: 9px; flex: none; margin-left: auto;
   transition: background .15s, border-color .15s, color .15s; }
@@ -1370,6 +1370,8 @@ body { --ef-accent: #3b6cf0; }
 body[data-tint="ice"] { --ef-accent: #9fb1cf; }
 body[data-tint="paper"] { --ef-accent: #cfc6b6; }
 body[data-tint="mono"] { --ef-accent: #8a8a94; }
+/* the colour of a control that is switched on */
+body { --on: var(--ef-accent); }
 .ef-trigger { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 0;
   border-radius: 14px; background: transparent; color: rgb(255 255 255 / .55); font: 500 13px var(--ui); cursor: pointer;
   white-space: nowrap; }
@@ -1989,7 +1991,7 @@ form.compose:has([data-swarm-note]:not([hidden])) :is(.mp-trigger, .ef-trigger) 
 .swarm-m { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 0 10px; border: 1px solid var(--border);
   border-radius: 8px; cursor: pointer; }
 .swarm-m:has(:checked) { border-color: rgb(255 255 255 / .22); background: rgb(255 255 255 / .04); }
-.swarm-m input { margin: 0; accent-color: var(--accent, #7aa2ff); }
+.swarm-m input { margin: 0; accent-color: var(--on); }
 .swarm-m span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .swarm-judge { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .swarm-judge span { color: var(--muted); }
@@ -2461,8 +2463,8 @@ dialog.team > header form { margin-left: auto; }
   transition: background .2s var(--ease); }
 .tm-sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%;
   background: var(--muted); transition: transform .2s var(--ease), background .2s var(--ease); }
-.tm-tog input:checked + .tm-sw { background: var(--accent); }
-.tm-tog input:checked + .tm-sw::after { transform: translateX(12px); background: var(--surface); }
+.tm-tog input:checked + .tm-sw { background: var(--on); }
+.tm-tog input:checked + .tm-sw::after { transform: translateX(12px); background: #fff; }
 .tm-tog input:focus-visible + .tm-sw { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
 .tm-census { font-size: 12px; color: var(--faint); }
 .tm-bar-r { margin-left: auto; display: flex; align-items: center; gap: 6px; }
@@ -2704,7 +2706,7 @@ html.tm-dragging, html.tm-dragging * { cursor: grabbing !important; }
 .swarm-team { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; align-items: center;
   padding: 6px 8px; border-radius: 8px; cursor: pointer; transition: background .14s var(--ease); }
 .swarm-team:hover { background: var(--raised); }
-.swarm-team input { grid-row: 1 / span 2; margin: 0; accent-color: var(--accent); }
+.swarm-team input { grid-row: 1 / span 2; margin: 0; accent-color: var(--on); }
 .swarm-team-n { color: var(--text); font-size: 13px; }
 .swarm-team-d { grid-column: 2; color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .swarm-team-edit { display: flex; align-items: center; gap: 7px; padding: 7px 8px; margin-top: 2px; border-radius: 8px;

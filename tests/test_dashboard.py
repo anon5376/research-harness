@@ -3786,6 +3786,18 @@ console.log(JSON.stringify([
             self.assertNotIn(gone, bg)
         self.assertIn('data-tint="cobalt"', dashboard.render({**live_view(), "tint": "violet"}, NOW, token=TOKEN))
 
+    def test_every_control_switched_on_wears_the_tints_blue(self):
+        # Three "on" colours sat side by side: near-white checkboxes and radios beside blue ticks. --on is the
+        # tint's accent (body's --ef-accent, so it follows the owner's tint), and every control that switches
+        # something on uses it; --accent stays the near-white ink for buttons and pills.
+        rule = lambda sel: dashboard.STYLE.split("\n" + sel + " {", 1)[1].split("}", 1)[0]  # noqa: E731
+        self.assertIn("--on: var(--ef-accent)", dashboard.STYLE)
+        for sel in ('input[type="checkbox"]', ".swarm-m input", ".swarm-team input",
+                    ".tm-tog input:checked + .tm-sw"):
+            body = rule(sel)
+            self.assertIn("var(--on)", body)
+            self.assertNotIn("var(--accent)", body)
+
     def test_the_palette_has_a_way_out_without_a_keyboard(self):
         # On a phone there is no esc key: a Cancel button closes the palette, and the script wires it.
         pal = re.search(r'<dialog class="pal".*?</dialog>', dashboard.render(live_view(), NOW, token=TOKEN), re.S).group(0)

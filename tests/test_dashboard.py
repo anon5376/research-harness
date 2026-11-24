@@ -3707,6 +3707,18 @@ console.log(JSON.stringify([
         self.assertIn("if (body.matches('.swarm-pop')) fadeLong(body);", dashboard.SCRIPT)
         self.assertIn("t.classList.contains('swarm-pop')) fadeLong(t);", dashboard.SCRIPT)
 
+    def test_the_teams_bar_leaves_the_count_to_the_tree(self):
+        # The header row counted the team again ('7 agents · 4 workers · 3 layers') when the cards drawn under
+        # it and the list's own subline already say it. A tm-census in the script or the sheet must fail;
+        # census() stays — the list's subline and the radio's 'N agents' still read it — and sub() still
+        # writes ' layers'.
+        self.assertNotIn("tm-census", dashboard.SCRIPT)
+        self.assertNotIn("tm-census", dashboard.STYLE)
+        self.assertIn("function census(", dashboard.SCRIPT)
+        self.assertIn("function sub(", dashboard.SCRIPT)
+        sub = dashboard.SCRIPT.split("function sub(", 1)[1].split("\n}", 1)[0]
+        self.assertIn("' layers'", sub)
+
     def test_test_when_done_wears_a_flask_not_a_tick(self):
         # The row's value often reads "Don't test", and everywhere else a tick means done or passed. The row
         # drawn with the check icon's path, or without the flask, must fail.

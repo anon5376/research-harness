@@ -268,7 +268,7 @@ function quickPane() {
 }
 
 function bar(p) {
-  const c = census(p), active = T.data.presets.active === p.id;
+  const active = T.data.presets.active === p.id;
   return h('div', {class: 'tm-bar'},
     h('input', {class: 'tm-name', type: 'text', maxlength: 60, value: p.name, 'aria-label': 'Team name', 'data-name': ''}),
     h('div', {class: 'tm-seg', role: 'radiogroup', 'aria-label': 'Shape'},
@@ -278,12 +278,10 @@ function bar(p) {
         s === 'vertical' ? 'Vertical' : 'Horizontal'))),
     h('label', {class: 'tm-tog'}, h('input', {type: 'checkbox', 'data-plan': '', checked: !!p.plan}),
       h('span', {class: 'tm-sw', 'aria-hidden': 'true'}), 'Lead plans first'),
-    h('span', {class: 'tm-census mono', 'aria-live': 'polite'},
-      `${c.agents} agents · ${c.workers} ${c.workers === 1 ? 'worker' : 'workers'} · ${p.shape === 'vertical' ? c.depth + 1 + ' layers' : 'peers'}`),
     h('span', {class: 'tm-bar-r'},
       h('button', {type: 'button', class: 'btn small' + (active ? ' quiet' : ' primary'), 'data-use': p.id, disabled: active},
         active ? 'In use for /swarm' : 'Use for /swarm'),
-      // the rarer actions wait in one menu, so the head is one row: name, shape, plan, count, use, more (r28 F4)
+      // the rarer actions wait in one menu, so the head is one row: name, shape, plan, use, more (r28 F4, r30 F2)
       h('details', {class: 'tm-more'},
         h('summary', {class: 'tm-more-b', 'aria-label': 'More team actions', title: 'More'}, '⋯'),
         h('div', {class: 'tm-menu', role: 'menu'},

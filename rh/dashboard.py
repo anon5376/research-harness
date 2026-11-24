@@ -2926,7 +2926,8 @@ def _job_pane(opened, jobs, ctx, feedback, view):
                       if finished or last or len(lines) > 20 else "")
         # The status line above keeps the run's time, so the fold names only its output; while the job runs it
         # starts open: watching the output is what the page is for until the job ends.
-        output_status = ("All output" if card and not last else "Output") if log else "No output received yet"
+        output_status = (("All output" if card and not last else "Output") if log or not finished
+                         else "No output received yet")
         # the count sits right, as every log card's does
         count = f'<span class="lines mono">{_text(line_count)}</span>' if log and line_count else ""
         # folded, a glyph where a file row's icon sits starts 'Output' on the file name's edge
@@ -2936,8 +2937,12 @@ def _job_pane(opened, jobs, ctx, feedback, view):
         quiet_row = (f'<span class="log-quiet">no output since {_text(_clock(opened["log_at"], now))}'
                      f'{_SEP_HTML}{_when(opened["log_at"], now, "j:quiet", short=True)}</span>'
                      if quiet_log else "")
+        # a running job's output is one card from the start: empty, it holds one quiet line the first output replaces
+        # (r31 F6: two bare sentences over an empty band read as unfinished)
         output_body = (f'<pre class="log"{"" if finished else " data-follow"} tabindex="0">{_text(log)}{quiet_row}</pre>'
-                       if log else '<p class="soft">The worker has not produced output yet.</p>')
+                       if log else '<pre class="log" data-follow tabindex="0"><span class="log-wait">Waiting for first '
+                       'output</span></pre>' if not finished else
+                       '<p class="soft">The worker has not produced output yet.</p>')
         worked_body = f'{work_summary}<div class="worked-content">{output_body}</div>'
         work.append(_region("j-output", worked_body, "details", "worked",
                             ' aria-label="Worked and output"' + ("" if finished else " open")))

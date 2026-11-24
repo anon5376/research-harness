@@ -1897,6 +1897,8 @@ details.out-more > pre.log.ended { max-height: 420px; }
   border-bottom: 1px solid var(--rule); }
 .worked:has(> .worked-content > pre.log[data-follow]) > summary .worked-output { color: var(--text); font-size: 13px; }
 .worked-content:has(> pre.log[data-follow]) { margin-top: 0; border: 0; border-radius: 0; background: none; }
+/* a running job's card before its first line: the same card, one quiet line in it (r31 F6) */
+.log-wait { color: var(--faint); }
 .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 310px)); max-height: max(240px, calc(100dvh - 310px)); padding: 12px 14px; }
 @media (max-width: 600px) { .worked pre.log[data-follow] { min-height: max(240px, calc(100dvh - 300px)); max-height: max(240px, calc(100dvh - 300px)); } }
 /* A stalled job's card says its output stopped, under the last line: a hairline 8px up, then when, in the log's

@@ -2394,6 +2394,20 @@ class DashboardTest(unittest.TestCase):
         self.assertIn("Properties", text(folding))
         self.assertIn("Timeline", text(folding))
 
+    def test_a_running_job_with_no_output_yet_shows_its_output_card_waiting(self):
+        # r31 F6: an empty log was two bare lines saying one thing twice ('No output received yet' over 'The worker
+        # has not produced output yet.') above an empty band. A running job's output is one card, so the empty one
+        # is that card, with one quiet line in it that the first output replaces.
+        view = opened(live_view(), "live-job", kind="local-shell")
+        page = pane(dashboard.render(view, NOW, token=TOKEN))
+        out = re.search(r'data-region="j-output".*?</details>', page, re.S).group(0)
+        self.assertIn('<span class="worked-output">Output</span>', out)
+        self.assertRegex(out, r'<pre class="log"[^>]*data-follow[^>]*><span class="log-wait">Waiting for first output'
+                              r'</span></pre>')
+        self.assertNotIn("No output received yet", page)
+        self.assertNotIn("has not produced output", page)
+        self.assertIn(".log-wait { color: var(--faint); }", dashboard.STYLE)
+
     def test_a_running_claude_job_takes_messages_as_t3_codes_composer_does(self):
         # After T3 Code: while the agent works, the dock is a composer. Empty, its button is Stop ('Stop generation',
         # tooltip 'Interrupt'); it posts to /job/message. Steers that landed read as the owner's messages with a Steer

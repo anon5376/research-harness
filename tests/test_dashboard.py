@@ -3677,10 +3677,22 @@ console.log(JSON.stringify([
         self.assertIn(">rh3-composer-agents<", page)
         self.assertIn(".c-strip .where-bar { top: auto; bottom: calc(100% + ", dashboard.STYLE)
         # on a phone, with no row under it, the composer sits at the reply box's 24px from the foot
-        self.assertIn(".sea-page > .dock:has(> .c-strip.has-repo) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
+        self.assertIn(".sea-page > .dock:has(> .c-strip) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
                       dashboard.STYLE)
         bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
         self.assertIn('id="compose-title" tabindex="-1">What are we building?</h1>', bare)
+
+    def test_the_line_under_the_heading_clears_it_with_no_repository_known(self):
+        # The packaged app's first run knows no repository, so its page is headed "What are we building?". The
+        # where-bar ("This Mac", the branch) sits 14px above the composer on every new-job page, but only a
+        # repository-named page made room for it: the question kept 24px and the bar ran over its foot (seen in
+        # the 0.20.1 macOS build). The room, and the phone's foot padding, must not depend on a repository.
+        bare = pane(dashboard.render(live_view(), NOW, token=TOKEN))
+        self.assertIn('class="where-bar"', bare.split('<section class="c-strip', 1)[1].split("</section>", 1)[0])
+        self.assertIn(".c-strip .compose-intro { margin-bottom: 52px; }", dashboard.STYLE)
+        self.assertNotIn(".c-strip.has-repo .compose-intro { margin-bottom", dashboard.STYLE)
+        self.assertIn(".sea-page > .dock:has(> .c-strip) { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }",
+                      dashboard.STYLE)
 
     def test_every_floating_surface_is_cut_from_one_navy(self):
         # Menus and the model picker floated on navy glass while the Cancel popover and the toast were neutral grey:

@@ -212,11 +212,13 @@ def _message(cfg, fields):
     """Send a running agent a message, as T3 Code's composer does while a turn runs: steer (joins the turn), queue
     (starts the next turn when this one ends) or stop (interrupts the turn). It is appended to inbox.jsonl in the
     job's folder, which the agent reads; returns (status, body), the body {"id"} to follow it by."""
-    jid, mode = _value(fields, "job").strip(), _value(fields, "mode").strip()
+    jid, mode, target = _value(fields, "job").strip(), _value(fields, "mode").strip(), _value(fields, "target").strip()
     text = _value(fields, "text").replace("\r\n", "\n")
-    if mode not in ("steer", "queue", "stop"):
-        return 400, "the mode is steer, queue or stop"
-    if mode != "stop" and not text.strip():
+    if mode not in ("steer", "queue", "stop", "promote", "remove", "update"):
+        return 400, "the mode is steer, queue, stop, promote, remove or update"
+    if mode in ("promote", "remove", "update") and not re.fullmatch(r"[0-9a-f]{12}", target):
+        return 400, "a queued message's action names that message"
+    if mode in ("steer", "queue", "update") and not text.strip():
         return 400, "there is nothing to send"
     if len(text) > _MESSAGE_MAX:
         return 400, f"a message is at most {_MESSAGE_MAX:,} characters"
@@ -240,7 +242,8 @@ def _message(cfg, fields):
     folder.mkdir(parents=True, exist_ok=True)
     mid = secrets.token_hex(6)
     with _CLI_LOCK, (folder / "inbox.jsonl").open("a", encoding="utf-8") as f:
-        f.write(json.dumps({"id": mid, "mode": mode, "text": text, "at": round(time.time(), 3)}) + "\n")
+        f.write(json.dumps({"id": mid, "mode": mode, "text": text, **({"target": target} if target else {}),
+                            "at": round(time.time(), 3)}) + "\n")
     return 200, json.dumps({"id": mid})
 
 

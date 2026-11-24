@@ -166,6 +166,11 @@ def _keep_session(answer, provider, session, work):
         json.dumps({"provider": provider, "id": session, "cwd": str(work)}) + "\n", encoding="utf-8")
 
 
+# A message to a running job: steer, queue or stop it, or act on a queued message (by its id, `target`): send it as
+# a steer now (promote), take it out (remove) or change its words (update), as T3 Code's queued rows do.
+_MODES = ("steer", "queue", "stop", "promote", "remove", "update")
+
+
 class _Inbox:
     """What the owner sends a running job: the app appends {id, mode, text} lines to inbox.jsonl in the job's
     folder (mode steer, queue or stop, as T3 Code's message dispatch), and this says what became of each in
@@ -191,8 +196,9 @@ class _Inbox:
                 m = json.loads(line)
             except ValueError:
                 continue
-            if isinstance(m, dict) and m.get("mode") in ("steer", "queue", "stop") and m.get("id"):
-                out.append({"id": str(m["id"]), "mode": m["mode"], "text": str(m.get("text") or "")})
+            if isinstance(m, dict) and m.get("mode") in _MODES and m.get("id"):
+                out.append({"id": str(m["id"]), "mode": m["mode"], "text": str(m.get("text") or ""),
+                            "target": str(m.get("target") or "")})
         return out
 
     def mark(self, mid, what):
@@ -257,6 +263,19 @@ def _claude(binary, work, prompt, extra, answer, resume=None, thread=None):
 
     def take(m):
         nonlocal stopped
+        held = next((h for h in pending if h["id"] == m["target"]), None) if m["target"] else None
+        if m["mode"] in ("promote", "remove", "update"):
+            if held is None:  # already sent, or never queued: nothing left to change
+                return
+            if m["mode"] == "update" and m["text"].strip():
+                held["text"] = m["text"]
+            elif m["mode"] == "remove":
+                pending.remove(held)
+                inbox.mark(held["id"], "removed")
+            elif m["mode"] == "promote":
+                pending.remove(held)
+                take({**held, "mode": "steer", "target": ""})
+            return
         if m["mode"] == "stop":
             if busy:
                 stopped = True

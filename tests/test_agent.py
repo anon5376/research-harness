@@ -348,7 +348,17 @@ class LiveTest(unittest.TestCase):
             return c if isinstance(c, str) else "".join(b.get("text", "") for b in c if b.get("type") == "text")
         emit({"type": "system", "subtype": "init", "session_id": "live-1"})
         busy = None
-        for line in sys.stdin:
+        import select
+        while True:
+            if not select.select([sys.stdin], [], [], 8)[0]:  # a held turn ends after 8 s, so a red test fails, not hangs
+                if busy:
+                    emit({"type": "result", "subtype": "error", "is_error": True, "result": "timed out: " + busy})
+                    busy = None
+                    busy_flag.unlink(missing_ok=True)
+                continue
+            line = sys.stdin.readline()
+            if not line:
+                break
             m = json.loads(line)
             with log.open("a") as f:
                 f.write(json.dumps(m) + "\\n")
@@ -402,9 +412,10 @@ class LiveTest(unittest.TestCase):
                 if Path(str(self.log) + ".busy").exists():
                     break
                 time.sleep(.05)
-            for n, (mode, text) in enumerate(messages, 1):
+            for n, (mode, text, *target) in enumerate(messages, 1):
                 with (self.out / "inbox.jsonl").open("a", encoding="utf-8") as f:
-                    f.write(json.dumps({"id": f"m{n}", "mode": mode, "text": text}) + "\n")
+                    f.write(json.dumps({"id": f"m{n}", "mode": mode, "text": text,
+                                        **({"target": target[0]} if target else {})}) + "\n")
                 time.sleep(.3)
         typist = threading.Thread(target=owner, daemon=True)
         typist.start()
@@ -440,6 +451,18 @@ class LiveTest(unittest.TestCase):
         self.assertEqual([(t["ask"], t.get("mode")) for t in thread],
                          [("slow: build it", None), ("go", "steer"), ("and the docs", "queue")])
         self.assertEqual(thread[-1]["answer"], "heard and the docs")
+
+    def test_a_queued_message_can_be_edited_removed_or_sent_as_a_steer(self):
+        # T3 Code's queued rows: Edit (update in place), Remove, and Steer ("Send as a steer instead"). An edit that
+        # sends the old words, a removed message that still runs, or a promoted one that waits for the turn, fails.
+        code, answer, sent, state = self.run_live(
+            "slow: build it", ("queue", "the docs"), ("queue", "the tests"), ("update", "the docs, briefly", "m1"),
+            ("remove", "", "m2"), ("queue", "a lint pass"), ("promote", "", "m5"))
+        self.assertEqual(code, 0)
+        users = [(m.get("priority"), self.said(m)) for m in sent if m.get("type") == "user"]
+        self.assertEqual(users, [(None, "slow: build it"), ("now", "a lint pass"), (None, "the docs, briefly")])
+        self.assertEqual(answer, "heard the docs, briefly")
+        self.assertEqual({k: state[k] for k in ("m1", "m2", "m5")}, {"m1": "sent", "m2": "removed", "m5": "steered"})
 
     def test_stop_interrupts_the_turn_and_the_session_ends_cleanly(self):
         # Stop that kills the process (no interrupt request), or leaves the job hanging, fails.

@@ -788,6 +788,16 @@ class ServeTest(unittest.TestCase):
             with self.subTest(**fields):
                 self.assertEqual(self.request("/job/message", fields)[0], want)
         self.assertEqual(len((self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()), 3)
+        # a queued message's row acts on it by its id: send it as a steer, take it out, or change its words
+        for fields in ({"mode": "promote", "target": sent[1]}, {"mode": "remove", "target": sent[1]},
+                       {"mode": "update", "target": sent[1], "text": "the docs, briefly"}):
+            self.assertEqual(self.request("/job/message", {"job": "live", **fields})[0], 200)
+        last = [json.loads(line) for line in (self.home / "runs" / "live" / "inbox.jsonl").read_text().splitlines()][-3:]
+        self.assertEqual([(m["mode"], m["target"]) for m in last], [("promote", sent[1])] * 1 +
+                         [("remove", sent[1]), ("update", sent[1])])
+        self.assertEqual(last[-1]["text"], "the docs, briefly")
+        for fields in ({"mode": "promote"}, {"mode": "update", "target": sent[1], "text": " "}):
+            self.assertEqual(self.request("/job/message", {"job": "live", **fields})[0], 400)
         self.assertEqual(self.request("/job/message", {"job": "live", "mode": "queue", "text": "x"}, token=False)[0],
                          403)
 
